@@ -83,7 +83,11 @@ export default function UsuariosPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Usuários</h1>
-          {perfil && <p className="text-sm text-zinc-600">Logado como {perfil.nome}</p>}
+          {perfil && (
+            <p className="text-sm text-zinc-600">
+              Logado como {perfil.nome} · Perfil: Administrador
+            </p>
+          )}
         </div>
         <button onClick={handleLogout} className="rounded border px-3 py-1.5 text-sm">
           Sair
