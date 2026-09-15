@@ -1,5 +1,6 @@
 'use client';
 
+import styles from './App.module.css';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
 import { api, ErroApi, type Usuario } from '@/lib/api';
@@ -37,46 +38,51 @@ function FormularioLogin() {
       setCarregando(false);
     }
   }
-
   return (
-    <form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-3">
-      <input
-        type="email"
-        placeholder="Email"
-        required
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        className="rounded border px-3 py-2"
-      />
-      <input
-        type="password"
-        placeholder="Senha"
-        required
-        value={senha}
-        onChange={(e) => setSenha(e.target.value)}
-        className="rounded border px-3 py-2"
-      />
+    <form onSubmit={handleSubmit} className={styles.formulario}>
+        <h1 className={styles.titulo}>Login</h1>
+        <h2 className={styles.subtitulo}>Faça login na sua conta</h2>
+        <input
+          type="email"
+          placeholder="Email"
+          required
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className={styles.emailInput} />
+        <input
+          type="password"
+          placeholder="Senha"
+          required
+          value={senha}
+          onChange={(e) => setSenha(e.target.value)}
+          className={styles.senhaInput} />
 
-      {erro && <p className="text-sm text-red-600">{erro}</p>}
+        {erro && <p className={styles.erro}>{erro}</p>}
 
-      <button
-        type="submit"
-        disabled={carregando}
-        className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-      >
-        {carregando ? 'Entrando...' : 'Entrar'}
-      </button>
-    </form>
+        <button
+          type="submit"
+          disabled={carregando}
+          className={styles.entrarButton}
+        >
+          {carregando ? 'Entrando...' : 'Entrar'}
+        </button>
+      </form>
   );
 }
 
 export default function LoginPage() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
-      <h1 className="text-2xl font-semibold">Login</h1>
-      <Suspense fallback={null}>
-        <FormularioLogin />
-      </Suspense>
+    <main className={styles.main}>
+      <section className={styles.painelFormulario}>
+        <Suspense fallback={null}>
+          <FormularioLogin />
+        </Suspense>
+      </section>
+      <div className={styles.painel} aria-hidden="true" />
     </main>
   );
 }
+
+
+
+
