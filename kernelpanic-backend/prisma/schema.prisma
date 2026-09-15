@@ -12,14 +12,129 @@ datasource db {
   provider = "postgresql"
 }
 
+enum TipoUsuario {
+  ADMINISTRADOR
+  MONITOR
+}
+
+enum OperadorAlerta {
+  MAIOR_QUE
+  MENOR_QUE
+  IGUAL_A
+  MAIOR_OU_IGUAL
+  MENOR_OU_IGUAL
+}
+
 model Usuario {
+  id           String      @id @default(uuid())
+  nome         String
+  tipo         TipoUsuario @default(ADMINISTRADOR)
+  email        String      @unique
+  senhaHash    String
+  ativo        Boolean     @default(true)
+  criadoEm     DateTime    @default(now())
+  atualizadoEm DateTime    @updatedAt
+
+  estacoes Estacao[]
+
+  @@map("usuarios")
+}
+
+/// Estações físicas de coleta.
+model Estacao {
   id           String   @id @default(uuid())
   nome         String
-  email        String   @unique
-  senhaHash    String
-  ativo        Boolean  @default(true)
+  endereco     String
+  vid          String   @unique
   criadoEm     DateTime @default(now())
   atualizadoEm DateTime @updatedAt
 
-  @@map("usuarios")
+  usuarioId String
+  usuario   Usuario @relation(fields: [usuarioId], references: [id])
+
+  parametros Parametro[]
+  medidas    Medida[]
+
+  @@map("estacoes")
+}
+
+/// Definição global dos tipos de sensores/métricas (ex.: pluviômetro, temperatura).
+model TipoParametro {
+  id      String @id @default(uuid())
+  nome    String
+  unidade String
+  fator   Float
+  ganho   Float
+  json    Json?
+
+  parametros Parametro[]
+
+  @@map("tipos_parametro")
+}
+
+/// Associa uma estação aos tipos de parâmetros que ela suporta (configuração de sensores por estação).
+model Parametro {
+  id       String   @id @default(uuid())
+  criadoEm DateTime @default(now())
+
+  estacaoId String
+  estacao   Estacao @relation(fields: [estacaoId], references: [id], onDelete: Cascade)
+
+  tipoParametroId String
+  tipoParametro   TipoParametro @relation(fields: [tipoParametroId], references: [id])
+
+  medidas Medida[]
+  alertas Alerta[]
+
+  @@unique([estacaoId, tipoParametroId])
+  @@map("parametros")
+}
+
+/// Leituras coletadas ao longo do tempo (série temporal).
+model Medida {
+  id       String @id @default(uuid())
+  unixtime BigInt
+  valor    Float
+
+  parametroId String
+  parametro   Parametro @relation(fields: [parametroId], references: [id], onDelete: Cascade)
+
+  estacaoId String
+  estacao   Estacao @relation(fields: [estacaoId], references: [id], onDelete: Cascade)
+
+  alarmes Alarme[]
+
+  @@index([parametroId, unixtime])
+  @@index([estacaoId, unixtime])
+  @@map("medidas")
+}
+
+/// Regras de limite e condições lógicas atreladas a um parâmetro (ex.: valor > 30).
+model Alerta {
+  id          String         @id @default(uuid())
+  operador    OperadorAlerta
+  valorLimite Float
+  ativo       Boolean        @default(true)
+  criadoEm    DateTime       @default(now())
+
+  parametroId String
+  parametro   Parametro @relation(fields: [parametroId], references: [id], onDelete: Cascade)
+
+  alarmes Alarme[]
+
+  @@map("alertas")
+}
+
+/// Histórico de ocorrências: relaciona uma medida que violou uma regra ao alerta correspondente.
+model Alarme {
+  id          String   @id @default(uuid())
+  disparadoEm DateTime @default(now())
+
+  alertaId String
+  alerta   Alerta @relation(fields: [alertaId], references: [id], onDelete: Cascade)
+
+  medidaId String
+  medida   Medida @relation(fields: [medidaId], references: [id], onDelete: Cascade)
+
+  @@map("alarmes")
 }
