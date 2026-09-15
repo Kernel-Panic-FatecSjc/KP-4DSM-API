@@ -89,9 +89,14 @@ export default function UsuariosPage() {
             </p>
           )}
         </div>
-        <button onClick={handleLogout} className="rounded border px-3 py-1.5 text-sm">
-          Sair
-        </button>
+        <div className="flex gap-3">
+          <Link href="/alarmes" className="rounded border px-3 py-1.5 text-sm">
+            Histórico de alertas
+          </Link>
+          <button onClick={handleLogout} className="rounded border px-3 py-1.5 text-sm">
+            Sair
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleCriar} className="flex max-w-2xl flex-wrap items-end gap-3">
