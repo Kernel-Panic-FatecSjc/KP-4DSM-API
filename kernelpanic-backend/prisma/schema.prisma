@@ -25,6 +25,18 @@ enum OperadorAlerta {
   MENOR_OU_IGUAL
 }
 
+enum SeveridadeAlerta {
+  ATENCAO
+  ALERTA
+  EMERGENCIA
+}
+
+enum StatusAlarme {
+  ABERTO
+  RECONHECIDO
+  RESOLVIDO
+}
+
 model Usuario {
   id           String      @id @default(uuid())
   nome         String
@@ -111,11 +123,12 @@ model Medida {
 
 /// Regras de limite e condições lógicas atreladas a um parâmetro (ex.: valor > 30).
 model Alerta {
-  id          String         @id @default(uuid())
+  id          String           @id @default(uuid())
   operador    OperadorAlerta
   valorLimite Float
-  ativo       Boolean        @default(true)
-  criadoEm    DateTime       @default(now())
+  severidade  SeveridadeAlerta
+  ativo       Boolean          @default(true)
+  criadoEm    DateTime         @default(now())
 
   parametroId String
   parametro   Parametro @relation(fields: [parametroId], references: [id], onDelete: Cascade)
@@ -127,8 +140,9 @@ model Alerta {
 
 /// Histórico de ocorrências: relaciona uma medida que violou uma regra ao alerta correspondente.
 model Alarme {
-  id          String   @id @default(uuid())
-  disparadoEm DateTime @default(now())
+  id          String       @id @default(uuid())
+  disparadoEm DateTime     @default(now())
+  status      StatusAlarme @default(ABERTO)
 
   alertaId String
   alerta   Alerta @relation(fields: [alertaId], references: [id], onDelete: Cascade)

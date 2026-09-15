@@ -33,3 +33,42 @@ export interface Usuario {
   criadoEm: string;
   atualizadoEm: string;
 }
+
+export type SeveridadeAlerta = 'ATENCAO' | 'ALERTA' | 'EMERGENCIA';
+export type StatusAlarme = 'ABERTO' | 'RECONHECIDO' | 'RESOLVIDO';
+
+export interface AlarmeHistorico {
+  id: string;
+  disparadoEm: string;
+  status: StatusAlarme;
+  severidade: SeveridadeAlerta;
+  operador: string;
+  valorLimite: number;
+  valorMedido: number;
+  estacao: { id: string; nome: string };
+  parametro: { id: string; nome: string; unidade: string };
+}
+
+export interface ListaAlarmes {
+  itens: AlarmeHistorico[];
+  total: number;
+  pagina: number;
+  tamanho: number;
+}
+
+export interface OpcoesFiltroAlarmes {
+  estacoes: { id: string; nome: string }[];
+  tiposParametro: { id: string; nome: string }[];
+  severidades: SeveridadeAlerta[];
+  status: StatusAlarme[];
+}
+
+export interface FiltrosAlarmes {
+  estacaoId?: string;
+  tipoParametroId?: string;
+  severidade?: SeveridadeAlerta;
+  status?: StatusAlarme;
+  de?: string;
+  ate?: string;
+  pagina?: number;
+}
