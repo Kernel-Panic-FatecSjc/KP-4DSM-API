@@ -1,0 +1,19 @@
+.layout {
+    min-height: 100vh;
+}
+
+.main {
+    min-height: 100vh;
+
+    margin-left: 298px;
+
+    transition: margin-left 0.3s ease;
+}
+
+.mainMinimizada {
+    margin-left: 80px;
+}
+
+.conteudo {
+    padding: 30px;
+}

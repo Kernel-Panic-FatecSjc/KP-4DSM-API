@@ -1,0 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@100..800&display=swap');
+
+body{
+    background-color: #f1f6f2;
+    color: black;
+    font-family: "Sora", Arial, Helvetica, sans-serif;
+}
+
+.title {
+    color: #143f5c;
+    font-size: 30px;
+    font-weight: bold  ;
+}
+
+.subtitle {
+    color: #526c7b;
+    font-size: 15px;
+}
+
+.searchBar {
+    background-color: white;
+    width: 40%;
+    padding: 10px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    margin-bottom: 20px;
+    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.tableContainer{
+    overflow-x: auto;
+    background-color: white;
+    padding: 20px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+}
+
+.tableHeader{
+    padding: 5px;  
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 15px;
+    font-size: 15px;
+}
+
+.exportButton {
+    background-color: #f1f6f2;
+    color: #143f5c;
+    border: none;
+    padding: 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.exportButton:hover {
+    background-color: #e7edc6;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+    justify-content: space-between;
+}
+
+.table th {
+    padding: 10px;
+    text-align: left;
+}
