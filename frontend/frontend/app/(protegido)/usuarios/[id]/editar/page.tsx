@@ -2,6 +2,9 @@
 
 import { useRouter } from 'next/navigation';
 import { use, useState } from 'react';
+import { PageHeading } from '@/components/PageHeading';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { api, ErroApi } from '@/lib/api';
 
 export default function EditarUsuarioPage(props: PageProps<'/usuarios/[id]/editar'>) {
@@ -36,43 +39,26 @@ export default function EditarUsuarioPage(props: PageProps<'/usuarios/[id]/edita
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 p-8">
-      <h1 className="text-2xl font-semibold">Editar usuário</h1>
+    <div className="mx-auto max-w-md space-y-5">
+      <PageHeading title="Editar usuário" description="Altere apenas os campos que deseja atualizar." />
 
-      <form onSubmit={handleSubmit} className="flex w-full max-w-sm flex-col gap-3">
-        <input
-          type="text"
-          placeholder="Novo nome (opcional)"
-          value={nome}
-          onChange={(e) => setNome(e.target.value)}
-          className="rounded border px-3 py-2"
-        />
-        <input
-          type="email"
-          placeholder="Novo email (opcional)"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="rounded border px-3 py-2"
-        />
-        <input
+      <form onSubmit={handleSubmit} className="rise delay-1 flex flex-col gap-3 rounded-lg border border-border bg-card p-5">
+        <Input type="text" placeholder="Novo nome (opcional)" value={nome} onChange={(e) => setNome(e.target.value)} />
+        <Input type="email" placeholder="Novo email (opcional)" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <Input
           type="password"
           placeholder="Nova senha (opcional, mínimo 8 caracteres)"
           minLength={8}
           value={senha}
           onChange={(e) => setSenha(e.target.value)}
-          className="rounded border px-3 py-2"
         />
 
-        {erro && <p className="text-sm text-red-600">{erro}</p>}
+        {erro && <p className="text-sm text-destructive">{erro}</p>}
 
-        <button
-          type="submit"
-          disabled={carregando}
-          className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
-        >
+        <Button type="submit" disabled={carregando}>
           {carregando ? 'Salvando...' : 'Salvar'}
-        </button>
+        </Button>
       </form>
-    </main>
+    </div>
   );
 }
