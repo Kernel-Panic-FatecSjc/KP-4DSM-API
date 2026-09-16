@@ -1,8 +1,10 @@
 'use client';
 
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { ChevronLeft, ChevronRight, ShieldCheck } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { PageHeading } from '@/components/PageHeading';
+import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
 import {
   api,
   ErroApi,
@@ -12,6 +14,8 @@ import {
   type SeveridadeAlerta,
   type StatusAlarme,
 } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
 
 const LABEL_SEVERIDADE: Record<SeveridadeAlerta, string> = {
   ATENCAO: 'Atenção',
@@ -20,9 +24,9 @@ const LABEL_SEVERIDADE: Record<SeveridadeAlerta, string> = {
 };
 
 const COR_SEVERIDADE: Record<SeveridadeAlerta, string> = {
-  ATENCAO: 'bg-yellow-100 text-yellow-800',
-  ALERTA: 'bg-orange-100 text-orange-800',
-  EMERGENCIA: 'bg-red-100 text-red-800',
+  ATENCAO: 'bg-aqua',
+  ALERTA: 'bg-warning',
+  EMERGENCIA: 'bg-critical',
 };
 
 const LABEL_STATUS: Record<StatusAlarme, string> = {
@@ -32,9 +36,9 @@ const LABEL_STATUS: Record<StatusAlarme, string> = {
 };
 
 const COR_STATUS: Record<StatusAlarme, string> = {
-  ABERTO: 'bg-red-100 text-red-800',
-  RECONHECIDO: 'bg-blue-100 text-blue-800',
-  RESOLVIDO: 'bg-green-100 text-green-800',
+  ABERTO: 'bg-critical',
+  RECONHECIDO: 'bg-aqua',
+  RESOLVIDO: 'bg-lime',
 };
 
 function montarQuery(filtros: FiltrosAlarmes): string {
@@ -49,17 +53,24 @@ function montarQuery(filtros: FiltrosAlarmes): string {
   return parametros.toString();
 }
 
+function FiltroCampo({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <label className="font-mono text-[10px] uppercase text-muted-foreground">{label}</label>
+      {children}
+    </div>
+  );
+}
+
 export default function AlarmesPage() {
   const router = useRouter();
   const [opcoes, setOpcoes] = useState<OpcoesFiltroAlarmes | null>(null);
   const [resultado, setResultado] = useState<ListaAlarmes | null>(null);
   const [filtros, setFiltros] = useState<FiltrosAlarmes>({ pagina: 1 });
   const [erro, setErro] = useState<string | null>(null);
-  const [carregando, setCarregando] = useState(false);
 
   const carregarHistorico = useCallback(
     async (filtrosAtuais: FiltrosAlarmes) => {
-      setCarregando(true);
       setErro(null);
       try {
         const dados = await api<ListaAlarmes>(`/alarmes?${montarQuery(filtrosAtuais)}`);
@@ -70,8 +81,6 @@ export default function AlarmesPage() {
           return;
         }
         setErro('Erro ao carregar histórico de alarmes');
-      } finally {
-        setCarregando(false);
       }
     },
     [router],
@@ -103,27 +112,21 @@ export default function AlarmesPage() {
   const totalPaginas = resultado ? Math.max(1, Math.ceil(resultado.total / resultado.tamanho)) : 1;
 
   return (
-    <main className="flex flex-1 flex-col gap-6 p-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Histórico de Alertas Disparados</h1>
-          <p className="text-sm text-zinc-600">Consulta global de ocorrências, com filtros por estação, parâmetro, severidade, status e período.</p>
-        </div>
-        <Link href="/usuarios" className="rounded border px-3 py-1.5 text-sm">
-          Usuários
-        </Link>
-      </div>
+    <div className="space-y-5">
+      <PageHeading
+        title="Histórico de Alertas"
+        description="Consulta global de ocorrências disparadas, com filtros por estação, parâmetro, severidade, status e período."
+      />
 
-      <div className="flex flex-wrap items-end gap-3 rounded border p-4">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filtroEstacao" className="text-sm">
-            Estação
-          </label>
-          <select
-            id="filtroEstacao"
+      <section
+        className="rise delay-1 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+        aria-label="Filtros"
+      >
+        <FiltroCampo label="Estação">
+          <Select
             value={filtros.estacaoId ?? ''}
             onChange={(e) => atualizarFiltro('estacaoId', e.target.value)}
-            className="rounded border px-3 py-2"
+            className="font-mono text-[11px]"
           >
             <option value="">Todas</option>
             {opcoes?.estacoes.map((estacao) => (
@@ -131,18 +134,14 @@ export default function AlarmesPage() {
                 {estacao.nome}
               </option>
             ))}
-          </select>
-        </div>
+          </Select>
+        </FiltroCampo>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filtroParametro" className="text-sm">
-            Parâmetro
-          </label>
-          <select
-            id="filtroParametro"
+        <FiltroCampo label="Parâmetro">
+          <Select
             value={filtros.tipoParametroId ?? ''}
             onChange={(e) => atualizarFiltro('tipoParametroId', e.target.value)}
-            className="rounded border px-3 py-2"
+            className="font-mono text-[11px]"
           >
             <option value="">Todos</option>
             {opcoes?.tiposParametro.map((tipo) => (
@@ -150,18 +149,14 @@ export default function AlarmesPage() {
                 {tipo.nome}
               </option>
             ))}
-          </select>
-        </div>
+          </Select>
+        </FiltroCampo>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filtroSeveridade" className="text-sm">
-            Severidade
-          </label>
-          <select
-            id="filtroSeveridade"
+        <FiltroCampo label="Severidade">
+          <Select
             value={filtros.severidade ?? ''}
             onChange={(e) => atualizarFiltro('severidade', e.target.value as SeveridadeAlerta)}
-            className="rounded border px-3 py-2"
+            className="font-mono text-[11px]"
           >
             <option value="">Todas</option>
             {opcoes?.severidades.map((severidade) => (
@@ -169,18 +164,14 @@ export default function AlarmesPage() {
                 {LABEL_SEVERIDADE[severidade]}
               </option>
             ))}
-          </select>
-        </div>
+          </Select>
+        </FiltroCampo>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filtroStatus" className="text-sm">
-            Status
-          </label>
-          <select
-            id="filtroStatus"
+        <FiltroCampo label="Status">
+          <Select
             value={filtros.status ?? ''}
             onChange={(e) => atualizarFiltro('status', e.target.value as StatusAlarme)}
-            className="rounded border px-3 py-2"
+            className="font-mono text-[11px]"
           >
             <option value="">Todos</option>
             {opcoes?.status.map((status) => (
@@ -188,115 +179,145 @@ export default function AlarmesPage() {
                 {LABEL_STATUS[status]}
               </option>
             ))}
-          </select>
-        </div>
+          </Select>
+        </FiltroCampo>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filtroDe" className="text-sm">
-            De
-          </label>
+        <FiltroCampo label="De">
           <input
-            id="filtroDe"
             type="datetime-local"
             value={filtros.de ?? ''}
             onChange={(e) => atualizarFiltro('de', e.target.value)}
-            className="rounded border px-3 py-2"
+            className="h-9 w-full rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
-        </div>
+        </FiltroCampo>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="filtroAte" className="text-sm">
-            Até
-          </label>
-          <input
-            id="filtroAte"
-            type="datetime-local"
-            value={filtros.ate ?? ''}
-            onChange={(e) => atualizarFiltro('ate', e.target.value)}
-            className="rounded border px-3 py-2"
-          />
-        </div>
+        <FiltroCampo label="Até">
+          <div className="flex gap-2">
+            <input
+              type="datetime-local"
+              value={filtros.ate ?? ''}
+              onChange={(e) => atualizarFiltro('ate', e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            <Button type="button" variant="outline" size="sm" onClick={() => setFiltros({ pagina: 1 })}>
+              Limpar
+            </Button>
+          </div>
+        </FiltroCampo>
+      </section>
 
-        <button
-          type="button"
-          onClick={() => setFiltros({ pagina: 1 })}
-          className="rounded border px-3 py-2 text-sm"
-        >
-          Limpar filtros
-        </button>
+      {erro && <p className="text-sm text-destructive">{erro}</p>}
+
+      <AlarmesTabela
+        resultado={resultado}
+        totalPaginas={totalPaginas}
+        onPaginaAnterior={() => resultado && irParaPagina(resultado.pagina - 1)}
+        onProximaPagina={() => resultado && irParaPagina(resultado.pagina + 1)}
+      />
+    </div>
+  );
+}
+
+function AlarmesTabela({
+  resultado,
+  totalPaginas,
+  onPaginaAnterior,
+  onProximaPagina,
+}: {
+  resultado: ListaAlarmes | null;
+  totalPaginas: number;
+  onPaginaAnterior: () => void;
+  onProximaPagina: () => void;
+}) {
+  const itens = resultado?.itens ?? [];
+  const abertos = itens.filter((item) => item.status === 'ABERTO').length;
+
+  return (
+    <article className="rise delay-2 overflow-hidden rounded-lg border border-border bg-card">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-4 py-3">
+        <div className="min-w-0">
+          <h2 className="font-display text-sm font-semibold">Ocorrências</h2>
+          <p className="font-mono text-[10px] text-muted-foreground">
+            {resultado ? `${resultado.total} registro(s) · ${abertos} em aberto nesta página` : 'Carregando...'}
+          </p>
+        </div>
       </div>
 
-      {erro && <p className="text-sm text-red-600">{erro}</p>}
+      <div className="hidden grid-cols-[1.1fr_1.2fr_1fr_.8fr_.8fr] gap-3 border-b border-border px-4 py-2 font-mono text-[10px] uppercase text-muted-foreground sm:grid">
+        <span>Data/Hora</span>
+        <span>Estação</span>
+        <span>Parâmetro</span>
+        <span>Severidade</span>
+        <span>Status</span>
+      </div>
 
-      {carregando && !resultado ? (
-        <p>Carregando...</p>
+      {!resultado ? (
+        <div className="grid min-h-64 place-items-center px-6 text-center">
+          <p className="text-sm text-muted-foreground">Carregando ocorrências...</p>
+        </div>
+      ) : itens.length === 0 ? (
+        <div className="grid min-h-64 place-items-center px-6 text-center">
+          <div>
+            <ShieldCheck className="mx-auto mb-3 size-8 text-aqua" />
+            <p className="font-display text-sm font-semibold">Nenhuma ocorrência encontrada</p>
+            <p className="mt-1 text-xs text-muted-foreground">Ajuste os filtros selecionados.</p>
+          </div>
+        </div>
       ) : (
-        <>
-          <table className="w-full max-w-5xl border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b">
-                <th className="py-2 pr-4">Data/Hora</th>
-                <th className="py-2 pr-4">Estação</th>
-                <th className="py-2 pr-4">Parâmetro</th>
-                <th className="py-2 pr-4">Severidade</th>
-                <th className="py-2 pr-4">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {resultado?.itens.map((alarme) => (
-                <tr key={alarme.id} className="border-b">
-                  <td className="py-2 pr-4">
-                    {new Date(alarme.disparadoEm).toLocaleString('pt-BR')}
-                  </td>
-                  <td className="py-2 pr-4">{alarme.estacao.nome}</td>
-                  <td className="py-2 pr-4">
-                    {alarme.parametro.nome} ({alarme.valorMedido}
-                    {alarme.parametro.unidade})
-                  </td>
-                  <td className="py-2 pr-4">
-                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${COR_SEVERIDADE[alarme.severidade]}`}>
-                      {LABEL_SEVERIDADE[alarme.severidade]}
-                    </span>
-                  </td>
-                  <td className="py-2 pr-4">
-                    <span className={`rounded px-2 py-0.5 text-xs font-medium ${COR_STATUS[alarme.status]}`}>
-                      {LABEL_STATUS[alarme.status]}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          {resultado && resultado.itens.length === 0 && (
-            <p className="text-sm text-zinc-500">Nenhuma ocorrência encontrada para os filtros selecionados.</p>
-          )}
-
-          {resultado && resultado.total > 0 && (
-            <div className="flex items-center gap-3 text-sm">
-              <button
-                type="button"
-                disabled={resultado.pagina <= 1}
-                onClick={() => irParaPagina(resultado.pagina - 1)}
-                className="rounded border px-3 py-1.5 disabled:opacity-40"
-              >
-                Anterior
-              </button>
-              <span>
-                Página {resultado.pagina} de {totalPaginas} · {resultado.total} ocorrência(s)
-              </span>
-              <button
-                type="button"
-                disabled={resultado.pagina >= totalPaginas}
-                onClick={() => irParaPagina(resultado.pagina + 1)}
-                className="rounded border px-3 py-1.5 disabled:opacity-40"
-              >
-                Próxima
-              </button>
-            </div>
-          )}
-        </>
+        itens.map((alarme) => (
+          <div
+            key={alarme.id}
+            className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-border px-4 py-3 last:border-0 sm:grid-cols-[1.1fr_1.2fr_1fr_.8fr_.8fr] sm:items-center"
+          >
+            <span className="font-mono text-[11px] text-muted-foreground">
+              {new Date(alarme.disparadoEm).toLocaleString('pt-BR')}
+            </span>
+            <span className="truncate text-[13px] font-semibold sm:font-normal">{alarme.estacao.nome}</span>
+            <span className="text-[12px] text-muted-foreground">
+              {alarme.parametro.nome} ({alarme.valorMedido}
+              {alarme.parametro.unidade})
+            </span>
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-[10px] font-semibold">
+              <span className={cn('size-1.5 rounded-full', COR_SEVERIDADE[alarme.severidade])} />
+              {LABEL_SEVERIDADE[alarme.severidade].toLowerCase()}
+            </span>
+            <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-[10px] font-semibold">
+              <span className={cn('size-1.5 rounded-full', COR_STATUS[alarme.status])} />
+              {LABEL_STATUS[alarme.status].toLowerCase()}
+            </span>
+          </div>
+        ))
       )}
-    </main>
+
+      {resultado && resultado.total > 0 && (
+        <div className="flex items-center justify-between border-t border-border px-4 py-3">
+          <span className="font-mono text-[10px] text-muted-foreground">
+            Página {resultado.pagina} de {totalPaginas} · {resultado.total} ocorrência(s)
+          </span>
+          <div className="flex gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-7"
+              disabled={resultado.pagina <= 1}
+              onClick={onPaginaAnterior}
+              aria-label="Página anterior"
+            >
+              <ChevronLeft />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-7"
+              disabled={resultado.pagina >= totalPaginas}
+              onClick={onProximaPagina}
+              aria-label="Próxima página"
+            >
+              <ChevronRight />
+            </Button>
+          </div>
+        </div>
+      )}
+    </article>
   );
 }
