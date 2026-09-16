@@ -1,0 +1,141 @@
+.header {
+    height: 70px;
+
+    display: flex;
+    align-items: center;
+
+    background-color: #f5f9f7;
+
+    border-bottom: 1px solid #d4dedb;
+
+    padding: 0 24px 0 40px;
+
+    position: sticky;
+    top: 0;
+
+    z-index: 50;
+}
+
+.menuButton {
+    width: 38px;
+    height: 38px;
+
+    border: none;
+    border-radius: 6px;
+
+    background-color: transparent;
+
+    color: #143f5c;
+
+    font-size: 22px;
+
+    cursor: pointer;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    transition: background-color 0.2s;
+}
+
+.menuButton:hover {
+    background-color: rgba(20, 63, 92, 0.08);
+}
+
+.pageInfo {
+    display: flex;
+    flex-direction: column;
+
+    margin-left: 12px;
+}
+
+.pageInfo h1 {
+    margin: 0;
+
+    color: #143f5c;
+
+    font-size: 20px;
+    font-weight: 600;
+
+    line-height: 24px;
+}
+
+.pageInfo span {
+    margin-top: 2px;
+
+    color: #526c7b;
+
+    font-family: monospace;
+
+    font-size: 13px;
+}
+
+.actions {
+    margin-left: auto;
+
+    display: flex;
+    align-items: center;
+
+    gap: 12px;
+}
+
+.newButton {
+    height: 44px;
+
+    padding: 0 18px;
+
+    border: none;
+    border-radius: 7px;
+
+    background-color: #143f5c;
+
+    color: white;
+
+    font-family: "Sora", Arial, Helvetica, sans-serif;
+
+    font-size: 15px;
+
+    cursor: pointer;
+
+    display: flex;
+    align-items: center;
+
+    gap: 7px;
+
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.12);
+
+    transition:
+        background-color 0.2s,
+        transform 0.2s;
+}
+
+.newButton:hover {
+    background-color: #1b5277;
+}
+
+.newButton:active {
+    transform: scale(0.98);
+}
+
+.newButton span {
+    font-size: 22px;
+    line-height: 1;
+}
+
+.headerAvatar {
+    width: 40px;
+    height: 40px;
+
+    border-radius: 50%;
+
+    background-color: #4a94b4;
+
+    color: white;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    font-size: 13px;
+    font-weight: 600;
+}
