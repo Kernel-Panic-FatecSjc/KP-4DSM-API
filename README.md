@@ -12,6 +12,7 @@
 [A Solução](#a-solução) |
 [O Desafio](#o-desafio) | 
 [Backlog de Produto](#backlog-de-produto) | 
+[Backlog da Sprint](#backlog-da-sprint) | 
 [Tecnologias](#tecnologias-utilizadas) |
 [Estrutura do Projeto](#estrutura-do-projeto) | 
 [Instalação](#manual-de-instalação) | 
@@ -92,19 +93,31 @@ A solução combina:
 <a id="backlog-de-produto"></a>
 ## 📋 Backlog de Produto
 
-| ID | User Story | Épico | Prioridade | Pontos | Status |
-|----|-----------|-------|-----------|--------|--------|
-| US01 | Gestão de Usuários, Autenticação e Níveis de Acesso | Governança & Segurança | Alta | 11 | ⏳ |
-| US02 | Cadastro e Gerenciamento Dinâmico de Estações e Sensores | Infraestrutura & Modelo Dinâmico | Alta | 11 | ⏳ |
-| US03 | Coleta e Transmissão via Datalogger Físico | IoT & Recepção de Dados | Alta | 13 | ⏳ |
-| US04 | Serviço de Recepção, Validação e Persistência de Telemetria | IoT & Recepção de Dados | Alta | 10 | ⏳ |
-| US05 | Dashboard Interativo com Filtros e Indicadores Estatísticos | Monitoramento Operacional | Alta | 12 | ⏳ |
-| US06 | Parametrização, Detecção e Histórico de Alertas de Risco | Gestão de Alertas | Alta | 16 | ⏳ |
-| US07 | Trilha de Auditoria Forense e Rastreabilidade | Interoperabilidade & Auditoria | Alta | 13 | ⏳ |
-| US08 | Disponibilização de Dados Abertos e Interoperabilidade (e-PING) | Interoperabilidade & Auditoria | Alta | 13 | ⏳ |
-| US09 | Relatório de Histórico e Condições Climáticas Consolidadas | Relatórios Analíticos | Média | 9 | ⏳ |
-| US10 | Relatório de Incidentes e Ocorrências de Alertas | Relatórios Analíticos | Média | 9 | ⏳ |
-| US11 | Relatório Estatístico e Análise Comparativa | Relatórios Analíticos | Média | 9 | ⏳ |
+| ID | User Story | Épico | Prioridade | Sprint | Pontos | Status |
+|----|-----------|-------|-----------|--------|--------|--------|
+| US01 | Gestão de Usuários, Autenticação e Níveis de Acesso | Governança & Segurança | Alta | 1 | 11 | ⏳ |
+| US02 | Cadastro e Gerenciamento Dinâmico de Estações e Sensores | Infraestrutura & Modelo Dinâmico | Alta | 1 | 11 | ⏳ |
+| US03 | Coleta e Transmissão via Datalogger Físico | IoT & Recepção de Dados | Alta | 3 | 13 | ⏳ |
+| US04 | Serviço de Recepção, Validação e Persistência de Telemetria | IoT & Recepção de Dados | Alta | 3 | 10 | ⏳ |
+| US05 | Dashboard Interativo com Filtros e Indicadores Estatísticos | Monitoramento Operacional | Alta | 1 | 12 | ⏳ |
+| US06 | Parametrização, Detecção e Histórico de Alertas de Risco | Gestão de Alertas | Alta | 1 | 16 | ⏳ |
+| US07 | Trilha de Auditoria Forense e Rastreabilidade | Interoperabilidade & Auditoria | Alta | 1 | 13 | ⏳ |
+| US08 | Disponibilização de Dados Abertos e Interoperabilidade (e-PING) | Interoperabilidade & Auditoria | Alta | 3 | 13 | ⏳ |
+| US09 | Relatório de Histórico e Condições Climáticas Consolidadas | Relatórios Analíticos | Média | 2 | 9 | ⏳ |
+| US10 | Relatório de Incidentes e Ocorrências de Alertas | Relatórios Analíticos | Média | 2 | 9 | ⏳ |
+| US11 | Relatório Estatístico e Análise Comparativa | Relatórios Analíticos | Média | 2 | 9 | ⏳ |
+
+---
+
+<a id="backlog-da-spint"></a>
+## 📋 Backlog da Sprint
+| ID | User Story | Épico | Prioridade | Sprint | Pontos | Status | Meta da Sprint |
+|----|-----------|-------|-----------|--------|--------|--------|----------------|
+| US01 | Gestão de Usuários, Autenticação e Níveis de Acesso | Governança & Segurança | Alta | 1 | 11 | ⏳ | Meta |
+| US02 | Cadastro e Gerenciamento Dinâmico de Estações e Sensores | Infraestrutura & Modelo Dinâmico | Alta | 1 | 11 | ⏳ | Meta |
+| US05 | Dashboard Interativo com Filtros e Indicadores Estatísticos | Monitoramento Operacional | Alta | 1 | 12 | ⏳ | Meta |
+| US06 | Parametrização, Detecção e Histórico de Alertas de Risco | Gestão de Alertas | Alta | 1 | 16 | ⏳ | Meta |
+| US07 | Trilha de Auditoria Forense e Rastreabilidade | Interoperabilidade & Auditoria | Alta | 1 | 13 | ⏳ | Não é meta |
 
 ---
 
@@ -179,7 +192,7 @@ KP-4DSM-API
 ### 📦 Clonando o repositório
 
 ```bash
-git clone https://github.com/yourusername/KP-4DSM-API.git
+git clone https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API.git
 cd KP-4DSM-API
 ```
 
