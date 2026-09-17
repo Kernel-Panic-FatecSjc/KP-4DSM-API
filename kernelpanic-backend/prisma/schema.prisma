@@ -47,7 +47,8 @@ model Usuario {
   criadoEm     DateTime    @default(now())
   atualizadoEm DateTime    @updatedAt
 
-  estacoes Estacao[]
+  estacoes      Estacao[]
+  logsAuditoria LogAuditoria[]
 
   @@map("usuarios")
 }
@@ -151,4 +152,27 @@ model Alarme {
   medida   Medida @relation(fields: [medidaId], references: [id], onDelete: Cascade)
 
   @@map("alarmes")
+}
+
+/// Trilha de auditoria: registro imutável (sem updatedAt, sem update/delete pela
+/// aplicação) de ações executadas por usuários no sistema, para rastreabilidade
+/// forense e prestação de contas (RF: auditoria/LGPD, US07).
+/// `acao` segue a convenção "recurso.verbo" (ex.: "usuarios.criar",
+/// "autenticacao.login", "alertas.inativar") em vez de enum, para não exigir
+/// migration a cada nova ação auditável.
+model LogAuditoria {
+  id           String   @id @default(uuid())
+  acao         String
+  entidade     String
+  entidadeId   String?
+  detalhes     Json?
+  enderecoIp   String?
+  criadoEm     DateTime @default(now())
+
+  usuarioId String?
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+
+  @@index([usuarioId, criadoEm])
+  @@index([entidade, entidadeId])
+  @@map("logs_auditoria")
 }
