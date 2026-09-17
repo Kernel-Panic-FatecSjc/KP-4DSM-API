@@ -1,0 +1,324 @@
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@100..800&display=swap');
+
+body{
+    background-color: #f1f6f2;
+    background: #eef2f1;
+    color: black;
+    font-family: "Sora", Arial, Helvetica, sans-serif;
+}
+
+.Header {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+}
+
+.newButton {
+    height: 44px;
+    padding: 0 18px;
+    border: none;
+    border-radius: 7px;
+    background-color: #143f5c;
+    color: white;
+    font-family: "Sora", Arial, Helvetica, sans-serif;
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.12);
+    transition:
+        background-color 0.2s,
+        transform 0.2s;
+}
+
+.newButton:hover {
+    background-color: #1b5277;
+}
+
+.title {
+    color: #143f5c;
+    font-size: 30px;
+    font-weight: 76bold  ;
+}
+
+.subtitle {
+    color: #526c7b;
+    font-size: 15px;
+}
+
+.searchBar {
+    background-color: white;
+    width: 40%;
+    padding: 10px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    margin-bottom: 20px;
+    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.tableContainer{
+    overflow-x: auto;
+    background-color: white;
+    padding: 20px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+}
+
+.tableHeader{
+    padding: 5px;  
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 15px;
+    font-size: 15px;
+}
+
+.exportButton {
+    background-color: #f1f6f2;
+    color: #143f5c;
+    border: none;
+    padding: 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    box-shadow: 0px 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.exportButton:hover {
+    background-color: #e7edc6;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 15px;
+    justify-content: space-between;
+}
+
+.table th {
+    padding: 10px;
+    text-align: left;
+}
+
+.table tbody td {
+    padding: 16px 20px;
+    border-bottom: 1px solid #e5ebee;
+    color: #1b4159;
+    font-size: 0.95rem;
+    vertical-align: middle;
+}
+
+.nameCell {
+    display: table-cell;
+    min-width: 260px;
+}
+
+.alertName,
+.alertCode {
+    display: block;
+    line-height: 1.4;
+}
+
+.alertName {
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: #193f5b;
+}
+
+.alertCode {
+    color: #6d818f;
+    font-size: 0.8rem;
+}
+
+.severity {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: lowercase;
+    font-weight: 600;
+}
+
+.dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    display: inline-block;
+    background: currentColor;
+}
+
+.critical {
+    color: #d94d4d;
+}
+
+.high {
+    color: #4b9ad9;
+}
+
+.normal {
+    color: #c7b75b;
+}
+
+.actionsCell {
+    width: 140px;
+    text-align: left;
+}
+
+.checkButton,
+.moreButton,
+.pageButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid #dfe6eb;
+    background: rgba(255, 255, 255, 0.7);
+    color: #203d57;
+    cursor: pointer;
+    font-family: "Sora", Arial, Helvetica, sans-serif;
+}
+
+.checkButton {
+    width: 28px;
+    height: 28px;
+    margin-right: 10px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.moreButton {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    font-size: 1.2rem;
+    line-height: 1;
+}
+
+.paginacao {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px 22px;
+    color: #617d8c;
+    font-size: 0.9rem;
+}
+
+.pagControls {
+    display: flex;
+    gap: 8px;
+}
+
+.pagButton {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.modalOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(14, 31, 40, 0.16);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal {
+    width: min(90vw, 760px);
+    background: rgba(241, 246, 242, 0.98);
+    border-radius: 14px;
+    padding: 26px 28px 20px;
+    position: relative;
+    box-shadow: 0 22px 48px rgba(11, 34, 48, 0.17);
+    border: 1px solid #dfe7ea;
+}
+
+.closeButton {
+    position: absolute;
+    top: 18px;
+    right: 22px;
+    border: none;
+    background: transparent;
+    color: #143f5c;
+    font-size: 2.1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.modalTitle {
+    margin: 0 0 6px;
+    color: #143f5c;
+    font-size: 2.2rem;
+    font-weight: 700;
+}
+
+.modalSubtitle {
+    margin: 0 0 22px;
+    color: #526c7b;
+    font-size: 1rem;
+}
+
+.fieldLabel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+    color: #143f5c;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.inputField,
+.selectField {
+    height: 48px;
+    border: 2px solid #a8c5d7;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.25);
+    color: #143f5c;
+    font-size: 1rem;
+    font-family: "Sora", Arial, Helvetica, sans-serif;
+    padding: 0 14px;
+    outline: none;
+}
+
+.inputField::placeholder {
+    color: #7a8f9c;
+}
+
+.formRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+}
+
+.modalActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 16px;
+    margin-top: 24px;
+}
+
+.cancelButton,
+.submitButton {
+    min-width: 150px;
+    height: 48px;
+    border-radius: 10px;
+    border: none;
+    font-family: "Sora", Arial, Helvetica, sans-serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.cancelButton {
+    background: #ebf0f1;
+    color: #143f5c;
+    border: 1px solid #d5dfe5;
+}
+
+.submitButton {
+    background: #143f5c;
+    color: white;
+}
