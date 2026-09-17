@@ -104,3 +104,29 @@ export interface FiltrosAlertas {
   ativo?: boolean;
   pagina?: number;
 }
+
+export interface DashboardPonto {
+  timestamp: string;
+  valor: number;
+}
+
+export interface DashboardSerie {
+  parametroId: string;
+  nome: string;
+  unidade: string;
+  estacaoId: string;
+  estacaoNome: string;
+  pontos: DashboardPonto[];
+}
+
+export interface DashboardDados {
+  periodo: { de: string; ate: string };
+  estacoes: { id: string; nome: string; endereco: string }[];
+  indicadores: {
+    estacoesAtivas: number;
+    leituras: number;
+    media: number | null;
+    alarmesAbertos: number;
+  };
+  series: DashboardSerie[];
+}
