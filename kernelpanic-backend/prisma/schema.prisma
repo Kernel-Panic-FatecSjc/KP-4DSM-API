@@ -23,6 +23,7 @@ enum OperadorAlerta {
   MAIOR_QUE
   MENOR_QUE
   IGUAL_A
+  DIFERENTE_DE
   MAIOR_OU_IGUAL
   MENOR_OU_IGUAL
 }
