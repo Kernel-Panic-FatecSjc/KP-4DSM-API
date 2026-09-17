@@ -72,3 +72,35 @@ export interface FiltrosAlarmes {
   ate?: string;
   pagina?: number;
 }
+
+export interface Alerta {
+  id: string;
+  operador: string;
+  valorLimite: number;
+  severidade: SeveridadeAlerta;
+  ativo: boolean;
+  criadoEm: string;
+  estacao: { id: string; nome: string };
+  parametro: { id: string; nome: string; unidade: string };
+}
+
+export interface ListaAlertas {
+  itens: Alerta[];
+  total: number;
+  pagina: number;
+  tamanho: number;
+}
+
+export interface OpcoesFiltroAlertas {
+  estacoes: { id: string; nome: string }[];
+  tiposParametro: { id: string; nome: string }[];
+  severidades: SeveridadeAlerta[];
+}
+
+export interface FiltrosAlertas {
+  estacaoId?: string;
+  tipoParametroId?: string;
+  severidade?: SeveridadeAlerta;
+  ativo?: boolean;
+  pagina?: number;
+}
