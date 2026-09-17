@@ -79,13 +79,6 @@ export default function Header({
 
             <div className={styles.actions}>
 
-                {pathname === "/alertas" && (
-                    <button className={styles.newButton}>
-                        <span>＋</span>
-                        Novo alerta
-                    </button>
-                )}
-
                 <div className={styles.headerAvatar}>
                     RB
                 </div>
