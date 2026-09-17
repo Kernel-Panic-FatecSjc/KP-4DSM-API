@@ -4,6 +4,7 @@ import { AlarmesModule } from './alarmes/alarmes.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AutenticacaoModule } from './autenticacao/autenticacao.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 
@@ -14,6 +15,7 @@ import { UsuariosModule } from './usuarios/usuarios.module';
     UsuariosModule,
     AutenticacaoModule,
     AlarmesModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [AppService],
