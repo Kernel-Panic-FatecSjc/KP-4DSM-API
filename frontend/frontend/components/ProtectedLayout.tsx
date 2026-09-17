@@ -9,7 +9,8 @@ import { api, ErroApi } from '@/lib/api';
  * Adicione aqui o caminho (ou prefixo) de qualquer página que deva
  * ficar acessível mesmo sem login, sem precisar tirá-la deste grupo.
  */
-const EXCECOES: string[] = [];
+const EXCECOES: string[] = ["/buscar-usuarios"];
+
 
 function ehExcecao(pathname: string): boolean {
   return EXCECOES.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`));
