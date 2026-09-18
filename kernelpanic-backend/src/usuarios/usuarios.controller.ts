@@ -1,6 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { GuardaAdministrador } from '../autenticacao/guarda-administrador.guard';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import { AtualizarUsuarioDto } from './dto/atualizar-usuario.dto';
+import { BuscarUsuariosQueryDto } from './dto/buscar-usuarios-query.dto';
 import { CriarUsuarioDto } from './dto/criar-usuario.dto';
 import { UsuarioRespostaDto } from './dto/usuario-resposta.dto';
 import { UsuariosService } from './usuarios.service';
@@ -17,12 +19,14 @@ export class UsuariosController {
   }
 
   @Get()
-  async buscarTodos(): Promise<UsuarioRespostaDto[]> {
-    const usuarios = await this.usuariosService.buscarTodos();
+  @UseGuards(GuardaAdministrador)
+  async buscarTodos(@Query() query: BuscarUsuariosQueryDto): Promise<UsuarioRespostaDto[]> {
+    const usuarios = await this.usuariosService.buscarTodos(query.busca);
     return usuarios.map((usuario) => new UsuarioRespostaDto(usuario));
   }
 
   @Get(':id')
+  @UseGuards(GuardaAdministrador)
   async buscarPorId(@Param('id') id: string): Promise<UsuarioRespostaDto> {
     const usuario = await this.usuariosService.buscarPorId(id);
     return new UsuarioRespostaDto(usuario);

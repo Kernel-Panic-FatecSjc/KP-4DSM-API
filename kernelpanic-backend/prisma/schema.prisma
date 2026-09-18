@@ -40,6 +40,11 @@ enum StatusAlarme {
   RESOLVIDO
 }
 
+enum StatusOperacionalEstacao {
+  ATIVA
+  INATIVA
+}
+
 model Usuario {
   id           String      @id @default(uuid())
   nome         String
@@ -58,12 +63,15 @@ model Usuario {
 
 /// Estações físicas de coleta.
 model Estacao {
-  id           String   @id @default(uuid())
-  nome         String
-  endereco     String
-  vid          String   @unique
-  criadoEm     DateTime @default(now())
-  atualizadoEm DateTime @updatedAt
+  id                 String                  @id @default(uuid())
+  nome               String
+  endereco           String
+  vid                String                  @unique
+  latitude           Float
+  longitude          Float
+  statusOperacional  StatusOperacionalEstacao @default(ATIVA)
+  criadoEm           DateTime                @default(now())
+  atualizadoEm       DateTime                @updatedAt
 
   usuarioId String
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
