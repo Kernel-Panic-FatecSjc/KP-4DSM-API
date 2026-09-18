@@ -13,7 +13,9 @@ describe('Autenticação (e2e)', () => {
 
   const admin = { nome: 'Admin E2E', email: `e2e-admin-${Date.now()}@teste.com`, senha: 'senha12345' };
   const usuario = { nome: 'Usuário E2E', email: `e2e-${Date.now()}@teste.com`, senha: 'senha12345' };
+  const monitor = { nome: 'Monitor E2E', email: `e2e-monitor-${Date.now()}@teste.com`, senha: 'senha12345' };
   let adminCookie: string[];
+  let monitorCookie: string[];
   let outroUsuarioId: string;
 
   beforeAll(async () => {
@@ -33,9 +35,14 @@ describe('Autenticação (e2e)', () => {
     await prisma.usuario.create({
       data: { nome: admin.nome, email: admin.email, senhaHash: await bcrypt.hash(admin.senha, 10) },
     });
+    await prisma.usuario.create({
+      data: { nome: monitor.nome, email: monitor.email, senhaHash: await bcrypt.hash(monitor.senha, 10), tipo: 'MONITOR' },
+    });
 
     const respostaLoginAdmin = await request(app.getHttpServer()).post('/autenticacao/login').send(admin);
     adminCookie = respostaLoginAdmin.headers['set-cookie'] as unknown as string[];
+    const respostaLoginMonitor = await request(app.getHttpServer()).post('/autenticacao/login').send(monitor);
+    monitorCookie = respostaLoginMonitor.headers['set-cookie'] as unknown as string[];
   });
 
   afterAll(async () => {
@@ -93,6 +100,23 @@ describe('Autenticação (e2e)', () => {
     expect(respostaPerfil.body).toMatchObject({ email: usuario.email });
 
     await request(app.getHttpServer()).get('/usuarios').set('Cookie', cookie).expect(200);
+  });
+
+  it('restringe a listagem de usuários ao administrador', async () => {
+    await request(app.getHttpServer()).get('/usuarios').set('Cookie', monitorCookie).expect(403);
+  });
+
+  it('permite buscar usuários por nome sem expor senha', async () => {
+    const resposta = await request(app.getHttpServer())
+      .get('/usuarios')
+      .query({ busca: 'Monitor E2E' })
+      .set('Cookie', adminCookie)
+      .expect(200);
+
+    expect(resposta.body).toHaveLength(1);
+    expect(resposta.body[0]).toMatchObject({ nome: monitor.nome, email: monitor.email });
+    expect(resposta.body[0].senhaHash).toBeUndefined();
+    expect(resposta.body[0].senha).toBeUndefined();
   });
 
   it('permite que um usuário autenticado edite outro usuário', async () => {

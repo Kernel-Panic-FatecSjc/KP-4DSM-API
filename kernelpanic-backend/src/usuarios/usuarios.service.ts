@@ -23,8 +23,20 @@ export class UsuariosService {
     });
   }
 
-  async buscarTodos(): Promise<Usuario[]> {
-    return this.prisma.usuario.findMany({ orderBy: { criadoEm: 'asc' } });
+  async buscarTodos(busca?: string): Promise<Usuario[]> {
+    const termo = busca?.trim();
+
+    return this.prisma.usuario.findMany({
+      where: termo
+        ? {
+            OR: [
+              { nome: { contains: termo, mode: 'insensitive' } },
+              { email: { contains: termo, mode: 'insensitive' } },
+            ],
+          }
+        : undefined,
+      orderBy: { criadoEm: 'asc' },
+    });
   }
 
   async buscarPorId(id: string): Promise<Usuario> {
