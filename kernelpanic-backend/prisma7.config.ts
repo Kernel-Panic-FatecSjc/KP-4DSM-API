@@ -11,5 +11,9 @@ export default defineConfig({
   },
   datasource: {
     url: process.env["DATABASE_URL"],
+    // Banco descartável usado pelo `migrate dev` e pelo
+    // `migrate diff --from-migrations` para replicar as migrations e descobrir
+    // o estado real que elas produzem. Sem isso o diff se recusa a rodar.
+    shadowDatabaseUrl: process.env["SHADOW_DATABASE_URL"],
   },
 });

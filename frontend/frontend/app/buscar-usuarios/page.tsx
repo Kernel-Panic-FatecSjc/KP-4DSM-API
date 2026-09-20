@@ -119,6 +119,7 @@ export default function BuscarUsuariosPage() {
   }, [router]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- busca perfil e listagem ao montar a página
     void loadUsers();
   }, [loadUsers]);
 
