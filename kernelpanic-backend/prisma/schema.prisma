@@ -63,15 +63,15 @@ model Usuario {
 
 /// Estações físicas de coleta.
 model Estacao {
-  id                 String                  @id @default(uuid())
-  nome               String
-  endereco           String
-  vid                String                  @unique
-  latitude           Float
-  longitude          Float
-  statusOperacional  StatusOperacionalEstacao @default(ATIVA)
-  criadoEm           DateTime                @default(now())
-  atualizadoEm       DateTime                @updatedAt
+  id                String                   @id @default(uuid())
+  nome              String
+  endereco          String
+  vid               String                   @unique
+  latitude          Float                    @default(0)
+  longitude         Float                    @default(0)
+  statusOperacional StatusOperacionalEstacao @default(ATIVA)
+  criadoEm          DateTime                 @default(now())
+  atualizadoEm      DateTime                 @updatedAt
 
   usuarioId String
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
@@ -169,12 +169,12 @@ model Alarme {
 /// qualquer validação/normalização em Parametro/Medida. Imutável — preserva a
 /// procedência técnica do dado e o momento exato de recebimento (RF03/US04).
 model LeituraBruta {
-  id                  String                              @id @default(uuid())
+  id                  String                               @id @default(uuid())
   vidEstacao          String
   payload             Json
   localizacao         Unsupported("geometry(Point, 4326)")
   unixtimeDispositivo BigInt
-  recebidoEm          DateTime                            @default(now())
+  recebidoEm          DateTime                             @default(now())
 
   @@index([vidEstacao, recebidoEm])
   @@map("leituras_brutas")
@@ -187,13 +187,13 @@ model LeituraBruta {
 /// "autenticacao.login", "alertas.inativar") em vez de enum, para não exigir
 /// migration a cada nova ação auditável.
 model LogAuditoria {
-  id           String   @id @default(uuid())
-  acao         String
-  entidade     String
-  entidadeId   String?
-  detalhes     Json?
-  enderecoIp   String?
-  criadoEm     DateTime @default(now())
+  id         String   @id @default(uuid())
+  acao       String
+  entidade   String
+  entidadeId String?
+  detalhes   Json?
+  enderecoIp String?
+  criadoEm   DateTime @default(now())
 
   usuarioId String?
   usuario   Usuario? @relation(fields: [usuarioId], references: [id])
