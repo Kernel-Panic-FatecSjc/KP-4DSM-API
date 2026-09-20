@@ -7,9 +7,72 @@ on:
     branches: [main]
 
 jobs:
+  alteracoes:
+    name: Detectar alterações
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filtro.outputs.backend }}
+      frontend: ${{ steps.filtro.outputs.frontend }}
+      banco: ${{ steps.filtro.outputs.banco }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: filtro
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          # Em push na main nada é filtrado: a main é a referência de
+          # integração e o status dela precisa cobrir o projeto inteiro.
+          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
+            echo "Push na main: todos os jobs rodam."
+            {
+              echo "backend=true"
+              echo "frontend=true"
+              echo "banco=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          arquivos=$(git diff --name-only "$BASE_SHA" HEAD)
+          echo "Arquivos alterados neste PR:"
+          echo "$arquivos"
+
+          casa() {
+            printf '%s\n' "$arquivos" | grep -qE "$1"
+          }
+
+          backend=false
+          frontend=false
+          banco=false
+
+          if casa '^\.github/workflows/'; then
+            # Mudança no próprio pipeline revalida tudo: as regras dos jobs
+            # são o que está sendo alterado.
+            backend=true
+            frontend=true
+            banco=true
+          else
+            if casa '^kernelpanic-backend/'; then backend=true; fi
+            if casa '^frontend/'; then frontend=true; fi
+            if casa '^kernelpanic-backend/(prisma/|prisma7\.config\.ts)'; then banco=true; fi
+          fi
+
+          {
+            echo "backend=$backend"
+            echo "frontend=$frontend"
+            echo "banco=$banco"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "backend=$backend  frontend=$frontend  banco=$banco"
+
   backend:
     name: Backend (NestJS)
     runs-on: ubuntu-latest
+    needs: alteracoes
+    if: needs.alteracoes.outputs.backend == 'true'
     defaults:
       run:
         working-directory: ./kernelpanic-backend
@@ -41,6 +104,8 @@ jobs:
   frontend:
     name: Frontend (Next.js)
     runs-on: ubuntu-latest
+    needs: alteracoes
+    if: needs.alteracoes.outputs.frontend == 'true'
     defaults:
       run:
         working-directory: ./frontend/frontend
@@ -69,6 +134,8 @@ jobs:
   migrations:
     name: Banco e Migrations
     runs-on: ubuntu-latest
+    needs: alteracoes
+    if: needs.alteracoes.outputs.banco == 'true'
     defaults:
       run:
         working-directory: ./kernelpanic-backend
