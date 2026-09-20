@@ -1,0 +1,73 @@
+name: Padrão de commit e PR
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  padrao:
+    name: Padrão de commit e PR
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verificar título do PR e mensagens de commit
+        env:
+          TITULO_PR: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          ESCOPO='US[0-9]{2}-[0-9]{2}|#[0-9]+|[Nn]ot-[Uu][Ss]'
+          PADRAO="^((feat|fix|style|refactor|test)\((${ESCOPO})\)|(docs|chore)(\((${ESCOPO})\))?): .+"
+
+          falhas=0
+
+          validar() {
+            if printf '%s' "$2" | grep -qE "$PADRAO"; then
+              echo "  ok   $1: $2"
+            else
+              echo "::error::$1 fora do padrão: $2"
+              falhas=$((falhas + 1))
+            fi
+          }
+
+          validar "Título do PR" "$TITULO_PR"
+
+          # Commits de merge ficam de fora: a mensagem é gerada pelo GitHub e
+          # não tem como seguir a convenção.
+          while IFS= read -r assunto; do
+            [ -z "$assunto" ] && continue
+            validar "Commit" "$assunto"
+          done < <(git log --no-merges --format=%s "$BASE_SHA..HEAD")
+
+          if [ "$falhas" -gt 0 ]; then
+          cat <<'AJUDA'
+
+          Formato esperado:  tipo(escopo): resumo
+
+            tipo     feat, fix, docs, style, chore, refactor, test
+            escopo   US02-04   tarefa de User Story (história-tarefa)
+                     #39       tarefa de item técnico (número da issue)
+                     not-US    sem vínculo com história ou issue
+                     omitido   somente para docs e chore
+
+          Um espaço depois dos dois-pontos, e o resumo não pode ser vazio.
+
+          Exemplos:
+            feat(US01-02): implementar login JWT em cookie e CRUD de usuários
+            feat(#39): Trigger de disparo automático de alertas
+            docs: Atualização do README
+
+          Padrão completo:
+          https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Dev-Padrao-de-commit
+
+          Para corrigir um commit já enviado: `git commit --amend` no último,
+          `git rebase -i` nos anteriores, e push forçado na sua branch.
+          AJUDA
+            exit 1
+          fi
+
+          echo "Título do PR e commits dentro do padrão."
