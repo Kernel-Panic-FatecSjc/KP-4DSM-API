@@ -26,6 +26,15 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Gerar Prisma Client
+        run: npm run prisma:generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Build
         run: npm run build
 
@@ -48,5 +57,85 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Build
         run: npm run build
+
+  migrations:
+    name: Banco e Migrations
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./kernelpanic-backend
+
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: kernelpanic
+          POSTGRES_PASSWORD: kernelpanic
+          POSTGRES_DB: kernelpanic
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kernelpanic"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://kernelpanic:kernelpanic@localhost:5432/kernelpanic?schema=public
+      SHADOW_DATABASE_URL: postgresql://kernelpanic:kernelpanic@localhost:5432/kernelpanic_shadow
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Migrations existentes não podem ser alteradas
+        if: github.event_name == 'pull_request'
+        run: |
+          alteradas=$(git diff --name-only --diff-filter=MDR \
+            "${{ github.event.pull_request.base.sha }}" HEAD -- prisma/migrations || true)
+          if [ -n "$alteradas" ]; then
+            echo "::error::Migrations já existentes na main foram alteradas:"
+            echo "$alteradas"
+            echo "Crie uma migration NOVA em vez de editar uma existente."
+            exit 1
+          fi
+          echo "Nenhuma migration existente foi alterada."
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: kernelpanic-backend/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Validar schema
+        run: npx prisma validate
+
+      - name: Criar shadow database
+        run: |
+          PGPASSWORD=kernelpanic psql -h localhost -U kernelpanic -d kernelpanic \
+            -c 'CREATE DATABASE kernelpanic_shadow;'
+
+      - name: Aplicar migrations em banco vazio
+        run: npx prisma migrate deploy
+
+      - name: Diferença entre schema.prisma e migrations
+        run: |
+          npx prisma migrate diff \
+            --from-migrations ./prisma/migrations \
+            --to-schema ./prisma/schema.prisma \
+            --exit-code
+
+      - name: Seed
+        run: npm run db:seed

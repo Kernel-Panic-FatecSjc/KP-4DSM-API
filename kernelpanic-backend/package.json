@@ -16,6 +16,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "lint": "oxlint src/ test/",
+    "typecheck": "tsc --noEmit",
     "db:seed": "ts-node prisma/seed.ts",
     "teste:carga": "ts-node teste-carga/teste-carga-esp32.ts",
     "teste:carga:taxa-fixa": "ts-node teste-carga/teste-carga-taxa-fixa.ts",
