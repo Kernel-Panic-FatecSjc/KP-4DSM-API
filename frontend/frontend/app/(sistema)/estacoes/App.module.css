@@ -21,9 +21,7 @@
     align-items: center;
     gap: 7px;
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.12);
-    transition:
-        background-color 0.2s,
-        transform 0.2s;
+    transition: background-color 0.2s, transform 0.2s;
 }
 
 .newButton:hover {
@@ -33,7 +31,7 @@
 .title {
     color: #143f5c;
     font-size: 30px;
-    font-weight: 76bold;
+    font-weight: 700;
 }
 
 .subtitle {
@@ -139,16 +137,12 @@
     background: currentColor;
 }
 
-.critical {
+.active {
+    color: #69d94d;
+}
+
+.notActive {
     color: #d94d4d;
-}
-
-.high {
-    color: #4b9ad9;
-}
-
-.normal {
-    color: #c7b75b;
 }
 
 .actionsCell {
@@ -174,7 +168,8 @@
 
 .checkButton,
 .moreButton,
-.pageButton {
+.pagButton,
+.secondaryButton {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -345,6 +340,84 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 18px;
+}
+
+.sensorInputRow {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.sensorInputRow .inputField {
+    flex: 1;
+}
+
+.secondaryButton {
+    height: 48px;
+    padding: 0 18px;
+    border-radius: 10px;
+    background: #ebf0f1;
+    color: #143f5c;
+    font-weight: 600;
+}
+
+.sensorList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 18px;
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 4px;
+}
+
+.sensorListHeader,
+.sensorListRow {
+    display: grid;
+    grid-template-columns: 80px minmax(150px, 1.5fr) minmax(120px, 1fr) 70px 76px;
+    align-items: center;
+    gap: 10px;
+}
+
+.sensorListHeader {
+    padding: 0 12px;
+    color: #617d8c;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.sensorListRow {
+    padding: 10px 12px;
+    background: white;
+    color: #143f5c;
+    border: 1px solid #dfe7ea;
+    border-radius: 8px;
+    font-size: 0.85rem;
+}
+
+.sensorListValue {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.removeSensorButton {
+    border: none;
+    background: #fcebea;
+    color: #b12b2b;
+    border-radius: 6px;
+    padding: 7px 8px;
+    font-family: "Sora", Arial, Helvetica, sans-serif;
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.emptySensors {
+    color: #617d8c;
+    font-size: 0.9rem;
 }
 
 .modalActions {
