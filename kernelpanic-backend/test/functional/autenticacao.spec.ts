@@ -1,34 +1,23 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import cookieParser from 'cookie-parser';
 import request from 'supertest';
-import type { App } from 'supertest/types';
-import { AppModule } from '../src/app.module';
-import { PrismaService } from '../src/prisma/prisma.service';
+import { PrismaService } from '../../src/prisma/prisma.service';
+import { PREFIXO_TESTE, autenticar, criarAppDeTeste, emailDeTeste } from '../helpers';
 
-describe('Autenticação (e2e)', () => {
-  let app: INestApplication<App>;
+describe('Autenticação (funcional)', () => {
+  let app: INestApplication;
   let prisma: PrismaService;
 
-  const admin = { nome: 'Admin E2E', email: `e2e-admin-${Date.now()}@teste.com`, senha: 'senha12345' };
-  const usuario = { nome: 'Usuário E2E', email: `e2e-${Date.now()}@teste.com`, senha: 'senha12345' };
-  const monitor = { nome: 'Monitor E2E', email: `e2e-monitor-${Date.now()}@teste.com`, senha: 'senha12345' };
+  const admin = { nome: 'Admin', email: emailDeTeste('admin'), senha: 'senha12345' };
+  const usuario = { nome: 'Usuário', email: emailDeTeste('usuario'), senha: 'senha12345' };
+  const monitor = { nome: 'Monitor', email: emailDeTeste('monitor'), senha: 'senha12345' };
   let adminCookie: string[];
   let monitorCookie: string[];
   let outroUsuarioId: string;
 
   beforeAll(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    app.use(cookieParser());
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
-    await app.init();
-
-    prisma = moduleFixture.get(PrismaService);
+    app = await criarAppDeTeste();
+    prisma = app.get(PrismaService);
 
     // Usuário criado diretamente no banco (bootstrap), simulando o usuário
     // de seed que só existe para permitir a criação dos demais via API.
@@ -39,14 +28,12 @@ describe('Autenticação (e2e)', () => {
       data: { nome: monitor.nome, email: monitor.email, senhaHash: await bcrypt.hash(monitor.senha, 10), tipo: 'MONITOR' },
     });
 
-    const respostaLoginAdmin = await request(app.getHttpServer()).post('/autenticacao/login').send(admin);
-    adminCookie = respostaLoginAdmin.headers['set-cookie'] as unknown as string[];
-    const respostaLoginMonitor = await request(app.getHttpServer()).post('/autenticacao/login').send(monitor);
-    monitorCookie = respostaLoginMonitor.headers['set-cookie'] as unknown as string[];
+    adminCookie = await autenticar(app, admin);
+    monitorCookie = await autenticar(app, monitor);
   });
 
   afterAll(async () => {
-    await prisma.usuario.deleteMany({ where: { email: { contains: 'e2e-' } } });
+    await prisma.usuario.deleteMany({ where: { email: { contains: PREFIXO_TESTE } } });
     await app.close();
   });
 
@@ -89,8 +76,7 @@ describe('Autenticação (e2e)', () => {
   });
 
   it('acessa rota protegida usando o cookie recebido no login', async () => {
-    const respostaLogin = await request(app.getHttpServer()).post('/autenticacao/login').send(usuario);
-    const cookie = respostaLogin.headers['set-cookie'] as unknown as string[];
+    const cookie = await autenticar(app, usuario);
 
     const respostaPerfil = await request(app.getHttpServer())
       .get('/autenticacao/perfil')
@@ -109,7 +95,7 @@ describe('Autenticação (e2e)', () => {
   it('permite buscar usuários por nome sem expor senha', async () => {
     const resposta = await request(app.getHttpServer())
       .get('/usuarios')
-      .query({ busca: 'Monitor E2E' })
+      .query({ busca: 'Monitor' })
       .set('Cookie', adminCookie)
       .expect(200);
 
@@ -123,23 +109,22 @@ describe('Autenticação (e2e)', () => {
     const outro = await request(app.getHttpServer())
       .post('/usuarios')
       .set('Cookie', adminCookie)
-      .send({ nome: 'Outro E2E', email: `e2e-outro-${Date.now()}@teste.com`, senha: 'senha12345' });
+      .send({ nome: 'Outro', email: emailDeTeste('outro'), senha: 'senha12345' });
     outroUsuarioId = outro.body.id;
 
-    const respostaLogin = await request(app.getHttpServer()).post('/autenticacao/login').send(usuario);
-    const cookie = respostaLogin.headers['set-cookie'] as unknown as string[];
+    const cookie = await autenticar(app, usuario);
 
     await request(app.getHttpServer())
       .patch(`/usuarios/${outroUsuarioId}`)
       .set('Cookie', cookie)
-      .send({ nome: 'Outro E2E Editado' })
+      .send({ nome: 'Outro Editado' })
       .expect(200);
   });
 
   it('ao inativar um usuário, o cookie/token dele já emitido perde validade imediatamente', async () => {
     const vitima = {
-      nome: 'Vítima E2E',
-      email: `e2e-vitima-${Date.now()}@teste.com`,
+      nome: 'Vítima',
+      email: emailDeTeste('vitima'),
       senha: 'senha12345',
     };
     const respostaCriacao = await request(app.getHttpServer())
@@ -148,10 +133,7 @@ describe('Autenticação (e2e)', () => {
       .send(vitima);
     const vitimaId = respostaCriacao.body.id;
 
-    const respostaLoginVitima = await request(app.getHttpServer())
-      .post('/autenticacao/login')
-      .send(vitima);
-    const vitimaCookie = respostaLoginVitima.headers['set-cookie'] as unknown as string[];
+    const vitimaCookie = await autenticar(app, vitima);
 
     // O cookie funciona normalmente enquanto a conta está ativa.
     await request(app.getHttpServer()).get('/autenticacao/perfil').set('Cookie', vitimaCookie).expect(200);
@@ -171,8 +153,7 @@ describe('Autenticação (e2e)', () => {
   });
 
   it('faz logout e invalida o cookie', async () => {
-    const respostaLogin = await request(app.getHttpServer()).post('/autenticacao/login').send(usuario);
-    const cookieLogin = respostaLogin.headers['set-cookie'] as unknown as string[];
+    const cookieLogin = await autenticar(app, usuario);
 
     const respostaLogout = await request(app.getHttpServer())
       .post('/autenticacao/logout')
