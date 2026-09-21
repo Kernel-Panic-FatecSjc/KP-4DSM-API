@@ -22,8 +22,8 @@ const menuItems = [
         icon: "♙",
     },
     {
-        label: "Estágios",
-        href: "/estagios",
+        label: "Estações",
+        href: "/estacoes",
         icon: "▤",
     },
 ];
