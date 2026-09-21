@@ -3,7 +3,18 @@
 import React, { useMemo, useState } from "react";
 import styles from "./App.module.css";
 
-const alertasBase = [
+type Alerta = {
+    nome: string;
+    codigo: string;
+    estagio: "Entrada" | "Processo" | "Fechamento";
+    severidade: "crítico" | "alto" | "normal";
+    tempo: string;
+    severidadeClass: string;
+};
+
+type SeveridadeSelect = "Alto" | "Crítico" | "Normal";
+
+const alertasBase: Alerta[] = [
     {
         nome: "Sem resposta do turno",
         codigo: "AL-2841",
@@ -73,13 +84,35 @@ const alertasBase = [
 const ITENS_POR_PAGINA = 5;
 
 export default function Alertas() {
-    const [alertas, setAlertas] = useState(alertasBase);
+    const [alertas, setAlertas] = useState<Alerta[]>(alertasBase);
     const [pesquisa, setPesquisa] = useState("");
     const [paginaAtual, setPaginaAtual] = useState(1);
     const [modalAberto, setModalAberto] = useState(false);
     const [descricao, setDescricao] = useState("");
-    const [estagio, setEstagio] = useState("Entrada");
-    const [severidade, setSeveridade] = useState("Alto");
+    const [estagio, setEstagio] = useState<Alerta["estagio"]>("Entrada");
+    const [severidade, setSeveridade] = useState<SeveridadeSelect>("Alto");
+    const [menuAbertoCodigo, setMenuAbertoCodigo] = useState<string | null>(null);
+    const [modoEdicao, setModoEdicao] = useState<"cadastro" | "edicao">("cadastro");
+    const [alertaSelecionado, setAlertaSelecionado] = useState<Alerta | null>(null);
+    const [confirmacaoExclusao, setConfirmacaoExclusao] = useState<string | null>(null);
+
+    const resetFormulario = () => {
+        setDescricao("");
+        setEstagio("Entrada");
+        setSeveridade("Alto");
+    };
+
+    const mapearSeveridadeParaSelect = (valor: Alerta["severidade"]): SeveridadeSelect => {
+        if (valor === "crítico") {
+            return "Crítico";
+        }
+
+        if (valor === "alto") {
+            return "Alto";
+        }
+
+        return "Normal";
+    };
 
     const alertasFiltrados = useMemo(() => {
         const termo = pesquisa.trim().toLowerCase();
@@ -126,13 +159,44 @@ export default function Alertas() {
         alertasFiltrados.length
     );
 
-    const abrirModal = () => setModalAberto(true);
+    const abrirModal = () => {
+        setModoEdicao("cadastro");
+        setAlertaSelecionado(null);
+        resetFormulario();
+        setModalAberto(true);
+        setMenuAbertoCodigo(null);
+    };
+
+
+    const abrirModalEdicao = (alerta: Alerta) => {
+        setModoEdicao("edicao");
+        setAlertaSelecionado(alerta);
+        setDescricao(alerta.nome);
+        setEstagio(alerta.estagio);
+        setSeveridade(mapearSeveridadeParaSelect(alerta.severidade));
+        setModalAberto(true);
+        setMenuAbertoCodigo(null);
+    };
 
     const fecharModal = () => {
         setModalAberto(false);
-        setDescricao("");
-        setEstagio("Entrada");
-        setSeveridade("Alto");
+        setModoEdicao("cadastro");
+        setAlertaSelecionado(null);
+        resetFormulario();
+    };
+
+    const getSeveridadeClass = (valor: string) => {
+        const severidadeNormalizada = valor.toLowerCase();
+
+        if (severidadeNormalizada === "crítico" || severidadeNormalizada === "critico") {
+            return styles.critical;
+        }
+
+        if (severidadeNormalizada === "alto") {
+            return styles.high;
+        }
+
+        return styles.normal;
     };
 
     const cadastrarAlerta = () => {
@@ -142,21 +206,37 @@ export default function Alertas() {
             return;
         }
 
-        const novoCodigo = `AL-${Math.floor(1000 + Math.random() * 9000)}`;
-        const severidadeFinal = severidade.toLowerCase();
+        const severidadeFinal = severidade.toLowerCase() as Alerta["severidade"];
 
-        const novoAlerta = {
+        if (modoEdicao === "edicao" && alertaSelecionado) {
+            setAlertas((lista) =>
+                lista.map((alerta) => {
+                    if (alerta.codigo !== alertaSelecionado.codigo) {
+                        return alerta;
+                    }
+
+                    return {
+                        ...alerta,
+                        nome: texto,
+                        estagio,
+                        severidade: severidadeFinal,
+                        severidadeClass: getSeveridadeClass(severidadeFinal),
+                    };
+                })
+            );
+            fecharModal();
+            return;
+        }
+
+        const novoCodigo = `AL-${Math.floor(1000 + Math.random() * 9000)}`;
+
+        const novoAlerta: Alerta = {
             nome: texto,
             codigo: novoCodigo,
             estagio,
             severidade: severidadeFinal,
             tempo: "agora",
-            severidadeClass:
-                severidadeFinal === "crítico"
-                    ? styles.critical
-                    : severidadeFinal === "alto"
-                        ? styles.high
-                        : styles.normal,
+            severidadeClass: getSeveridadeClass(severidadeFinal),
         };
 
         setAlertas((lista) => [novoAlerta, ...lista]);
@@ -164,6 +244,25 @@ export default function Alertas() {
         setPaginaAtual(1);
         fecharModal();
     };
+
+    const confirmarExclusao = (codigo: string) => {
+        setConfirmacaoExclusao(codigo);
+        setMenuAbertoCodigo(null);
+    };
+
+
+    const excluirAlerta = () => {
+        if (!confirmacaoExclusao) {
+            return;
+        }
+
+
+        setAlertas((lista) =>
+            lista.filter((alerta) => alerta.codigo !== confirmacaoExclusao)
+        );
+        setConfirmacaoExclusao(null);
+    };
+
 
     return (
         <div>
@@ -224,13 +323,50 @@ export default function Alertas() {
                                 </td>
                                 <td>{alerta.tempo}</td>
                                 <td className={styles.actionsCell}>
-                                    <button className={styles.checkButton} type="button" aria-label={`Marcar ${alerta.nome}`}>
-                                        ✓
-                                    </button>
-                                    <button className={styles.moreButton} type="button" aria-label={`Mais opções para ${alerta.nome}`}>
-                                        …
-                                    </button>
+                                    <div className={styles.actionsContent}>
+                                        <button
+                                            className={styles.checkButton}
+                                            type="button"
+                                            aria-label={`Marcar ${alerta.nome}`}
+                                        >
+                                            ✓
+                                        </button>
+                                        <div className={styles.actionWrapper}>
+                                            <button
+                                                className={styles.moreButton}
+                                                type="button"
+                                                aria-label={`Mais opções para ${alerta.nome}`}
+                                                onClick={() =>
+                                                    setMenuAbertoCodigo(
+                                                        menuAbertoCodigo === alerta.codigo ? null : alerta.codigo
+                                                    )
+                                                }
+                                            >
+                                                …
+                                            </button>
+
+                                            {menuAbertoCodigo === alerta.codigo && (
+                                                <div className={styles.actionMenu} role="menu">
+                                                    <button
+                                                        type="button"
+                                                        className={styles.actionMenuButton}
+                                                        onClick={() => abrirModalEdicao(alerta)}
+                                                    >
+                                                        Editar
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={`${styles.actionMenuButton} ${styles.actionMenuButtonDanger}`}
+                                                        onClick={() => confirmarExclusao(alerta.codigo)}
+                                                    >
+                                                        Deletar
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </td>
+
                             </tr>
                         ))}
                     </tbody>
@@ -277,9 +413,13 @@ export default function Alertas() {
                             ×
                         </button>
 
-                        <h2 className={styles.modalTitle}>Cadastrar alerta</h2>
+                        <h2 className={styles.modalTitle}>
+                            {modoEdicao === "edicao" ? "Editar alerta" : "Cadastrar alerta"}
+                        </h2>
                         <p className={styles.modalSubtitle}>
-                            Registre uma ocorrência para acompanhamento da equipe.
+                            {modoEdicao === "edicao"
+                                ? "Atualize as informações do alerta selecionado."
+                                : "Registre uma ocorrência para acompanhamento da equipe."}
                         </p>
 
                         <label className={styles.fieldLabel}>
@@ -298,7 +438,7 @@ export default function Alertas() {
                                 Estágio
                                 <select
                                     value={estagio}
-                                    onChange={(event) => setEstagio(event.target.value)}
+                                    onChange={(event) => setEstagio(event.target.value as Alerta["estagio"])}
                                     className={styles.selectField}
                                 >
                                     <option value="Entrada">Entrada</option>
@@ -311,7 +451,9 @@ export default function Alertas() {
                                 Severidade
                                 <select
                                     value={severidade}
-                                    onChange={(event) => setSeveridade(event.target.value)}
+                                    onChange={(event) =>
+                                        setSeveridade(event.target.value as SeveridadeSelect)
+                                    }
                                     className={styles.selectField}
                                 >
                                     <option value="Alto">Alto</option>
@@ -326,7 +468,40 @@ export default function Alertas() {
                                 Cancelar
                             </button>
                             <button type="button" className={styles.submitButton} onClick={cadastrarAlerta}>
-                                Cadastrar
+                                {modoEdicao === "edicao" ? "Salvar alterações" : "Cadastrar"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {confirmacaoExclusao && (
+                <div className={styles.modalOverlay} onClick={() => setConfirmacaoExclusao(null)}>
+                    <div className={styles.confirmModal} onClick={(event) => event.stopPropagation()}>
+                        <h3 className={styles.confirmTitle}>Confirmar exclusão</h3>
+                        <p className={styles.confirmText}>
+                            Tem certeza que deseja excluir este alerta?
+                        </p>
+
+                        <div className={styles.modalActions}>
+                            <button
+                                type="button"
+                                className={styles.cancelButton}
+                                onClick={() => setConfirmacaoExclusao(null)}
+                            >
+                                Cancelar
+                            </button>
+                            <button
+                                type="button"
+                                className={`${styles.submitButton} ${styles.deleteButton}`}
+                                onClick={() => {
+                                    setAlertas((lista) =>
+                                        lista.filter((alerta) => alerta.codigo !== confirmacaoExclusao)
+                                    );
+                                    setConfirmacaoExclusao(null);
+                                }}
+                            >
+                                Deletar
                             </button>
                         </div>
                     </div>
