@@ -101,6 +101,62 @@ jobs:
       - name: Build
         run: npm run build
 
+  testes:
+    name: Testes (NestJS)
+    runs-on: ubuntu-latest
+    needs: alteracoes
+    if: needs.alteracoes.outputs.backend == 'true'
+    defaults:
+      run:
+        working-directory: ./kernelpanic-backend
+
+    # Job separado dos demais por causa da versão do Node: @nestjs/common@12 é
+    # ESM-only e o require do sandbox do Jest só delega para o require(esm)
+    # nativo a partir do Node 24.9. Em Node 20 toda spec que importe
+    # @nestjs/common falha com "Must use import to load ES Module". Os outros
+    # jobs seguem no 20 porque lint, typecheck e build não executam o código.
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: kernelpanic
+          POSTGRES_PASSWORD: kernelpanic
+          POSTGRES_DB: kernelpanic
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kernelpanic"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://kernelpanic:kernelpanic@localhost:5432/kernelpanic?schema=public
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: kernelpanic-backend/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Gerar Prisma Client
+        run: npm run prisma:generate
+
+      - name: Testes unitários
+        run: npm run test
+
+      - name: Aplicar migrations
+        run: npx prisma migrate deploy
+
+      - name: Testes funcionais
+        run: npm run test:functional
+
   frontend:
     name: Frontend (Next.js)
     runs-on: ubuntu-latest
