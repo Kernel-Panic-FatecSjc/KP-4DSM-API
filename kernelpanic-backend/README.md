@@ -46,14 +46,22 @@ $ npm run start:prod
 
 ## Run tests
 
+Os testes ficam em `test/`, separados por natureza:
+
+- `test/unit/` — serviços, DTOs, validators e guards isolados, com mocks. Não precisa de banco.
+- `test/functional/` — sobem a aplicação e batem via HTTP (supertest). As specs de
+  ingestão substituem o `PrismaService` por um mock; as de autenticação exigem o
+  Postgres do `docker-compose.yml` migrado.
+- `test/helpers.ts`, `test/fixtures.ts`, `test/bootstrap.ts` — apoio compartilhado.
+
 ```bash
-# unit tests
+# testes unitários
 $ npm run test
 
-# e2e tests
-$ npm run test:e2e
+# testes funcionais
+$ npm run test:functional
 
-# test coverage
+# cobertura (unitários)
 $ npm run test:cov
 ```
 

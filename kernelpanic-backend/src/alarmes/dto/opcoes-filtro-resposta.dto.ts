@@ -1,12 +1,17 @@
 import { SeveridadeAlerta, StatusAlarme } from '../../generated/prisma/client';
 
+export interface OpcaoFiltro {
+  id: string;
+  nome: string;
+}
+
 export class OpcoesFiltroRespostaDto {
-  estacoes: { id: string; nome: string }[];
-  tiposParametro: { id: string; nome: string }[];
+  estacoes: OpcaoFiltro[];
+  tiposParametro: OpcaoFiltro[];
   severidades: SeveridadeAlerta[] = Object.values(SeveridadeAlerta);
   status: StatusAlarme[] = Object.values(StatusAlarme);
 
-  constructor(estacoes: { id: string; nome: string }[], tiposParametro: { id: string; nome: string }[]) {
+  constructor(estacoes: OpcaoFiltro[], tiposParametro: OpcaoFiltro[]) {
     this.estacoes = estacoes;
     this.tiposParametro = tiposParametro;
   }
