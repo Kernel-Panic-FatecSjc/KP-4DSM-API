@@ -1,7 +1,11 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import styles from "./App.module.css";
+import { PageHeading } from "@/components/PageHeading";
+import { DataTable, Column } from "@/components/DataTable";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 type Sensor = {
     id: string;
@@ -16,7 +20,6 @@ type Estacao = {
     latitude: number;
     longitude: number;
     status: string;
-    statusClass: string;
     endereco: string;
     sensores: Sensor[];
 };
@@ -41,7 +44,6 @@ const estacoesBase: Estacao[] = [
         latitude: -23.5505,
         longitude: -46.6333,
         status: "Ativo",
-        statusClass: styles.active,
         endereco: "Endereço não informado",
         sensores: [
             { id: "S-001", nome: "Sensor temperatura 01", tipo: "Temperatura", unidade: "°C" },
@@ -64,7 +66,6 @@ const estacoesBase: Estacao[] = [
         latitude: -23.5487,
         longitude: -46.6321,
         status: "Ativo",
-        statusClass: styles.active,
         endereco: "Endereço não informado",
         sensores: [
             { id: "S-013", nome: "Sensor temperatura 03", tipo: "Temperatura", unidade: "°C" },
@@ -83,7 +84,6 @@ const estacoesBase: Estacao[] = [
         latitude: -23.5519,
         longitude: -46.6301,
         status: "Ativo",
-        statusClass: styles.active,
         endereco: "Endereço não informado",
         sensores: [
             { id: "S-021", nome: "Sensor umidade 05", tipo: "Umidade", unidade: "%" },
@@ -99,7 +99,6 @@ const estacoesBase: Estacao[] = [
         latitude: -23.5534,
         longitude: -46.6342,
         status: "Não Ativo",
-        statusClass: styles.notActive,
         endereco: "Endereço não informado",
         sensores: [
             { id: "S-026", nome: "Sensor temperatura 06", tipo: "Temperatura", unidade: "°C" },
@@ -296,7 +295,6 @@ export default function Estacoes() {
 
         const codigo = uuid.trim() || `EST-${Math.floor(1000 + Math.random() * 9000)}`;
         const statusFinal = statusOperacional === "ativo" ? "Ativo" : "Não Ativo";
-        const statusClass = statusOperacional === "ativo" ? styles.active : styles.notActive;
         const novoEndereco = endereco.trim() || "Endereço não informado";
 
         if (modoEdicao === "edicao" && estacaoSelecionada) {
@@ -310,7 +308,6 @@ export default function Estacoes() {
                               latitude: Number(latitude) || estacao.latitude,
                               longitude: Number(longitude) || estacao.longitude,
                               status: statusFinal,
-                              statusClass,
                               endereco: novoEndereco,
                           }
                         : estacao
@@ -326,7 +323,6 @@ export default function Estacoes() {
             latitude: Number(latitude) || -23.5505,
             longitude: Number(longitude) || -46.6333,
             status: statusFinal,
-            statusClass,
             endereco: novoEndereco,
             sensores: [],
         };
@@ -363,378 +359,377 @@ export default function Estacoes() {
         return `${total} ${total === 1 ? "sensor" : "sensores"}`;
     };
 
-    return (
-        <div>
-            <div className={styles.Header}>
-                <div className={styles.alertaTitulos}>
-                    <h1 className={styles.title}>Estações</h1>
-
-                    <span className={styles.subtitle}>
-                        Acompanhe e gerencie as estações do sistema.
-                    </span>
+    const tableColumns: Column<Estacao>[] = [
+        {
+            header: "Estação",
+            key: "nome",
+            render: (_, estacao) => (
+                <div className="flex flex-col">
+                    <span className="font-medium">{estacao.nome}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">{estacao.codigo}</span>
                 </div>
+            ),
+        },
+        {
+            header: "Latitude/Longitude",
+            key: "latitude",
+            render: (_, estacao) => `${estacao.latitude}, ${estacao.longitude}`,
+        },
+        {
+            header: "Status",
+            key: "status",
+            render: (_, estacao) => (
+                <span className={cn(
+                    "inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium",
+                    estacao.status === "Ativo"
+                        ? "bg-lime/15 text-lime"
+                        : "bg-destructive/15 text-destructive"
+                )}>
+                    <span className={cn(
+                        "size-1.5 rounded-full",
+                        estacao.status === "Ativo" ? "bg-lime" : "bg-destructive"
+                    )} />
+                    {estacao.status}
+                </span>
+            ),
+        },
+        {
+            header: "Sensores",
+            key: "sensores",
+            render: (_, estacao) => renderizarContagemSensores(estacao),
+        },
+        {
+            header: "Ações",
+            key: "codigo",
+            render: (_, estacao) => (
+                <div className="flex items-center justify-end gap-2">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        aria-label={`Associar sensores à ${estacao.nome}`}
+                        onClick={() => abrirModalAssociacao(estacao)}
+                    >
+                        +
+                    </Button>
 
-                <button className={styles.newButton} type="button" onClick={abrirModal}>
-                    <span>＋</span>
-                    Nova Estação
-                </button>
-            </div>
-
-            <br />
-            <br />
-
-            <input
-                placeholder="Buscar por estação ou código"
-                className={styles.searchBar}
-                value={pesquisa}
-                onChange={handlePesquisa}
-            />
-            <div className={styles.tableContainer}>
-                <div className={styles.tableHeader}>
-                    <span>Estações</span>
-                    <button className={styles.exportButton} type="button">
-                        Exportar
-                    </button>
-                </div>
-                <table className={styles.table}>
-                    <thead>
-                        <tr>
-                            <th>ESTAÇÃO</th>
-                            <th>LATITUDE/LONGITUDE</th>
-                            <th>STATUS</th>
-                            <th>SENSORES</th>
-                            <th>AÇÕES</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {estacoesPagina.map((estacao) => (
-                            <tr key={estacao.codigo}>
-                                <td className={styles.nameCell}>
-                                    <span className={styles.alertName}>{estacao.nome}</span>
-                                    <span className={styles.alertCode}>{estacao.codigo}</span>
-                                </td>
-                                <td>
-                                    {estacao.latitude}, {estacao.longitude}
-                                </td>
-                                <td>
-                                    <span className={`${styles.severity} ${estacao.statusClass}`}>
-                                        <span className={styles.dot} aria-hidden="true" />
-                                        {estacao.status}
-                                    </span>
-                                </td>
-                                <td>{renderizarContagemSensores(estacao)}</td>
-                                <td className={styles.actionsCell}>
-                                    <div className={styles.actionsContent}>
-                                        <button
-                                            className={styles.checkButton}
-                                            type="button"
-                                            aria-label={`Associar sensores à ${estacao.nome}`}
-                                            onClick={() => abrirModalAssociacao(estacao)}
-                                        >
-                                            +
-                                        </button>
-
-                                        <div className={styles.actionWrapper}>
-                                            <button
-                                                className={styles.moreButton}
-                                                type="button"
-                                                aria-label={`Mais opções para ${estacao.nome}`}
-                                                onClick={() =>
-                                                    setMenuAbertoCodigo(
-                                                        menuAbertoCodigo === estacao.codigo ? null : estacao.codigo
-                                                    )
-                                                }
-                                            >
-                                                …
-                                            </button>
-
-                                            {menuAbertoCodigo === estacao.codigo && (
-                                                <div className={styles.actionMenu} role="menu">
-                                                    <button
-                                                        type="button"
-                                                        className={styles.actionMenuButton}
-                                                        onClick={() => abrirModalEdicao(estacao)}
-                                                    >
-                                                        Editar
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        className={`${styles.actionMenuButton} ${styles.actionMenuButtonDanger}`}
-                                                        onClick={() => confirmarExclusao(estacao.codigo)}
-                                                    >
-                                                        Deletar
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-
-                <div className={styles.paginacao}>
-                    <span>
-                        {estacoesFiltradas.length === 0
-                            ? "Sem resultados"
-                            : `${Math.min(indiceInicial + 1, estacoesFiltradas.length)}-${indiceFinal} de ${estacoesFiltradas.length}`}
-                    </span>
-                    <div className={styles.pagControls}>
-                        <button
+                    <div className="relative">
+                        <Button
+                            variant="ghost"
+                            size="sm"
                             type="button"
-                            aria-label="Página anterior"
-                            className={styles.pagButton}
-                            onClick={paginaAnterior}
-                            disabled={paginaSegura === 1}
+                            aria-label={`Mais opções para ${estacao.nome}`}
+                            onClick={() =>
+                                setMenuAbertoCodigo(
+                                    menuAbertoCodigo === estacao.codigo ? null : estacao.codigo
+                                )
+                            }
                         >
-                            ‹
-                        </button>
-                        <button
-                            type="button"
-                            aria-label="Próxima página"
-                            className={styles.pagButton}
-                            onClick={proximaPagina}
-                            disabled={paginaSegura === totalPaginas}
-                        >
-                            ›
-                        </button>
+                            …
+                        </Button>
+
+                        {menuAbertoCodigo === estacao.codigo && (
+                            <div className="absolute right-0 top-full z-10 mt-1 w-40 rounded-lg border border-border bg-card shadow-lg" role="menu">
+                                <button
+                                    type="button"
+                                    className="block w-full px-4 py-2 text-left text-sm hover:bg-muted"
+                                    onClick={() => abrirModalEdicao(estacao)}
+                                >
+                                    Editar
+                                </button>
+                                <button
+                                    type="button"
+                                    className="block w-full px-4 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
+                                    onClick={() => confirmarExclusao(estacao.codigo)}
+                                >
+                                    Deletar
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
-            </div>
+            ),
+        },
+    ];
+
+    return (
+        <div className="space-y-5">
+            <PageHeading
+                title="Estações"
+                description="Acompanhe e gerencie as estações do sistema."
+                action={
+                    <Button type="button" onClick={abrirModal}>
+                        + Nova Estação
+                    </Button>
+                }
+            />
+
+            <Input
+                placeholder="Buscar por estação ou código"
+                value={pesquisa}
+                onChange={handlePesquisa}
+                className="rise delay-0"
+            />
+
+            <DataTable
+                columns={tableColumns}
+                data={estacoesPagina}
+                currentPage={paginaSegura}
+                totalPages={totalPaginas}
+                onPageChange={(page) => setPaginaAtual(page)}
+                rowKey="codigo"
+            />
 
             {modalAberto && (
-                <div className={styles.modalOverlay} onClick={fecharModal}>
-                    <div className={styles.modal} onClick={(event) => event.stopPropagation()}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={fecharModal}>
+                    <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
                         <button
                             type="button"
-                            className={styles.closeButton}
+                            className="absolute right-4 top-4 text-2xl text-muted-foreground hover:text-foreground"
                             aria-label="Fechar modal"
                             onClick={fecharModal}
                         >
                             ×
                         </button>
 
-                        <h2 className={styles.modalTitle}>
+                        <h2 className="mb-6 text-lg font-semibold">
                             {modoEdicao === "edicao" ? "Editar estação" : "Cadastrar estação"}
                         </h2>
 
-                        <label className={styles.fieldLabel}>
-                            Nome
-                            <input
-                                type="text"
-                                value={nome}
-                                onChange={(event) => setNome(event.target.value)}
-                                className={styles.inputField}
-                            />
-                        </label>
-
-                        <label className={styles.fieldLabel}>
-                            UUID/MAC
-                            <input
-                                type="text"
-                                value={uuid}
-                                onChange={(event) => setUuid(event.target.value)}
-                                className={styles.inputField}
-                            />
-                        </label>
-
-                        <div className={styles.formRow}>
-                            <label className={styles.fieldLabel}>
-                                Latitude
-                                <input
-                                    type="number"
-                                    step="any"
-                                    value={latitude}
-                                    onChange={(event) => setLatitude(event.target.value)}
-                                    placeholder="Ex: -23.5505"
-                                    className={styles.inputField}
+                        <div className="space-y-4">
+                            <div className="flex flex-col gap-1">
+                                <label htmlFor="nome" className="font-mono text-[10px] uppercase text-muted-foreground">
+                                    Nome
+                                </label>
+                                <Input
+                                    id="nome"
+                                    type="text"
+                                    value={nome}
+                                    onChange={(event) => setNome(event.target.value)}
                                 />
-                            </label>
+                            </div>
 
-                            <label className={styles.fieldLabel}>
-                                Longitude
-                                <input
-                                    type="number"
-                                    step="any"
-                                    value={longitude}
-                                    onChange={(event) => setLongitude(event.target.value)}
-                                    placeholder="Ex: -46.6333"
-                                    className={styles.inputField}
+                            <div className="flex flex-col gap-1">
+                                <label htmlFor="uuid" className="font-mono text-[10px] uppercase text-muted-foreground">
+                                    UUID/MAC
+                                </label>
+                                <Input
+                                    id="uuid"
+                                    type="text"
+                                    value={uuid}
+                                    onChange={(event) => setUuid(event.target.value)}
                                 />
-                            </label>
-                        </div>
+                            </div>
 
-                        <label className={styles.fieldLabel}>
-                            Endereço/Região
-                            <input
-                                type="text"
-                                value={endereco}
-                                onChange={(event) => setEndereco(event.target.value)}
-                                className={styles.inputField}
-                            />
-                        </label>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col gap-1">
+                                    <label htmlFor="latitude" className="font-mono text-[10px] uppercase text-muted-foreground">
+                                        Latitude
+                                    </label>
+                                    <Input
+                                        id="latitude"
+                                        type="number"
+                                        step="any"
+                                        value={latitude}
+                                        onChange={(event) => setLatitude(event.target.value)}
+                                        placeholder="Ex: -23.5505"
+                                    />
+                                </div>
 
-                        <div className={styles.formRow}>
-                            <label className={styles.fieldLabel}>
-                                Status Operacional
+                                <div className="flex flex-col gap-1">
+                                    <label htmlFor="longitude" className="font-mono text-[10px] uppercase text-muted-foreground">
+                                        Longitude
+                                    </label>
+                                    <Input
+                                        id="longitude"
+                                        type="number"
+                                        step="any"
+                                        value={longitude}
+                                        onChange={(event) => setLongitude(event.target.value)}
+                                        placeholder="Ex: -46.6333"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                                <label htmlFor="endereco" className="font-mono text-[10px] uppercase text-muted-foreground">
+                                    Endereço/Região
+                                </label>
+                                <Input
+                                    id="endereco"
+                                    type="text"
+                                    value={endereco}
+                                    onChange={(event) => setEndereco(event.target.value)}
+                                />
+                            </div>
+
+                            <div className="flex flex-col gap-1">
+                                <label htmlFor="status" className="font-mono text-[10px] uppercase text-muted-foreground">
+                                    Status Operacional
+                                </label>
                                 <select
+                                    id="status"
                                     value={statusOperacional}
                                     onChange={(event) => setStatusOperacional(event.target.value as StatusOperacional)}
-                                    className={styles.selectField}
+                                    className="rounded border border-border bg-card px-3 py-2 text-sm"
                                 >
                                     <option value="ativo">Ativo</option>
                                     <option value="inativo">Não Ativo</option>
                                 </select>
-                            </label>
+                            </div>
                         </div>
 
-                        <div className={styles.modalActions}>
-                            <button type="button" className={styles.cancelButton} onClick={fecharModal}>
+                        <div className="mt-6 flex justify-end gap-3">
+                            <Button variant="outline" type="button" onClick={fecharModal}>
                                 Cancelar
-                            </button>
-                            <button type="button" className={styles.submitButton} onClick={cadastrarEstacao}>
+                            </Button>
+                            <Button type="button" onClick={cadastrarEstacao}>
                                 {modoEdicao === "edicao" ? "Salvar" : "Cadastrar"}
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
             )}
 
             {modalAssociacaoAberto && estacaoAssociada && (
-                <div className={styles.modalOverlay} onClick={fecharModalAssociacao}>
-                    <div className={styles.modal} onClick={(event) => event.stopPropagation()}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={fecharModalAssociacao}>
+                    <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
                         <button
                             type="button"
-                            className={styles.closeButton}
+                            className="absolute right-4 top-4 text-2xl text-muted-foreground hover:text-foreground"
                             aria-label="Fechar modal de associação"
                             onClick={fecharModalAssociacao}
                         >
                             ×
                         </button>
 
-                        <h2 className={styles.modalTitle}>Sensores da estação</h2>
-                        <p className={styles.modalSubtitle}>{estacaoAssociada.nome}</p>
+                        <h2 className="text-lg font-semibold">Sensores da estação</h2>
+                        <p className="mt-1 text-sm text-muted-foreground">{estacaoAssociada.nome}</p>
 
-                        <div className={styles.formRow}>
-                            <label className={styles.fieldLabel}>
-                                Tipo
-                                <select
-                                    value={tipoSensor}
-                                    onChange={(event) => setTipoSensor(event.target.value)}
-                                    className={styles.selectField}
-                                >
-                                    {tiposSensores.map((tipo) => (
-                                        <option key={tipo} value={tipo}>
-                                            {tipo}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
+                        <div className="mt-6 space-y-4">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="flex flex-col gap-1">
+                                    <label htmlFor="tipoSensor" className="font-mono text-[10px] uppercase text-muted-foreground">
+                                        Tipo
+                                    </label>
+                                    <select
+                                        id="tipoSensor"
+                                        value={tipoSensor}
+                                        onChange={(event) => setTipoSensor(event.target.value)}
+                                        className="rounded border border-border bg-card px-3 py-2 text-sm"
+                                    >
+                                        {tiposSensores.map((tipo) => (
+                                            <option key={tipo} value={tipo}>
+                                                {tipo}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
 
-                            <label className={styles.fieldLabel}>
-                                Unidade de medida
-                                <select
-                                    value={unidadeMedidaSelecionada}
-                                    onChange={(event) => setUnidadeMedidaSelecionada(event.target.value)}
-                                    className={styles.selectField}
-                                >
-                                    {unidadesMedida.map((unidade) => (
-                                        <option key={unidade} value={unidade}>
-                                            {unidade}
-                                        </option>
-                                    ))}
-                                </select>
-                            </label>
-                        </div>
-
-                        <label className={styles.fieldLabel}>
-                            Lista de sensores
-                            <div className={styles.sensorInputRow}>
-                                <input
-                                    type="text"
-                                    value={nomeSensor}
-                                    onChange={(event) => setNomeSensor(event.target.value)}
-                                    placeholder="Digite o nome do sensor"
-                                    className={styles.inputField}
-                                />
-                                <button
-                                    type="button"
-                                    className={styles.secondaryButton}
-                                    onClick={adicionarSensorLista}
-                                >
-                                    Adicionar
-                                </button>
+                                <div className="flex flex-col gap-1">
+                                    <label htmlFor="unidadeMedida" className="font-mono text-[10px] uppercase text-muted-foreground">
+                                        Unidade de medida
+                                    </label>
+                                    <select
+                                        id="unidadeMedida"
+                                        value={unidadeMedidaSelecionada}
+                                        onChange={(event) => setUnidadeMedidaSelecionada(event.target.value)}
+                                        className="rounded border border-border bg-card px-3 py-2 text-sm"
+                                    >
+                                        {unidadesMedida.map((unidade) => (
+                                            <option key={unidade} value={unidade}>
+                                                {unidade}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
-                        </label>
 
-                        <div className={styles.sensorList}>
+                            <div className="flex flex-col gap-1">
+                                <label htmlFor="nomeSensor" className="font-mono text-[10px] uppercase text-muted-foreground">
+                                    Nome do sensor
+                                </label>
+                                <div className="flex gap-2">
+                                    <Input
+                                        id="nomeSensor"
+                                        type="text"
+                                        value={nomeSensor}
+                                        onChange={(event) => setNomeSensor(event.target.value)}
+                                        placeholder="Digite o nome do sensor"
+                                    />
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={adicionarSensorLista}
+                                    >
+                                        Adicionar
+                                    </Button>
+                                </div>
+                            </div>
+
                             {listaSensores.length === 0 ? (
-                                <span className={styles.emptySensors}>Nenhum sensor adicionado</span>
+                                <div className="rounded border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+                                    Nenhum sensor adicionado
+                                </div>
                             ) : (
-                                <>
-                                    <div className={styles.sensorListHeader}>
-                                        <span>ID</span>
-                                        <span>Nome</span>
-                                        <span>Tipo</span>
-                                        <span>Unidade</span>
-                                        <span />
-                                    </div>
+                                <div className="space-y-2 rounded border border-border bg-muted/30 p-4">
                                     {listaSensores.map((sensor) => (
-                                        <div key={sensor.id} className={styles.sensorListRow}>
-                                            <span className={styles.sensorListValue}>{sensor.id}</span>
-                                            <span className={styles.sensorListValue}>{sensor.nome}</span>
-                                            <span className={styles.sensorListValue}>{sensor.tipo}</span>
-                                            <span className={styles.sensorListValue}>{sensor.unidade}</span>
-                                            <button
+                                        <div key={sensor.id} className="flex items-center justify-between gap-2 rounded border border-border bg-card p-3 text-sm">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex gap-2 text-xs text-muted-foreground">
+                                                    <span className="font-mono">{sensor.id}</span>
+                                                    <span>{sensor.tipo}</span>
+                                                    <span>{sensor.unidade}</span>
+                                                </div>
+                                                <div className="mt-1 font-medium">{sensor.nome}</div>
+                                            </div>
+                                            <Button
                                                 type="button"
-                                                className={styles.removeSensorButton}
+                                                variant="ghost"
+                                                size="sm"
+                                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
                                                 aria-label={`Remover ${sensor.nome}`}
                                                 onClick={() => removerSensorLista(sensor.id)}
                                             >
                                                 Remover
-                                            </button>
+                                            </Button>
                                         </div>
                                     ))}
-                                </>
+                                </div>
                             )}
                         </div>
 
-                        <div className={styles.modalActions}>
-                            <button type="button" className={styles.cancelButton} onClick={fecharModalAssociacao}>
+                        <div className="mt-6 flex justify-end gap-3">
+                            <Button variant="outline" type="button" onClick={fecharModalAssociacao}>
                                 Cancelar
-                            </button>
-                            <button type="button" className={styles.submitButton} onClick={salvarAssociacao}>
+                            </Button>
+                            <Button type="button" onClick={salvarAssociacao}>
                                 Salvar sensores
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
             )}
 
             {confirmacaoExclusao && (
-                <div className={styles.modalOverlay} onClick={() => setConfirmacaoExclusao(null)}>
-                    <div className={styles.confirmModal} onClick={(event) => event.stopPropagation()}>
-                        <h2 className={styles.confirmTitle}>Confirmar exclusão</h2>
-                        <p className={styles.confirmText}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setConfirmacaoExclusao(null)}>
+                    <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
+                        <h2 className="text-lg font-semibold">Confirmar exclusão</h2>
+                        <p className="mt-3 text-sm text-muted-foreground">
                             Tem certeza que deseja deletar esta estação? Essa ação não pode ser desfeita.
                         </p>
 
-                        <div className={styles.modalActions}>
-                            <button
-                                type="button"
-                                className={styles.cancelButton}
-                                onClick={() => setConfirmacaoExclusao(null)}
-                            >
+                        <div className="mt-6 flex justify-end gap-3">
+                            <Button variant="outline" type="button" onClick={() => setConfirmacaoExclusao(null)}>
                                 Cancelar
-                            </button>
-                            <button
+                            </Button>
+                            <Button
                                 type="button"
-                                className={`${styles.submitButton} ${styles.deleteButton}`}
                                 onClick={excluirEstacao}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                             >
                                 Deletar
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>

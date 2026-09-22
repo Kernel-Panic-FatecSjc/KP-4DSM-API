@@ -10,11 +10,10 @@ import { Button } from './ui/button';
 
 const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Alarmes', href: '/alarmes', icon: Bell },
-  { label: 'Alertas', href: '/alertas', icon: Bell },
+  { label: 'Alertas Globais', href: '/alertas-globais', icon: Bell },
+  { label: 'Gerenciamento de Alertas', href: '/gerenciamento-de-alertas', icon: Bell },
   { label: 'Estações', href: '/estacoes', icon: MapPin },
   { label: 'Usuários', href: '/usuarios', icon: Users },
-  { label: 'Usuários (listar)', href: '/usuarios/listar', icon: Users },
   { label: 'Alerta Log', href: '/alerta-log', icon: Bell },
 ];
 
