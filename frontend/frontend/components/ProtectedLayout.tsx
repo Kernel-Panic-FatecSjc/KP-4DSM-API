@@ -20,11 +20,10 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const excecao = ehExcecao(pathname);
-  const skipLogin = process.env.NEXT_PUBLIC_SKIP_LOGIN === 'true';
-  const [autenticado, setAutenticado] = useState(skipLogin);
+  const [autenticado, setAutenticado] = useState(false);
 
   useEffect(() => {
-    if (excecao || skipLogin) return;
+    if (excecao) return;
 
     let ativo = true;
 
@@ -41,7 +40,7 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
     return () => {
       ativo = false;
     };
-  }, [excecao, pathname, router, skipLogin]);
+  }, [excecao, pathname, router]);
 
   if (excecao) {
     return <>{children}</>;
