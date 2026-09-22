@@ -4,7 +4,6 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Search, Users, UserCheck, UserX, X } from 'lucide-react';
-import SideBarAdmin from '@/components/SideBar/SideBarAdmin';
 import { api, ErroApi, type Usuario } from '@/lib/api';
 
 const ITEMS_PER_PAGE = 6;
@@ -186,45 +185,8 @@ export default function BuscarUsuariosPage() {
   }
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
-      <SideBarAdmin />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur-md">
-          <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-3.5">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">
-                Defesa Civil
-              </h2>
-
-              <p className="text-xs text-slate-500">
-                Painel Administrativo
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="hidden text-right sm:block">
-                <p className="text-sm font-medium text-slate-800">
-                  {perfil?.nome ?? 'Carregando...'}
-                </p>
-
-                <p className="text-xs text-slate-400">
-                  {perfil?.email ?? ''}
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => void handleLogout()}
-                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-              >
-                Sair
-              </button>
-            </div>
-          </div>
-        </header>
-
-        <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-6 py-8">
+    <div className="flex min-w-0 flex-1 flex-col">
+      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-6 py-8">
           <div className="mb-8">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">
               Gestão de Acessos
@@ -448,7 +410,6 @@ export default function BuscarUsuariosPage() {
             )}
           </div>
         </main>
-      </div>
     </div>
   );
 }

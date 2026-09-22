@@ -2,7 +2,7 @@
 
 import styles from './App.module.css';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { api, ErroApi, type Usuario } from '@/lib/api';
 
 function destinoSeguro(proximo: string | null): string {
@@ -71,6 +71,14 @@ function FormularioLogin() {
 }
 
 export default function LoginPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    if (process.env.NEXT_PUBLIC_SKIP_LOGIN === 'true') {
+      router.replace('/dashboard');
+    }
+  }, [router]);
+
   return (
     <main className={styles.main}>
       <section className={styles.painelFormulario}>
