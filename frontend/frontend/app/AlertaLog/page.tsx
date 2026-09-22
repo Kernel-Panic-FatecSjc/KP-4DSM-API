@@ -350,7 +350,7 @@ function InfoLinha({ icon: Icon, rotulo, valor, mono }: InfoLinhaProps) {
   );
 }
 
-export default function OcorrenciaDetalhe() {
+export default function AlertaLogPage() {
   const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>(ocorrenciasBase);
   const [selecionadaId, setSelecionadaId] = useState<string>(ocorrenciasBase[0]?.id ?? "");
   const [busca, setBusca] = useState<string>("");
@@ -415,19 +415,17 @@ export default function OcorrenciaDetalhe() {
   const excedeu = ocorrencia.valor >= ocorrencia.limiar;
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: palette.bg }}>
-
-      <div
-        style={{
-          flex: 1,
-          fontFamily:
-            "'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, sans-serif",
-          background: palette.bg,
-          color: palette.textPrimary,
-          minHeight: "100vh",
-          padding: "28px 20px",
-        }}
-      >
+    <div
+      style={{
+        flex: 1,
+        fontFamily:
+          "'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, sans-serif",
+        background: palette.bg,
+        color: palette.textPrimary,
+        minHeight: "100vh",
+        padding: "28px 20px",
+      }}
+    >
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
           .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
@@ -839,7 +837,6 @@ export default function OcorrenciaDetalhe() {
             .sigvia-info-grid { grid-template-columns: 1fr !important; }
           }
         `}</style>
-      </div>
     </div>
   );
 }
