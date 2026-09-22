@@ -2,6 +2,9 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { api, ErroApi } from "@/lib/api";
+import { PageHeading } from "@/components/PageHeading";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 import {
   Search,
   MapPin,
@@ -267,50 +270,23 @@ function Barra({ valor, limiar, cor }: BarraProps) {
   const larguraValor = Math.min(proporcao, 100);
 
   return (
-    <div style={{ marginTop: 14 }}>
-      <div
-        style={{
-          position: "relative",
-          height: 10,
-          borderRadius: 5,
-          background: palette.panelAlt,
-          border: `1px solid ${palette.border}`,
-          overflow: "visible",
-        }}
-      >
+    <div className="mt-3.5">
+      <div className="relative h-2.5 overflow-visible rounded border border-border bg-muted">
         <div
+          className="absolute left-0 top-0 bottom-0 rounded transition-all duration-300"
           style={{
-            position: "absolute",
-            left: 0,
-            top: 0,
-            bottom: 0,
             width: `${larguraValor}%`,
-            borderRadius: 5,
             background: cor,
-            transition: "width 300ms ease",
           }}
         />
         <div
+          className="absolute top-[-4px] bottom-[-4px] w-0.5 bg-foreground/60"
           style={{
-            position: "absolute",
             left: `${Math.min((limiar / limiar) * (100 / 1.6), 62.5)}%`,
-            top: -4,
-            bottom: -4,
-            width: 2,
-            background: palette.textPrimary,
-            opacity: 0.6,
           }}
         />
       </div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginTop: 6,
-          fontSize: 11,
-          color: palette.textFaint,
-        }}
-      >
+      <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
         <span>0</span>
         <span>Limiar configurado à direita da marca</span>
       </div>
@@ -327,22 +303,11 @@ interface InfoLinhaProps {
 
 function InfoLinha({ icon: Icon, rotulo, valor, mono }: InfoLinhaProps) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 10,
-        padding: "10px 0",
-        borderBottom: `1px solid ${palette.borderSoft}`,
-      }}
-    >
-      <Icon size={15} color={palette.textFaint} style={{ marginTop: 2, flexShrink: 0 }} />
+    <div className="flex gap-2.5 border-b border-muted px-0 py-2.5">
+      <Icon size={15} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
       <div>
-        <div style={{ fontSize: 11.5, color: palette.textFaint }}>{rotulo}</div>
-        <div
-          className={mono ? "mono" : undefined}
-          style={{ fontSize: 13.5, color: palette.textPrimary, marginTop: 2 }}
-        >
+        <div className="text-xs text-muted-foreground">{rotulo}</div>
+        <div className={cn("mt-0.5 text-sm text-foreground", mono && "font-mono")}>
           {valor}
         </div>
       </div>
@@ -415,101 +380,46 @@ export default function AlertaLogPage() {
   const excedeu = ocorrencia.valor >= ocorrencia.limiar;
 
   return (
-    <div
-      style={{
-        flex: 1,
-        fontFamily:
-          "'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, sans-serif",
-        background: palette.bg,
-        color: palette.textPrimary,
-        minHeight: "100vh",
-        padding: "28px 20px",
-      }}
-    >
+    <div className="flex flex-1 flex-col">
         <style>{`
           @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-          .mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
-          .lista-item:hover { background: ${palette.panelAlt}; }
-          .lista-item.ativo { background: ${palette.panelAlt}; }
-          input.busca::placeholder { color: ${palette.textFaint}; }
+          .font-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+          .lista-item:hover { background: rgb(242, 247, 253); }
+          .lista-item.ativo { background: rgb(242, 247, 253); }
+          input.busca::placeholder { color: rgb(129, 147, 168); }
         `}</style>
 
-        <div style={{ maxWidth: 1180, margin: "0 auto" }}>
-          <div
-            style={{
-              marginBottom: 20,
-              padding: "18px 20px",
-              borderRadius: 16,
-              background: "linear-gradient(135deg, rgba(58,160,217,0.12), rgba(255,255,255,0.95))",
-              border: `1px solid ${palette.border}`,
-              boxShadow: "0 10px 30px rgba(21, 49, 76, 0.04)",
-            }}
-          >
-            <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0, color: palette.textPrimary }}>
-              Detalhamento de ocorrência
-            </h1>
-            <p style={{ fontSize: 13.5, color: palette.textMuted, margin: "6px 0 0" }}>
-              Monitoramento de parâmetros hidrológicos e geotécnicos — SIGVIA
+        <div className="space-y-5 p-7">
+          <PageHeading
+            title="Detalhamento de ocorrência"
+            description="Monitoramento de parâmetros hidrológicos e geotécnicos — SIGVIA"
+          />
+
+          {erroApi && (
+            <p className="text-xs text-muted-foreground">
+              {erroApi}
             </p>
-            {erroApi && (
-              <p style={{ fontSize: 12, color: palette.textMuted, margin: "10px 0 0" }}>
-                {erroApi}
-              </p>
-            )}
-          </div>
+          )}
 
           <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "340px 1fr",
-              gap: 20,
-            }}
-            className="sigvia-grid"
+            className="grid gap-5 lg:grid-cols-[340px_1fr] sigvia-grid"
           >
-            <div
-              style={{
-                background: palette.panel,
-                border: `1px solid ${palette.border}`,
-                borderRadius: 10,
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
-                maxHeight: 640,
-              }}
-            >
-              <div style={{ padding: 14, borderBottom: `1px solid ${palette.border}` }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    background: palette.panelAlt,
-                    border: `1px solid ${palette.border}`,
-                    borderRadius: 8,
-                    padding: "8px 10px",
-                  }}
-                >
-                  <Search size={15} color={palette.textFaint} />
+            <div className="rise delay-0 flex flex-col overflow-hidden rounded-lg border border-border bg-card">
+              <div className="border-b border-border p-3.5">
+                <div className="flex items-center gap-2 rounded border border-border bg-muted px-2.5 py-2">
+                  <Search size={15} className="text-muted-foreground" />
                   <input
-                    className="busca"
+                    className="busca w-full bg-transparent text-sm outline-none"
                     value={busca}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBusca(e.target.value)}
                     placeholder="Buscar estação, parâmetro ou ID"
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      outline: "none",
-                      color: palette.textPrimary,
-                      fontSize: 13,
-                      width: "100%",
-                    }}
                   />
                 </div>
               </div>
 
-              <div style={{ overflowY: "auto" }}>
+              <div className="overflow-y-auto">
                 {carregando && (
-                  <div style={{ padding: 20, fontSize: 13, color: palette.textFaint }}>
+                  <div className="p-5 text-center text-sm text-muted-foreground">
                     Carregando ocorrências...
                   </div>
                 )}
@@ -522,75 +432,40 @@ export default function AlertaLogPage() {
                       <button
                         key={o.id}
                         onClick={() => setSelecionadaId(o.id)}
-                        className={`lista-item ${ativo ? "ativo" : ""}`}
-                        style={{
-                          display: "flex",
-                          width: "100%",
-                          textAlign: "left",
-                          background: "transparent",
-                          border: "none",
-                          borderBottom: `1px solid ${palette.borderSoft}`,
-                          cursor: "pointer",
-                          padding: 0,
-                        }}
+                        className={`lista-item w-full border-b border-muted text-left transition-colors hover:bg-muted last:border-b-0 ${
+                          ativo ? "ativo bg-muted" : ""
+                        }`}
                       >
-                        <div style={{ width: 4, background: s.cor, flexShrink: 0 }} />
-                        <div style={{ padding: "12px 14px", flex: 1, minWidth: 0 }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "baseline",
-                              gap: 8,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: 13.5,
-                                fontWeight: 500,
-                                color: palette.textPrimary,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {o.estacao}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: 12, color: palette.textMuted, marginTop: 2 }}>
-                            {o.parametro}
-                          </div>
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              alignItems: "center",
-                              marginTop: 8,
-                            }}
-                          >
-                            <span className="mono" style={{ fontSize: 11.5, color: palette.textFaint }}>
-                              {o.dataHora}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: 11,
-                                color: statusConfig[o.status].cor,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 4,
-                              }}
-                            >
+                        <div className="flex">
+                          <div className="w-1 flex-shrink-0" style={{ background: s.cor }} />
+                          <div className="flex-1 px-3.5 py-3">
+                            <div className="flex justify-between gap-2">
+                              <span className="truncate text-sm font-medium text-foreground">
+                                {o.estacao}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                              {o.parametro}
+                            </div>
+                            <div className="mt-2 flex justify-between">
+                              <span className="font-mono text-xs text-muted-foreground">
+                                {o.dataHora}
+                              </span>
                               <span
+                                className="flex items-center gap-1 text-xs"
                                 style={{
-                                  width: 6,
-                                  height: 6,
-                                  borderRadius: "50%",
-                                  background: statusConfig[o.status].cor,
-                                  display: "inline-block",
+                                  color: statusConfig[o.status].cor,
                                 }}
-                              />
-                              {statusConfig[o.status].label}
-                            </span>
+                              >
+                                <span
+                                  className="size-1.5 rounded-full"
+                                  style={{
+                                    background: statusConfig[o.status].cor,
+                                  }}
+                                />
+                                {statusConfig[o.status].label}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </button>
@@ -598,65 +473,32 @@ export default function AlertaLogPage() {
                   })}
 
                 {listaFiltrada.length === 0 && (
-                  <div style={{ padding: 20, fontSize: 13, color: palette.textFaint }}>
+                  <div className="p-5 text-center text-sm text-muted-foreground">
                     Nenhuma ocorrência encontrada para esta busca.
                   </div>
                 )}
               </div>
             </div>
 
-            <div
-              style={{
-                background: palette.panel,
-                border: `1px solid ${palette.border}`,
-                borderRadius: 10,
-                padding: 24,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  flexWrap: "wrap",
-                  gap: 12,
-                }}
-              >
+            <div className="rise delay-1 rounded-lg border border-border bg-card p-6 space-y-6">
+              <div className="flex flex-wrap justify-between gap-3">
                 <div>
-                  <div
-                    className="mono"
-                    style={{ fontSize: 12, color: palette.textFaint, marginBottom: 6 }}
-                  >
+                  <div className="font-mono text-xs text-muted-foreground mb-1.5">
                     {ocorrencia.id}
                   </div>
-                  <h2 style={{ fontSize: 20, fontWeight: 600, margin: 0 }}>
+                  <h2 className="text-xl font-semibold">
                     {ocorrencia.estacao}
                   </h2>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      marginTop: 6,
-                      color: palette.textMuted,
-                      fontSize: 13,
-                    }}
-                  >
+                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Clock size={14} />
-                    <span className="mono">{ocorrencia.dataHora}</span>
+                    <span className="font-mono">{ocorrencia.dataHora}</span>
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <div className="flex flex-wrap gap-2">
                   <span
+                    className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "6px 12px",
-                      borderRadius: 7,
-                      fontSize: 12.5,
-                      fontWeight: 500,
                       background: sev.fundo,
                       color: sev.cor,
                     }}
@@ -665,17 +507,9 @@ export default function AlertaLogPage() {
                     Severidade {sev.label}
                   </span>
                   <span
+                    className="inline-flex items-center gap-1.5 rounded border border-border bg-muted px-3 py-1.5 text-xs font-medium"
                     style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "6px 12px",
-                      borderRadius: 7,
-                      fontSize: 12.5,
-                      fontWeight: 500,
-                      background: palette.panelAlt,
                       color: st.cor,
-                      border: `1px solid ${palette.border}`,
                     }}
                   >
                     <StatusIcon size={14} />
@@ -684,51 +518,41 @@ export default function AlertaLogPage() {
                 </div>
               </div>
 
-              <div
-                style={{
-                  marginTop: 24,
-                  padding: 18,
-                  borderRadius: 8,
-                  background: palette.panelAlt,
-                  border: `1px solid ${palette.border}`,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <Gauge size={15} color={palette.accent} />
-                  <span style={{ fontSize: 13.5, color: palette.textMuted }}>
+              <div className="rounded-lg border border-border bg-muted p-4.5">
+                <div className="mb-1 flex items-center gap-2">
+                  <Gauge size={15} className="text-aqua" />
+                  <span className="text-xs text-muted-foreground">
                     Parâmetro monitorado
                   </span>
                 </div>
-                <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 14 }}>
+                <div className="mb-3.5 text-base font-medium">
                   {ocorrencia.parametro}
                 </div>
 
-                <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
+                <div className="flex flex-wrap gap-8">
                   <div>
-                    <div style={{ fontSize: 12, color: palette.textFaint, marginBottom: 4 }}>
+                    <div className="mb-1 text-xs text-muted-foreground">
                       Valor registrado
                     </div>
                     <div
-                      className="mono"
+                      className="font-mono text-2xl font-semibold"
                       style={{
-                        fontSize: 26,
-                        fontWeight: 600,
-                        color: excedeu ? sev.cor : palette.textPrimary,
+                        color: excedeu ? sev.cor : "currentColor",
                       }}
                     >
                       {formatNumero(ocorrencia.valor)}
-                      <span style={{ fontSize: 14, color: palette.textFaint, marginLeft: 4 }}>
+                      <span className="ml-1 text-sm text-muted-foreground">
                         {ocorrencia.unidade}
                       </span>
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: 12, color: palette.textFaint, marginBottom: 4 }}>
+                    <div className="mb-1 text-xs text-muted-foreground">
                       Limiar configurado
                     </div>
-                    <div className="mono" style={{ fontSize: 26, fontWeight: 600 }}>
+                    <div className="font-mono text-2xl font-semibold">
                       {formatNumero(ocorrencia.limiar)}
-                      <span style={{ fontSize: 14, color: palette.textFaint, marginLeft: 4 }}>
+                      <span className="ml-1 text-sm text-muted-foreground">
                         {ocorrencia.unidade}
                       </span>
                     </div>
@@ -739,13 +563,7 @@ export default function AlertaLogPage() {
               </div>
 
               <div
-                style={{
-                  marginTop: 20,
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 14,
-                }}
-                className="sigvia-info-grid"
+                className="grid gap-3.5 sigvia-info-grid sm:grid-cols-2"
               >
                 <InfoLinha icon={MapPin} rotulo="Coordenadas" valor={ocorrencia.coordenadas} mono />
                 <InfoLinha icon={Radio} rotulo="Sensor / equipamento" valor={ocorrencia.sensorId} mono />
@@ -753,74 +571,37 @@ export default function AlertaLogPage() {
                 <InfoLinha icon={User} rotulo="Responsável" valor={ocorrencia.responsavel} />
               </div>
 
-              <div style={{ marginTop: 20 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    marginBottom: 8,
-                    color: palette.textMuted,
-                    fontSize: 13.5,
-                  }}
-                >
+              <div>
+                <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
                   <FileText size={15} />
                   Observações técnicas
                 </div>
-                <p
-                  style={{
-                    fontSize: 13.5,
-                    lineHeight: 1.6,
-                    color: palette.textPrimary,
-                    margin: 0,
-                    padding: 14,
-                    background: palette.panelAlt,
-                    border: `1px solid ${palette.border}`,
-                    borderRadius: 8,
-                  }}
-                >
+                <p className="rounded-lg border border-border bg-muted p-3.5 text-sm leading-relaxed">
                   {ocorrencia.observacoes}
                 </p>
               </div>
 
-              <div style={{ marginTop: 20 }}>
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    marginBottom: 10,
-                    color: palette.textMuted,
-                    fontSize: 13.5,
-                  }}
-                >
+              <div>
+                <div className="mb-2.5 flex items-center gap-2 text-sm text-muted-foreground">
                   <Navigation size={15} />
                   Histórico do evento
                 </div>
-                <div style={{ borderLeft: `2px solid ${palette.border}`, paddingLeft: 16 }}>
+                <div className="border-l-2 border-border pl-4">
                   {ocorrencia.historico.map((h, i) => (
                     <div
                       key={i}
+                      className="relative"
                       style={{
-                        position: "relative",
                         paddingBottom: i === ocorrencia.historico.length - 1 ? 0 : 16,
                       }}
                     >
                       <span
-                        style={{
-                          position: "absolute",
-                          left: -21,
-                          top: 4,
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          background: palette.accent,
-                        }}
+                        className="absolute left-[-17px] top-1 size-2 rounded-full bg-aqua"
                       />
-                      <span className="mono" style={{ fontSize: 12, color: palette.textFaint }}>
+                      <span className="font-mono text-xs text-muted-foreground">
                         {h.hora}
                       </span>
-                      <div style={{ fontSize: 13, color: palette.textPrimary, marginTop: 2 }}>
+                      <div className="mt-0.5 text-sm">
                         {h.evento}
                       </div>
                     </div>
