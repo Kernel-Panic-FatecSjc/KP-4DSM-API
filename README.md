@@ -11,6 +11,8 @@
 [A Dor do Cliente](#a-dor) | 
 [A Solução](#a-solução) |
 [O Desafio](#o-desafio) | 
+[DoR](#dor) |
+[DoD](#dod) | 
 [Backlog de Produto](#backlog-de-produto) | 
 [Backlog da Sprint](#backlog-da-sprint) | 
 [Tecnologias](#tecnologias-utilizadas) |
@@ -90,12 +92,33 @@ A solução combina:
 
 ---
 
+<a id="dor"></a>
+- US definida com seus requisitos necessários e caso de uso
+- Estar descrito como a task deve ser entregue para ser considerada aceita
+- Fazer mockups se aplicável
+- Regras de negócio documentadas e validadas
+- Cenários de sucesso/erro bem definidos para as US
+- US possuem prioridade definida
+- Não existem bloqueios conhecidos para iniciar o desenvolvimento
+- RF (requisito funcional) e RNF (requisito não funcional) relevantes bem identificados
+
+---
+
+<a id="dod"></a>
+- Cumprir todos critérios de aceitação definidos pela US
+- Seguir padrões de commit, branches, arquitetura e etc
+- Garantir que alterações/implementações no código não tenham causado regressões em funcionalidades já existentes
+- Atualizar a documentação técnica e/ou funcional quando aplicável
+- Não podem existem pendências, bloqueios ou ações obrigatórias relacionadas à entrega de uma task
+
+---
+
 <a id="backlog-de-produto"></a>
 ## 📋 Backlog de Produto
 
 | ID | User Story | Épico | Prioridade | Sprint | Pontos | Status |
 |----|-----------|-------|-----------|--------|--------|--------|
-| US01 | Gestão de Usuários, Autenticação e Níveis de Acesso | Governança & Segurança | Alta | 1 | 11 | ⏳ |
+| US01 | Gestão de Usuários, Autenticação e Níveis de Acesso | Governança & Segurança | Alta | 1 | 11 | ✅ |
 | US02 | Cadastro e Gerenciamento Dinâmico de Estações e Sensores | Infraestrutura & Modelo Dinâmico | Alta | 1 | 11 | ⏳ |
 | US03 | Coleta e Transmissão via Datalogger Físico | IoT & Recepção de Dados | Alta | 3 | 13 | ⏳ |
 | US04 | Serviço de Recepção, Validação e Persistência de Telemetria | IoT & Recepção de Dados | Alta | 3 | 10 | ⏳ |
