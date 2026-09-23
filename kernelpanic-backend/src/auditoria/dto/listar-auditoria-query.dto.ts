@@ -12,6 +12,10 @@ export class ListarAuditoriaQueryDto {
 
   @IsOptional()
   @IsString()
+  entidadeId?: string;
+
+  @IsOptional()
+  @IsString()
   usuarioId?: string;
 
   @IsOptional()

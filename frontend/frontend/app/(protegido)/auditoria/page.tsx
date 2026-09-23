@@ -25,6 +25,7 @@ export default function AuditoriaPage() {
   const [carregando, setCarregando] = useState(true);
   const [acao, setAcao] = useState('');
   const [entidade, setEntidade] = useState('');
+  const [entidadeId, setEntidadeId] = useState('');
   const [usuarioId, setUsuarioId] = useState('');
   const [de, setDe] = useState('');
   const [ate, setAte] = useState('');
@@ -37,6 +38,7 @@ export default function AuditoriaPage() {
     const parametros = new URLSearchParams({ tamanho: '50' });
     if (acao) parametros.set('acao', acao);
     if (entidade) parametros.set('entidade', entidade);
+    if (entidadeId) parametros.set('entidadeId', entidadeId);
     if (usuarioId) parametros.set('usuarioId', usuarioId);
     if (de) parametros.set('de', new Date(`${de}T00:00:00`).toISOString());
     if (ate) parametros.set('ate', new Date(`${ate}T23:59:59.999`).toISOString());
@@ -80,6 +82,10 @@ export default function AuditoriaPage() {
         <div className="flex flex-col gap-1">
           <label htmlFor="auditoriaUsuario" className="font-mono text-[10px] uppercase text-muted-foreground">ID do usuário</label>
           <Input id="auditoriaUsuario" placeholder="UUID do usuário" value={usuarioId} onChange={(e) => setUsuarioId(e.target.value)} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="auditoriaEntidadeId" className="font-mono text-[10px] uppercase text-muted-foreground">ID do recurso</label>
+          <Input id="auditoriaEntidadeId" placeholder="UUID do recurso" value={entidadeId} onChange={(e) => setEntidadeId(e.target.value)} />
         </div>
         <div className="flex flex-col gap-1">
           <label htmlFor="auditoriaDe" className="font-mono text-[10px] uppercase text-muted-foreground">De</label>
@@ -128,7 +134,6 @@ export default function AuditoriaPage() {
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-xs text-muted-foreground">{formatarDataHora(registro.criadoEm)}</td>
                     <td className="px-4 py-3">
                       <p className="font-medium">{registro.usuario?.nome ?? 'Sistema'}</p>
-                      {registro.usuario && <p className="text-xs text-muted-foreground">{registro.usuario.email}</p>}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-aqua">{registro.acao}</td>
                     <td className="px-4 py-3">{registro.entidade}{registro.entidadeId ? <span className="block max-w-36 truncate font-mono text-[10px] text-muted-foreground">{registro.entidadeId}</span> : null}</td>

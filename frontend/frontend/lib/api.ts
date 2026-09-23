@@ -42,7 +42,7 @@ export interface RegistroAuditoria {
   entidade: string;
   entidadeId: string | null;
   detalhes: unknown;
-  usuario: { id: string; nome: string; email: string } | null;
+  usuario: { id: string; nome: string } | null;
 }
 
 export interface ListaAuditoria {
