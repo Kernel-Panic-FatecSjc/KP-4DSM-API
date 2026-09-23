@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { UsuariosService } from '../usuarios/usuarios.service';
 import { UsuarioRespostaDto } from '../usuarios/dto/usuario-resposta.dto';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AutenticacaoService } from './autenticacao.service';
 import { obterOpcoesCookie } from './cookie.config';
 import { LoginDto } from './dto/login.dto';
@@ -18,6 +19,7 @@ export class AutenticacaoController {
     private readonly autenticacaoService: AutenticacaoService,
     private readonly usuariosService: UsuariosService,
     private readonly configService: ConfigService,
+    private readonly auditoriaService: AuditoriaService,
   ) {}
 
   @HttpCode(HttpStatus.OK)
@@ -30,6 +32,12 @@ export class AutenticacaoController {
     const token = this.autenticacaoService.gerarToken(usuario);
 
     resposta.cookie(NOME_COOKIE, token, obterOpcoesCookie(this.configService));
+    await this.auditoriaService.registrar({
+      acao: 'autenticacao.login',
+      entidade: 'Autenticacao',
+      usuarioId: usuario.id,
+      detalhes: { email: usuario.email },
+    });
 
     return new UsuarioRespostaDto(usuario);
   }

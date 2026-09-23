@@ -180,8 +180,8 @@ model LeituraBruta {
   @@map("leituras_brutas")
 }
 
-/// Trilha de auditoria: registro imutável (sem updatedAt, sem update/delete pela
-/// aplicação) de ações executadas por usuários no sistema, para rastreabilidade
+/// Trilha de auditoria: registro imutável (sem updatedAt e protegida por trigger
+/// contra update/delete) de ações executadas por usuários no sistema, para rastreabilidade
 /// forense e prestação de contas (RF: auditoria/LGPD, US07).
 /// `acao` segue a convenção "recurso.verbo" (ex.: "usuarios.criar",
 /// "autenticacao.login", "alertas.inativar") em vez de enum, para não exigir

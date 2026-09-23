@@ -2,14 +2,19 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop, release]
   pull_request:
-    branches: [main]
+    branches: [main, develop, release]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   alteracoes:
     name: Detectar alterações
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       backend: ${{ steps.filtro.outputs.backend }}
       frontend: ${{ steps.filtro.outputs.frontend }}
@@ -24,10 +29,11 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          # Em push na main nada é filtrado: a main é a referência de
-          # integração e o status dela precisa cobrir o projeto inteiro.
+          # Em push numa branch integradora (main, develop, release) nada é
+          # filtrado: elas são a referência de integração e o status delas
+          # precisa cobrir o projeto inteiro, não só o que o commit tocou.
           if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
-            echo "Push na main: todos os jobs rodam."
+            echo "Push em $GITHUB_REF_NAME: todos os jobs rodam."
             {
               echo "backend=true"
               echo "frontend=true"
@@ -71,6 +77,7 @@ jobs:
   backend:
     name: Backend (NestJS)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: alteracoes
     if: needs.alteracoes.outputs.backend == 'true'
     defaults:
@@ -104,6 +111,7 @@ jobs:
   testes:
     name: Testes (NestJS)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: alteracoes
     if: needs.alteracoes.outputs.backend == 'true'
     defaults:
@@ -160,6 +168,7 @@ jobs:
   frontend:
     name: Frontend (Next.js)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: alteracoes
     if: needs.alteracoes.outputs.frontend == 'true'
     defaults:
@@ -190,6 +199,7 @@ jobs:
   migrations:
     name: Banco e Migrations
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: alteracoes
     if: needs.alteracoes.outputs.banco == 'true'
     defaults:
@@ -226,7 +236,7 @@ jobs:
           alteradas=$(git diff --name-only --diff-filter=MDR \
             "${{ github.event.pull_request.base.sha }}" HEAD -- prisma/migrations || true)
           if [ -n "$alteradas" ]; then
-            echo "::error::Migrations já existentes na main foram alteradas:"
+            echo "::error::Migrations já existentes na ${{ github.base_ref }} foram alteradas:"
             echo "$alteradas"
             echo "Crie uma migration NOVA em vez de editar uma existente."
             exit 1

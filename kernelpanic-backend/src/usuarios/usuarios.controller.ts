@@ -1,6 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { GuardaAdministrador } from '../autenticacao/guarda-administrador.guard';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
+import type { PayloadJwt } from '../autenticacao/payload-jwt.interface';
+import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 import { AtualizarUsuarioDto } from './dto/atualizar-usuario.dto';
 import { BuscarUsuariosQueryDto } from './dto/buscar-usuarios-query.dto';
 import { CriarUsuarioDto } from './dto/criar-usuario.dto';
@@ -10,11 +13,21 @@ import { UsuariosService } from './usuarios.service';
 @Controller('usuarios')
 @UseGuards(GuardaJwt)
 export class UsuariosController {
-  constructor(private readonly usuariosService: UsuariosService) {}
+  constructor(
+    private readonly usuariosService: UsuariosService,
+    private readonly auditoriaService: AuditoriaService,
+  ) {}
 
   @Post()
-  async criar(@Body() dto: CriarUsuarioDto): Promise<UsuarioRespostaDto> {
+  async criar(@Body() dto: CriarUsuarioDto, @UsuarioAutenticado() usuarioLogado: PayloadJwt): Promise<UsuarioRespostaDto> {
     const usuario = await this.usuariosService.criar(dto);
+    await this.auditoriaService.registrar({
+      acao: 'usuarios.criar',
+      entidade: 'Usuario',
+      entidadeId: usuario.id,
+      usuarioId: usuarioLogado.sub,
+      detalhes: { email: dto.email, nome: dto.nome },
+    });
     return new UsuarioRespostaDto(usuario);
   }
 
@@ -33,14 +46,31 @@ export class UsuariosController {
   }
 
   @Patch(':id')
-  async atualizar(@Param('id') id: string, @Body() dto: AtualizarUsuarioDto): Promise<UsuarioRespostaDto> {
+  async atualizar(
+    @Param('id') id: string,
+    @Body() dto: AtualizarUsuarioDto,
+    @UsuarioAutenticado() usuarioLogado: PayloadJwt,
+  ): Promise<UsuarioRespostaDto> {
     const usuario = await this.usuariosService.atualizar(id, dto);
+    await this.auditoriaService.registrar({
+      acao: 'usuarios.atualizar',
+      entidade: 'Usuario',
+      entidadeId: id,
+      usuarioId: usuarioLogado.sub,
+      detalhes: { campos: Object.keys(dto) },
+    });
     return new UsuarioRespostaDto(usuario);
   }
 
   @Delete(':id')
-  async inativar(@Param('id') id: string): Promise<{ mensagem: string }> {
+  async inativar(@Param('id') id: string, @UsuarioAutenticado() usuarioLogado: PayloadJwt): Promise<{ mensagem: string }> {
     await this.usuariosService.inativar(id);
+    await this.auditoriaService.registrar({
+      acao: 'usuarios.inativar',
+      entidade: 'Usuario',
+      entidadeId: id,
+      usuarioId: usuarioLogado.sub,
+    });
     return { mensagem: 'Usuário inativado com sucesso' };
   }
 }
