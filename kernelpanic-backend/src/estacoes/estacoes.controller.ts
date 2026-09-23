@@ -17,8 +17,17 @@ export class EstacoesController {
   ) {}
 
   @Get()
-  async listar(@Query() query: ListarEstacoesQueryDto): Promise<EstacaoRespostaDto[]> {
+  async listar(
+    @Query() query: ListarEstacoesQueryDto,
+    @UsuarioAutenticado() usuario: PayloadJwt,
+  ): Promise<EstacaoRespostaDto[]> {
     const estacoes = await this.estacoesService.listar(query);
+    await this.auditoriaService.registrar({
+      acao: 'estacoes.consultar',
+      entidade: 'Estacao',
+      usuarioId: usuario.sub,
+      detalhes: { ...query },
+    });
     return estacoes.map((estacao) => new EstacaoRespostaDto(estacao));
   }
 
