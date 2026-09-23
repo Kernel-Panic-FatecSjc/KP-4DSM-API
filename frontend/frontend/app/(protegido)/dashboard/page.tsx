@@ -8,6 +8,9 @@ import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 
 const UM_DIA_EM_MS = 24 * 60 * 60 * 1000;
+const SETE_DIAS_EM_MS = 7 * UM_DIA_EM_MS;
+
+type Periodo = '24h' | '7d' | 'mes' | 'customizado';
 
 function formatoDataLocal(data: Date) {
   const ajuste = data.getTimezoneOffset() * 60000;
@@ -22,9 +25,51 @@ function montarQuery(estacaoId: string, de: string, ate: string) {
   return query.toString();
 }
 
+function obterPeriodo(periodo: Periodo) {
+  const agora = new Date();
+
+  switch (periodo) {
+    case '24h':
+      return {
+        de: formatoDataLocal(new Date(agora.getTime() - UM_DIA_EM_MS)),
+        ate: formatoDataLocal(agora),
+      };
+
+    case '7d':
+      return {
+        de: formatoDataLocal(new Date(agora.getTime() - SETE_DIAS_EM_MS)),
+        ate: formatoDataLocal(agora),
+      };
+
+    case 'mes': {
+      const inicioMes = new Date(
+        agora.getFullYear(),
+        agora.getMonth(),
+        1,
+        0,
+        0,
+        0,
+        0,
+      );
+
+      return {
+        de: formatoDataLocal(inicioMes),
+        ate: formatoDataLocal(agora),
+      };
+    }
+
+    case 'customizado':
+      return {
+        de: formatoDataLocal(new Date(agora.getTime() - UM_DIA_EM_MS)),
+        ate: formatoDataLocal(agora),
+      };
+  }
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const agora = new Date();
+  const [periodo, setPeriodo] = useState<Periodo>('24h');
   const [estacaoId, setEstacaoId] = useState('');
   const [de, setDe] = useState(formatoDataLocal(new Date(agora.getTime() - UM_DIA_EM_MS)));
   const [ate, setAte] = useState(formatoDataLocal(agora));
@@ -56,6 +101,18 @@ export default function DashboardPage() {
     return () => controlador.abort();
   }, [ate, de, estacaoId, router, tentativa]);
 
+  function alterarPeriodo(novoPeriodo: Periodo) {
+    setPeriodo(novoPeriodo);
+    setCarregando(true);
+    setErro(null);
+
+    if (novoPeriodo !== 'customizado') {
+      const intervalo = obterPeriodo(novoPeriodo);
+      setDe(intervalo.de);
+      setAte(intervalo.ate);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <PageHeading
@@ -65,12 +122,29 @@ export default function DashboardPage() {
 
       <section className="rise delay-1 grid gap-2.5 sm:grid-cols-3" aria-label="Filtros do dashboard">
         <div className="flex flex-col gap-1">
+          <label htmlFor="periodo" className="font-mono text-[10px] uppercase text-muted-foreground">
+            Período
+          </label>
+          <Select
+            id="periodo"
+            value={periodo}
+            onChange={(event) => alterarPeriodo(event.target.value as Periodo)}
+          >
+            <option value="24h">Últimas 24 horas</option>
+            <option value="7d">Últimos 7 dias</option>
+            <option value="mes">Este mês</option>
+            <option value="customizado">Intervalo personalizado</option>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1">
           <label htmlFor="estacao" className="font-mono text-[10px] uppercase text-muted-foreground">Estação</label>
           <Select id="estacao" value={estacaoId} onChange={(event) => { setEstacaoId(event.target.value); setCarregando(true); setErro(null); }}>
             <option value="">Todas as estações</option>
             {dados?.estacoes.map((estacao) => <option key={estacao.id} value={estacao.id}>{estacao.nome}</option>)}
           </Select>
         </div>
+
         <CampoData label="De" value={de} onChange={(value) => { setDe(value); setCarregando(true); setErro(null); }} />
         <CampoData label="Até" value={ate} onChange={(value) => { setAte(value); setCarregando(true); setErro(null); }} />
       </section>

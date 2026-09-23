@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AlertaRespostaDto } from './dto/alerta-resposta.dto';
+import { AtualizarAlertaDto } from './dto/atualizar-alerta.dto';
+import { CriarAlertaDto } from './dto/criar-alerta.dto';
 import { ListaAlertasRespostaDto } from './dto/lista-alertas-resposta.dto';
 import { ListarAlertasQueryDto } from './dto/listar-alertas-query.dto';
 import { OpcoesFiltroAlertasRespostaDto } from './dto/opcoes-filtro-alertas-resposta.dto';
@@ -18,6 +20,29 @@ const INCLUDE_RELACOES = {
 @Injectable()
 export class AlertasService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async criar(dto: CriarAlertaDto) {
+    return this.prisma.alerta.create({
+      data: {
+        operador: dto.operador,
+        valorLimite: dto.valorLimite,
+        severidade: dto.severidade,
+        parametroId: dto.parametroId,
+      },
+      include: INCLUDE_RELACOES,
+    });
+  }
+
+  async atualizar(id: string, dto: AtualizarAlertaDto) {
+    const existente = await this.prisma.alerta.findUnique({ where: { id } });
+    if (!existente) throw new NotFoundException('Alerta não encontrado');
+
+    return this.prisma.alerta.update({
+      where: { id },
+      data: dto,
+      include: INCLUDE_RELACOES,
+    });
+  }
 
   async listar(query: ListarAlertasQueryDto): Promise<ListaAlertasRespostaDto> {
     const pagina = query.pagina ?? 1;
