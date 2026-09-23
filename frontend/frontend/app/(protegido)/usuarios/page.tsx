@@ -45,6 +45,7 @@ export default function UsuariosPage() {
   }, [router]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- busca a listagem ao montar a página
     void loadUsers();
   }, [loadUsers]);
 
