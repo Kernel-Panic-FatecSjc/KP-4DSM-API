@@ -26,13 +26,15 @@ const alertasBase: Alerta[] = [
   { id: '8', nome: 'Inventário divergente', codigo: 'AL-2891', estagio: 'Fechamento', severidade: 'normal', tempo: '9 h' },
 ];
 
+type FiltroSeveridade = 'TODOS' | 'crítico' | 'alto' | 'normal';
+
 const ITEMS_PER_PAGE = 5;
 
 export default function AlertasPage() {
   const [alertas] = useState<Alerta[]>(alertasBase);
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
-  const [severidadeFilter, setSeveridadeFilter] = useState<'TODOS' | 'crítico' | 'alto' | 'normal'>('TODOS');
+  const [severidadeFilter, setSeveridadeFilter] = useState<FiltroSeveridade>('TODOS');
 
   const filtered = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -111,7 +113,7 @@ export default function AlertasPage() {
           <select
             id="severidade"
             value={severidadeFilter}
-            onChange={(e) => { setSeveridadeFilter(e.target.value as any); setCurrentPage(1); }}
+            onChange={(e) => { setSeveridadeFilter(e.target.value as FiltroSeveridade); setCurrentPage(1); }}
             className="rounded border border-border bg-card px-3 py-2 text-sm"
           >
             <option value="TODOS">Todas as severidades</option>
