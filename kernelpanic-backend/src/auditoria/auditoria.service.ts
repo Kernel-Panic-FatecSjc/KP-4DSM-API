@@ -33,6 +33,7 @@ export class AuditoriaService {
     const where: Prisma.LogAuditoriaWhereInput = {
       acao: query.acao ? { contains: query.acao, mode: 'insensitive' } : undefined,
       entidade: query.entidade ? { contains: query.entidade, mode: 'insensitive' } : undefined,
+      entidadeId: query.entidadeId || undefined,
       usuarioId: query.usuarioId || undefined,
       criadoEm: {
         gte: query.de ? new Date(query.de) : undefined,
@@ -43,7 +44,15 @@ export class AuditoriaService {
     const [registros, total] = await Promise.all([
       this.prisma.logAuditoria.findMany({
         where,
-        include: { usuario: { select: { id: true, nome: true, email: true } } },
+        select: {
+          id: true,
+          criadoEm: true,
+          acao: true,
+          entidade: true,
+          entidadeId: true,
+          detalhes: true,
+          usuario: { select: { id: true, nome: true } },
+        },
         orderBy: { criadoEm: 'desc' },
         skip: (pagina - 1) * tamanho,
         take: tamanho,
