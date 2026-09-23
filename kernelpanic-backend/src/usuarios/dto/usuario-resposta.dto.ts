@@ -4,6 +4,7 @@ export class UsuarioRespostaDto {
   id: string;
   nome: string;
   email: string;
+  tipo: string;
   ativo: boolean;
   criadoEm: Date;
   atualizadoEm: Date;
@@ -12,6 +13,7 @@ export class UsuarioRespostaDto {
     this.id = usuario.id;
     this.nome = usuario.nome;
     this.email = usuario.email;
+    this.tipo = usuario.tipo;
     this.ativo = usuario.ativo;
     this.criadoEm = usuario.criadoEm;
     this.atualizadoEm = usuario.atualizadoEm;

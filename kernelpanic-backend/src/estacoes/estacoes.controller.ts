@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
+import { AuditoriaService } from '../auditoria/auditoria.service';
 import type { PayloadJwt } from '../autenticacao/payload-jwt.interface';
 import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
 import { CriarEstacaoDto } from './dto/criar-estacao.dto';
@@ -10,7 +11,10 @@ import { EstacoesService } from './estacoes.service';
 @Controller('estacoes')
 @UseGuards(GuardaJwt)
 export class EstacoesController {
-  constructor(private readonly estacoesService: EstacoesService) {}
+  constructor(
+    private readonly estacoesService: EstacoesService,
+    private readonly auditoriaService: AuditoriaService,
+  ) {}
 
   @Get()
   async listar(@Query() query: ListarEstacoesQueryDto): Promise<EstacaoRespostaDto[]> {
@@ -24,6 +28,13 @@ export class EstacoesController {
     @UsuarioAutenticado() usuario: PayloadJwt,
   ): Promise<EstacaoRespostaDto> {
     const estacao = await this.estacoesService.criar(dto, usuario.sub);
+    await this.auditoriaService.registrar({
+      acao: 'estacoes.criar',
+      entidade: 'Estacao',
+      entidadeId: estacao.id,
+      usuarioId: usuario.sub,
+      detalhes: { nome: dto.nome, vid: dto.vid, tipoParametroIds: dto.tipoParametroIds },
+    });
     return new EstacaoRespostaDto(estacao);
   }
 }

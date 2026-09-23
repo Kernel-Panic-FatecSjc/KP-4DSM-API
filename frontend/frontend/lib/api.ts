@@ -29,9 +29,27 @@ export interface Usuario {
   id: string;
   nome: string;
   email: string;
+  tipo: 'ADMINISTRADOR' | 'MONITOR';
   ativo: boolean;
   criadoEm: string;
   atualizadoEm: string;
+}
+
+export interface RegistroAuditoria {
+  id: string;
+  criadoEm: string;
+  acao: string;
+  entidade: string;
+  entidadeId: string | null;
+  detalhes: unknown;
+  usuario: { id: string; nome: string; email: string } | null;
+}
+
+export interface ListaAuditoria {
+  itens: RegistroAuditoria[];
+  total: number;
+  pagina: number;
+  tamanho: number;
 }
 
 export type SeveridadeAlerta = 'ATENCAO' | 'ALERTA' | 'EMERGENCIA';
