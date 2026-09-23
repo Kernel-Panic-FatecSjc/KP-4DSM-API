@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Users, X } from 'lucide-react';
+import { Bell, ClipboardList, LayoutDashboard, LogOut, Menu, PanelLeftClose, PanelLeftOpen, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Alertas', href: '/alarmes', icon: Bell },
   { label: 'Usuários', href: '/usuarios', icon: Users },
+  { label: 'Auditoria', href: '/auditoria', icon: ClipboardList },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
