@@ -1,4 +1,7 @@
-import { IsDateString, IsOptional, IsUUID } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsUUID } from 'class-validator';
+
+export const PERIODOS_DASHBOARD = ['24h', '7d', 'mes', 'customizado'] as const;
+export type PeriodoDashboard = (typeof PERIODOS_DASHBOARD)[number];
 
 export class DashboardQueryDto {
   @IsOptional()
@@ -12,4 +15,8 @@ export class DashboardQueryDto {
   @IsOptional()
   @IsDateString()
   ate?: string;
+
+  @IsOptional()
+  @IsIn(PERIODOS_DASHBOARD)
+  periodo?: PeriodoDashboard;
 }
