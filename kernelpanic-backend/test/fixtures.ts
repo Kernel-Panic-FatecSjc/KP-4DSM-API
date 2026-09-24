@@ -30,3 +30,26 @@ export const ESTACAO_COM_TIPOS = {
     },
   ],
 };
+
+export const PARAMETRO_CHUVA = '22222222-2222-4222-8222-222222222222';
+
+export const NOVO_ALERTA = {
+  operador: 'MAIOR_QUE',
+  valorLimite: 30,
+  severidade: 'EMERGENCIA',
+  parametroId: PARAMETRO_CHUVA,
+};
+
+export const ALERTA_COM_RELACOES = {
+  id: 'alerta-1',
+  ...NOVO_ALERTA,
+  ativo: true,
+  criadoEm: new Date('2026-09-23T12:00:00.000Z'),
+  parametro: {
+    id: PARAMETRO_CHUVA,
+    estacaoId: ESTACAO_COM_TIPOS.id,
+    tipoParametroId: TIPO_CHUVA,
+    estacao: { id: ESTACAO_COM_TIPOS.id, nome: ESTACAO_COM_TIPOS.nome },
+    tipoParametro: ESTACAO_COM_TIPOS.parametros[0].tipoParametro,
+  },
+};
