@@ -32,21 +32,22 @@ export class EstacoesService {
   }
 
   async criar(dto: CriarEstacaoDto, usuarioId: string): Promise<EstacaoComSensores> {
-    const identificadores = new Set(dto.tipoParametroIds);
-    if (identificadores.size !== dto.tipoParametroIds.length) {
+    const tipoParametroIds = dto.tipoParametroIds ?? [];
+    const identificadores = new Set(tipoParametroIds);
+    if (identificadores.size !== tipoParametroIds.length) {
       throw new BadRequestException('Não é permitido associar o mesmo sensor mais de uma vez');
     }
 
     const [estacaoExistente, sensores] = await Promise.all([
       this.prisma.estacao.findUnique({ where: { vid: dto.vid } }),
-      this.prisma.tipoParametro.findMany({ where: { id: { in: dto.tipoParametroIds } } }),
+      this.prisma.tipoParametro.findMany({ where: { id: { in: tipoParametroIds } } }),
     ]);
 
     if (estacaoExistente) {
       throw new ConflictException('Já existe uma estação com este identificador');
     }
 
-    if (sensores.length !== dto.tipoParametroIds.length) {
+    if (sensores.length !== tipoParametroIds.length) {
       throw new BadRequestException('Um ou mais sensores selecionados não existem');
     }
 
@@ -59,7 +60,7 @@ export class EstacoesService {
         longitude: dto.longitude,
         usuarioId,
         parametros: {
-          create: dto.tipoParametroIds.map((tipoParametroId) => ({ tipoParametroId })),
+          create: tipoParametroIds.map((tipoParametroId) => ({ tipoParametroId })),
         },
       },
       include: INCLUIR_SENSORES,

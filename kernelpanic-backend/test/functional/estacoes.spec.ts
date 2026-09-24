@@ -86,10 +86,19 @@ describe('Gerenciamento de estações (funcional)', () => {
       await remendar({ latitude: 120 }).expect(400);
       await remendar({ vid: 'nao-e-uuid-nem-mac' }).expect(400);
       await remendar({ statusOperacional: 'MANUTENCAO' }).expect(400);
-      await remendar({ tipoParametroIds: [] }).expect(400);
 
       expect(estacao.update).not.toHaveBeenCalled();
       expect(logAuditoria.create).not.toHaveBeenCalled();
+    });
+
+    it('aceita lista vazia de sensores, removendo os que não têm medidas', async () => {
+      await remendar({ tipoParametroIds: [] }).expect(200);
+
+      const { data } = estacao.update.mock.calls[0][0];
+      expect(data.parametros).toEqual({
+        deleteMany: { id: { in: ['parametro-chuva'] } },
+        create: [],
+      });
     });
 
     it('responde 404 quando a estação não existe', async () => {
