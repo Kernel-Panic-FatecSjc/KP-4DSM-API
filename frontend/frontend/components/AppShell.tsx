@@ -12,9 +12,9 @@ const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Alertas Globais', href: '/alertas-globais', icon: Bell },
   { label: 'Gerenciamento de Alertas', href: '/gerenciamento-de-alertas', icon: Bell },
+  { label: 'Alerta Log', href: '/alerta-log', icon: Bell },
   { label: 'Estações', href: '/estacoes', icon: MapPin },
   { label: 'Usuários', href: '/usuarios', icon: Users },
-  { label: 'Alerta Log', href: '/alerta-log', icon: Bell },
   { label: 'Auditoria', href: '/auditoria', icon: ClipboardList },
 ];
 
