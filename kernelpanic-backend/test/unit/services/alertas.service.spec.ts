@@ -78,4 +78,25 @@ describe('AlertasService', () => {
       );
     });
   });
+
+  describe('inativar', () => {
+    it('desativa em vez de apagar, para não levar junto os alarmes disparados', async () => {
+      prismaMock.alerta.findUnique.mockResolvedValue(ALERTA_COM_RELACOES);
+      prismaMock.alerta.update.mockResolvedValue({ ...ALERTA_COM_RELACOES, ativo: false });
+
+      const alerta = await service.inativar(ALERTA_COM_RELACOES.id);
+
+      expect(prismaMock.alerta.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: ALERTA_COM_RELACOES.id }, data: { ativo: false } }),
+      );
+      expect(alerta.ativo).toBe(false);
+    });
+
+    it('lança NotFoundException quando o alerta não existe', async () => {
+      prismaMock.alerta.findUnique.mockResolvedValue(null);
+
+      await expect(service.inativar('sumido')).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.alerta.update).not.toHaveBeenCalled();
+    });
+  });
 });
