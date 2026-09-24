@@ -2,6 +2,7 @@
   "moduleFileExtensions": ["js", "json", "ts"],
   "rootDir": "..",
   "testEnvironment": "node",
+  "globalSetup": "<rootDir>/test/global-setup.ts",
   "setupFiles": ["reflect-metadata", "<rootDir>/test/bootstrap.ts"],
   "testRegex": "test/functional/.*\\.spec\\.ts$",
   "transform": {
