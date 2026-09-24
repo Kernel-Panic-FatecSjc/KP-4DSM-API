@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AlertaRespostaDto } from './dto/alerta-resposta.dto';
@@ -22,6 +22,8 @@ export class AlertasService {
   constructor(private readonly prisma: PrismaService) {}
 
   async criar(dto: CriarAlertaDto) {
+    await this.garantirParametroExistente(dto.parametroId);
+
     return this.prisma.alerta.create({
       data: {
         operador: dto.operador,
@@ -36,6 +38,7 @@ export class AlertasService {
   async atualizar(id: string, dto: AtualizarAlertaDto) {
     const existente = await this.prisma.alerta.findUnique({ where: { id } });
     if (!existente) throw new NotFoundException('Alerta não encontrado');
+    if (dto.parametroId) await this.garantirParametroExistente(dto.parametroId);
 
     return this.prisma.alerta.update({
       where: { id },
@@ -83,5 +86,12 @@ export class AlertasService {
     ]);
 
     return new OpcoesFiltroAlertasRespostaDto(estacoes, tiposParametro);
+  }
+
+  private async garantirParametroExistente(parametroId: string): Promise<void> {
+    const parametro = await this.prisma.parametro.findUnique({ where: { id: parametroId } });
+    if (!parametro) {
+      throw new BadRequestException('O parâmetro monitorado selecionado não existe');
+    }
   }
 }
