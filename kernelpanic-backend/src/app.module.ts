@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AlarmesModule } from './alarmes/alarmes.module';
+import { AlertasModule } from './alertas/alertas.module';
 import { AuditoriaModule } from './auditoria/auditoria.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -18,6 +19,7 @@ import { UsuariosModule } from './usuarios/usuarios.module';
     UsuariosModule,
     AutenticacaoModule,
     AlarmesModule,
+    AlertasModule,
     AuditoriaModule,
     DashboardModule,
     EstacoesModule,
