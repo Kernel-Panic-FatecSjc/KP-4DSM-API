@@ -29,27 +29,31 @@ export interface Usuario {
   id: string;
   nome: string;
   email: string;
-  tipo: 'ADMINISTRADOR' | 'MONITOR';
   ativo: boolean;
   criadoEm: string;
   atualizadoEm: string;
 }
 
-export interface RegistroAuditoria {
+export interface EstacaoApi {
   id: string;
+  nome: string;
+  endereco: string;
+  vid: string;
+  latitude: number;
+  longitude: number;
+  statusOperacional: 'ATIVA' | 'INATIVA';
+  sensores: { id: string; nome: string; unidade: string }[];
   criadoEm: string;
-  acao: string;
-  entidade: string;
-  entidadeId: string | null;
-  detalhes: unknown;
-  usuario: { id: string; nome: string } | null;
+  atualizadoEm: string;
 }
 
-export interface ListaAuditoria {
-  itens: RegistroAuditoria[];
-  total: number;
-  pagina: number;
-  tamanho: number;
+export interface CriarEstacaoPayload {
+  nome: string;
+  endereco: string;
+  vid: string;
+  latitude: number;
+  longitude: number;
+  tipoParametroIds: string[];
 }
 
 export type SeveridadeAlerta = 'ATENCAO' | 'ALERTA' | 'EMERGENCIA';
@@ -100,6 +104,7 @@ export interface Alerta {
   criadoEm: string;
   estacao: { id: string; nome: string };
   parametro: { id: string; nome: string; unidade: string };
+  acoes?: never;
 }
 
 export interface ListaAlertas {
@@ -112,6 +117,13 @@ export interface ListaAlertas {
 export interface OpcoesFiltroAlertas {
   estacoes: { id: string; nome: string }[];
   tiposParametro: { id: string; nome: string }[];
+  parametros: {
+    id: string;
+    nome: string;
+    unidade: string;
+    estacaoId: string;
+    estacaoNome: string;
+  }[];
   severidades: SeveridadeAlerta[];
 }
 
