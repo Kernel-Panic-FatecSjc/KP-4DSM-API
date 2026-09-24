@@ -9,7 +9,7 @@ function destinoSeguro(proximo: string | null): string {
   if (proximo && proximo.startsWith('/') && !proximo.startsWith('//')) {
     return proximo;
   }
-  return '/usuarios';
+  return '/dashboard';
 }
 
 function FormularioLogin() {
