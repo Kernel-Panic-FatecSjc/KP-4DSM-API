@@ -159,9 +159,8 @@ jobs:
       - name: Testes unitários
         run: npm run test
 
-      - name: Aplicar migrations
-        run: npx prisma migrate deploy
-
+      # Os testes funcionais recriam e migram o próprio banco (kernelpanic_test)
+      # no globalSetup, então não há passo de migrations aqui.
       - name: Testes funcionais
         run: npm run test:functional
 
