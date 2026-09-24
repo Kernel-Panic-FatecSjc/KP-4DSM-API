@@ -217,7 +217,25 @@ KP-4DSM-API
 ```bash
 git clone https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API.git
 cd KP-4DSM-API
+npm install   # ferramentas de commit da raiz; também ativa o hook de validação
 ```
+
+### 📝 Fazendo commits
+
+Os commits seguem o formato `tipo(escopo): resumo`, que a CI valida em todo PR
+(ver [padrão de commit](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Dev-Padrao-de-commit)).
+Para montar a mensagem no padrão, adicione as mudanças ao stage e rode, na raiz, no
+`kernelpanic-backend/` ou no `frontend/frontend/`:
+
+```bash
+git add <arquivos>
+npm run commit
+```
+
+O comando pergunta o tipo, o escopo (`US06-02`, `#39` ou `not-US`) e o resumo. Commits
+feitos direto com `git commit` também são validados pelo hook `commit-msg`, que recusa
+mensagens fora do padrão antes de o commit ser criado. Se a mensagem for recusada,
+`npx cz --retry` na raiz refaz o commit com as respostas anteriores.
 
 ---
 
