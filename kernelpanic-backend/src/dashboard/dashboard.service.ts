@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { DashboardQueryDto } from './dto/dashboard-query.dto';
+import { DashboardQueryDto, type PeriodoDashboard } from './dto/dashboard-query.dto';
 
 const UM_DIA_EM_MS = 24 * 60 * 60 * 1000;
 
@@ -10,8 +10,7 @@ export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
   async buscarDados(query: DashboardQueryDto) {
-    const ate = query.ate ? new Date(query.ate) : new Date();
-    const de = query.de ? new Date(query.de) : new Date(ate.getTime() - UM_DIA_EM_MS);
+    const { de, ate } = this.resolverPeriodo(query);
     const inicioUnix = BigInt(Math.floor(de.getTime() / 1000));
     const fimUnix = BigInt(Math.floor(ate.getTime() / 1000));
 
@@ -87,5 +86,41 @@ export class DashboardService {
       },
       series: [...series.values()],
     };
+  }
+
+  private resolverPeriodo(query: DashboardQueryDto): { de: Date; ate: Date } {
+    const periodo = query.periodo ?? (query.de || query.ate ? 'customizado' : '24h');
+
+    if (periodo !== 'customizado' && (query.de || query.ate)) {
+      throw new BadRequestException('Não informe de ou ate ao usar um período predefinido.');
+    }
+
+    if (periodo === 'customizado') {
+      if (!query.de || !query.ate) {
+        throw new BadRequestException('O período customizado exige de e ate.');
+      }
+
+      const de = new Date(query.de);
+      const ate = new Date(query.ate);
+      this.validarIntervalo(de, ate);
+      return { de, ate };
+    }
+
+    const ate = new Date();
+    const duracoes: Record<Exclude<PeriodoDashboard, 'customizado'>, number> = {
+      '24h': UM_DIA_EM_MS,
+      '7d': 7 * UM_DIA_EM_MS,
+      mes: 30 * UM_DIA_EM_MS,
+    };
+    return { de: new Date(ate.getTime() - duracoes[periodo]), ate };
+  }
+
+  private validarIntervalo(de: Date, ate: Date): void {
+    if (Number.isNaN(de.getTime()) || Number.isNaN(ate.getTime())) {
+      throw new BadRequestException('As datas do período devem ser válidas.');
+    }
+    if (de > ate) {
+      throw new BadRequestException('A data de início deve ser anterior ou igual à data final.');
+    }
   }
 }
