@@ -1,7 +1,7 @@
 'use client';
 
 import { createPortal } from 'react-dom';
-import { useCallback, useEffect, useMemo, useState,} from 'react';
+import { useEffect, useMemo, useState,} from 'react';
 import { MoreHorizontal, Plus, Search, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { api, ErroApi, type CriarEstacaoPayload, type EstacaoApi,} from '@/lib/api';
@@ -108,55 +108,50 @@ export default function EstacoesPage() {
   const [sensoresSelecionados, setSensoresSelecionados] =
     useState<Sensor[]>([]);
 
-  const carregarEstacoes = useCallback(async () => {
-    try {
-      setCarregando(true);
+  useEffect(() => {
+    api<EstacaoApi[]>('/estacoes')
+      .then((resposta) => {
+        const estacoesConvertidas: Estacao[] = resposta.map(
+          (estacao) => ({
+            id: estacao.id,
+            nome: estacao.nome,
+            codigo: estacao.vid,
+            latitude: estacao.latitude,
+            longitude: estacao.longitude,
+            status:
+              estacao.statusOperacional === 'ATIVA'
+                ? 'Ativo'
+                : 'Não Ativo',
+            endereco: estacao.endereco,
+            sensores: estacao.sensores.map((sensor) => ({
+              id: sensor.id,
+              nome: sensor.nome,
+              tipo: sensor.nome,
+              unidade: sensor.unidade,
+            })),
+          }),
+        );
 
-      const resposta = await api<EstacaoApi[]>('/estacoes');
+        setEstacoes(estacoesConvertidas);
+      })
+      .catch((erro: unknown) => {
+        if (erro instanceof ErroApi) {
+          if (erro.status === 401) {
+            router.push('/login?proximo=/estacoes');
+            return;
+          }
 
-      const estacoesConvertidas: Estacao[] = resposta.map(
-        (estacao) => ({
-          id: estacao.id,
-          nome: estacao.nome,
-          codigo: estacao.vid,
-          latitude: estacao.latitude,
-          longitude: estacao.longitude,
-          status:
-            estacao.statusOperacional === 'ATIVA'
-              ? 'Ativo'
-              : 'Não Ativo',
-          endereco: estacao.endereco,
-          sensores: estacao.sensores.map((sensor) => ({
-            id: sensor.id,
-            nome: sensor.nome,
-            tipo: sensor.nome,
-            unidade: sensor.unidade,
-          })),
-        }),
-      );
-
-      setEstacoes(estacoesConvertidas);
-    } catch (erro) {
-      if (erro instanceof ErroApi) {
-        if (erro.status === 401) {
-          router.push('/login?proximo=/estacoes');
+          alert(erro.message);
           return;
         }
 
-        alert(erro.message);
-        return;
-      }
-
-      console.error(erro);
-      alert('Não foi possível carregar as estações.');
-    } finally {
-      setCarregando(false);
-    }
+        console.error(erro);
+        alert('Não foi possível carregar as estações.');
+      })
+      .finally(() => {
+        setCarregando(false);
+      });
   }, [router]);
-
-  useEffect(() => {
-    carregarEstacoes();
-  }, [carregarEstacoes]);
 
   const estacoesFiltradas = useMemo(() => {
     const termo = busca.trim().toLowerCase();
@@ -198,16 +193,6 @@ export default function EstacoesPage() {
     estacoesFiltradas,
     paginaSegura,
   ]);
-
-  useEffect(() => {
-    setPaginaAtual(1);
-  }, [busca]);
-
-  useEffect(() => {
-    if (paginaAtual > totalPaginas) {
-      setPaginaAtual(totalPaginas);
-    }
-  }, [paginaAtual, totalPaginas]);
 
   const limparFormulario = () => {
     setNome('');
@@ -654,9 +639,10 @@ export default function EstacoesPage() {
 
           <Input
             value={busca}
-            onChange={(event) =>
-              setBusca(event.target.value)
-            }
+            onChange={(event) => {
+              setBusca(event.target.value);
+              setPaginaAtual(1);
+            }}
             placeholder="Buscar estação..."
             className="pl-9"
           />

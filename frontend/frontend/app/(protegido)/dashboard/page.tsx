@@ -266,19 +266,21 @@ export default function DashboardPage() {
   const [dados, setDados] =
     useState<DashboardDados | null>(null);
 
-  const [carregando, setCarregando] =
-    useState(true);
+  const [tentativa, setTentativa] =
+    useState(0);
+
+  const chaveRequisicao = `${estacaoId}|${de}|${ate}|${tentativa}`;
+
+  const [chaveCarregada, setChaveCarregada] =
+    useState<string | null>(null);
+
+  const carregando = chaveCarregada !== chaveRequisicao;
 
   const [erro, setErro] =
     useState<string | null>(null);
 
-  const [tentativa, setTentativa] =
-    useState(0);
-
   useEffect(() => {
     const controlador = new AbortController();
-
-    setCarregando(true);
 
     api<DashboardDados>(
       `/dashboard?${montarQuery(
@@ -326,17 +328,17 @@ export default function DashboardPage() {
       })
       .finally(() => {
         if (!controlador.signal.aborted) {
-          setCarregando(false);
+          setChaveCarregada(chaveRequisicao);
         }
       });
 
     return () => controlador.abort();
   }, [
     ate,
+    chaveRequisicao,
     de,
     estacaoId,
     router,
-    tentativa,
   ]);
 
   function alterarPeriodo(
@@ -494,7 +496,6 @@ export default function DashboardPage() {
             variant="outline"
             size="sm"
             onClick={() => {
-              setCarregando(true);
               setErro(null);
               setTentativa(
                 (valor) => valor + 1,
