@@ -1,739 +1,1162 @@
-"use client";
+'use client';
 
-import React, { useMemo, useState } from "react";
-import { PageHeading } from "@/components/PageHeading";
-import { DataTable, Column } from "@/components/DataTable";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useMemo, useState,} from 'react';
+import { MoreHorizontal, Plus, Search, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { api, ErroApi, type CriarEstacaoPayload, type EstacaoApi,} from '@/lib/api';
+import { PageHeading } from '@/components/PageHeading';
+import { DataTable, type Column } from '@/components/DataTable';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 type Sensor = {
-    id: string;
-    nome: string;
-    tipo: string;
-    unidade: string;
+  id: string;
+  nome: string;
+  tipo: string;
+  unidade: string;
 };
 
 type Estacao = {
-    nome: string;
-    codigo: string;
-    latitude: number;
-    longitude: number;
-    status: string;
-    endereco: string;
-    sensores: Sensor[];
+  id: string;
+  nome: string;
+  codigo: string;
+  latitude: number;
+  longitude: number;
+  status: 'Ativo' | 'Não Ativo';
+  endereco: string;
+  sensores: Sensor[];
 };
 
-type StatusOperacional = "ativo" | "inativo";
+const ITEMS_PER_PAGE = 5;
 
-const tiposSensores = [
-    "Temperatura",
-    "Umidade",
-    "Pressão",
-    "Velocidade do vento",
-    "Nível de água",
-    "Radiação",
+/*
+ * IMPORTANTE:
+ * Esses sensores são apenas um exemplo enquanto você não possui
+ * um endpoint para listar os tipos de parâmetro.
+ *
+ * Os IDs precisam ser UUIDs que realmente existam no banco.
+ *
+ * Quando você tiver um GET /tipos-parametro, substituímos esta
+ * constante por uma chamada à API.
+ */
+const SENSORES_DISPONIVEIS: Sensor[] = [
+  {
+    id: '11111111-1111-4111-8111-111111111111',
+    nome: 'Temperatura',
+    tipo: 'Temperatura',
+    unidade: '°C',
+  },
+  {
+    id: '22222222-2222-4222-8222-222222222222',
+    nome: 'Umidade',
+    tipo: 'Umidade',
+    unidade: '%',
+  },
+  {
+    id: '33333333-3333-4333-8333-333333333333',
+    nome: 'Chuva',
+    tipo: 'Chuva',
+    unidade: 'mm',
+  },
+  {
+    id: '44444444-4444-4444-8444-444444444444',
+    nome: 'Vento',
+    tipo: 'Vento',
+    unidade: 'km/h',
+  },
 ];
 
-const unidadesMedida = ["°C", "%", "hPa", "m/s", "V", "A", "mm"];
+export default function EstacoesPage() {
+  const router = useRouter();
 
-const estacoesBase: Estacao[] = [
-    {
-        nome: "Sem resposta do turno",
-        codigo: "123e4567-e89b-12d3-a456-426655440000",
-        latitude: -23.5505,
-        longitude: -46.6333,
-        status: "Ativo",
-        endereco: "Endereço não informado",
-        sensores: [
-            { id: "S-001", nome: "Sensor temperatura 01", tipo: "Temperatura", unidade: "°C" },
-            { id: "S-002", nome: "Sensor temperatura 02", tipo: "Temperatura", unidade: "°C" },
-            { id: "S-003", nome: "Sensor umidade 01", tipo: "Umidade", unidade: "%" },
-            { id: "S-004", nome: "Sensor umidade 02", tipo: "Umidade", unidade: "%" },
-            { id: "S-005", nome: "Sensor velocidade 01", tipo: "Velocidade do vento", unidade: "m/s" },
-            { id: "S-006", nome: "Sensor velocidade 02", tipo: "Velocidade do vento", unidade: "m/s" },
-            { id: "S-007", nome: "Sensor pressão 01", tipo: "Pressão", unidade: "hPa" },
-            { id: "S-008", nome: "Sensor pressão 02", tipo: "Pressão", unidade: "hPa" },
-            { id: "S-009", nome: "Sensor pressão 03", tipo: "Pressão", unidade: "hPa" },
-            { id: "S-010", nome: "Sensor radiação 01", tipo: "Radiação", unidade: "V" },
-            { id: "S-011", nome: "Sensor radiação 02", tipo: "Radiação", unidade: "V" },
-            { id: "S-012", nome: "Sensor nível 01", tipo: "Nível de água", unidade: "mm" },
-        ],
-    },
-    {
-        nome: "Sinal fora da faixa",
-        codigo: "550e8400-e29b-41d4-a716-446655440000",
-        latitude: -23.5487,
-        longitude: -46.6321,
-        status: "Ativo",
-        endereco: "Endereço não informado",
-        sensores: [
-            { id: "S-013", nome: "Sensor temperatura 03", tipo: "Temperatura", unidade: "°C" },
-            { id: "S-014", nome: "Sensor temperatura 04", tipo: "Temperatura", unidade: "°C" },
-            { id: "S-015", nome: "Sensor umidade 03", tipo: "Umidade", unidade: "%" },
-            { id: "S-016", nome: "Sensor umidade 04", tipo: "Umidade", unidade: "%" },
-            { id: "S-017", nome: "Sensor pressão 04", tipo: "Pressão", unidade: "hPa" },
-            { id: "S-018", nome: "Sensor radiação 03", tipo: "Radiação", unidade: "V" },
-            { id: "S-019", nome: "Sensor nível 02", tipo: "Nível de água", unidade: "mm" },
-            { id: "S-020", nome: "Sensor nível 03", tipo: "Nível de água", unidade: "mm" },
-        ],
-    },
-    {
-        nome: "Estoque de bateria baixo",
-        codigo: "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-        latitude: -23.5519,
-        longitude: -46.6301,
-        status: "Ativo",
-        endereco: "Endereço não informado",
-        sensores: [
-            { id: "S-021", nome: "Sensor umidade 05", tipo: "Umidade", unidade: "%" },
-            { id: "S-022", nome: "Sensor umidade 06", tipo: "Umidade", unidade: "%" },
-            { id: "S-023", nome: "Sensor pressão 05", tipo: "Pressão", unidade: "hPa" },
-            { id: "S-024", nome: "Sensor nível 04", tipo: "Nível de água", unidade: "mm" },
-            { id: "S-025", nome: "Sensor temperatura 05", tipo: "Temperatura", unidade: "°C" },
-        ],
-    },
-    {
-        nome: "Discrepância de registro",
-        codigo: "9c858901-8a57-4791-81fe-4c455b099bc9",
-        latitude: -23.5534,
-        longitude: -46.6342,
-        status: "Não Ativo",
-        endereco: "Endereço não informado",
-        sensores: [
-            { id: "S-026", nome: "Sensor temperatura 06", tipo: "Temperatura", unidade: "°C" },
-            { id: "S-027", nome: "Sensor temperatura 07", tipo: "Temperatura", unidade: "°C" },
-            { id: "S-028", nome: "Sensor umidade 07", tipo: "Umidade", unidade: "%" },
-            { id: "S-029", nome: "Sensor umidade 08", tipo: "Umidade", unidade: "%" },
-            { id: "S-030", nome: "Sensor umidade 09", tipo: "Umidade", unidade: "%" },
-            { id: "S-031", nome: "Sensor pressão 06", tipo: "Pressão", unidade: "hPa" },
-            { id: "S-032", nome: "Sensor pressão 07", tipo: "Pressão", unidade: "hPa" },
-            { id: "S-033", nome: "Sensor pressão 08", tipo: "Pressão", unidade: "hPa" },
-            { id: "S-034", nome: "Sensor nível 05", tipo: "Nível de água", unidade: "mm" },
-            { id: "S-035", nome: "Sensor nível 06", tipo: "Nível de água", unidade: "mm" },
-        ],
-    },
-];
+  const [estacoes, setEstacoes] = useState<Estacao[]>([]);
+  const [carregando, setCarregando] = useState(true);
 
-const ITENS_POR_PAGINA = 5;
+  const [busca, setBusca] = useState('');
+  const [paginaAtual, setPaginaAtual] = useState(1);
 
-export default function Estacoes() {
-    const [estacoes, setEstacoes] = useState<Estacao[]>(estacoesBase);
-    const [pesquisa, setPesquisa] = useState("");
-    const [paginaAtual, setPaginaAtual] = useState(1);
-    const [modalAberto, setModalAberto] = useState(false);
-    const [modoEdicao, setModoEdicao] = useState<"cadastro" | "edicao">("cadastro");
-    const [estacaoSelecionada, setEstacaoSelecionada] = useState<Estacao | null>(null);
-    const [nome, setNome] = useState("");
-    const [uuid, setUuid] = useState("");
-    const [latitude, setLatitude] = useState("");
-    const [longitude, setLongitude] = useState("");
-    const [endereco, setEndereco] = useState("");
-    const [statusOperacional, setStatusOperacional] = useState<StatusOperacional>("ativo");
-    const [menuAbertoCodigo, setMenuAbertoCodigo] = useState<string | null>(null);
-    const [confirmacaoExclusao, setConfirmacaoExclusao] = useState<string | null>(null);
-    const [modalAssociacaoAberto, setModalAssociacaoAberto] = useState(false);
-    const [estacaoAssociada, setEstacaoAssociada] = useState<Estacao | null>(null);
-    const [tipoSensor, setTipoSensor] = useState("Temperatura");
-    const [unidadeMedidaSelecionada, setUnidadeMedidaSelecionada] = useState("°C");
-    const [nomeSensor, setNomeSensor] = useState("");
-    const [listaSensores, setListaSensores] = useState<Sensor[]>([]);
+  const [modalCadastroAberto, setModalCadastroAberto] =
+    useState(false);
 
-    const estacoesFiltradas = useMemo(() => {
-        const termo = pesquisa.trim().toLowerCase();
+  const [modalSensoresAberto, setModalSensoresAberto] =
+    useState(false);
 
-        if (!termo) {
-            return estacoes;
+  const [modalEdicaoAberto, setModalEdicaoAberto] =
+    useState(false);
+
+  const [modalExclusaoAberto, setModalExclusaoAberto] =
+    useState(false);
+
+  const [estacaoSelecionada, setEstacaoSelecionada] =
+    useState<Estacao | null>(null);
+
+  const [menuAbertoCodigo, setMenuAbertoCodigo] =
+    useState<string | null>(null);
+
+  const [posicaoMenu, setPosicaoMenu] = useState<{
+    top: number;
+    left: number;
+  } | null>(null);
+
+  const [nome, setNome] = useState('');
+  const [vid, setVid] = useState('');
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
+  const [endereco, setEndereco] = useState('');
+
+  const [sensoresSelecionados, setSensoresSelecionados] =
+    useState<Sensor[]>([]);
+
+  const carregarEstacoes = useCallback(async () => {
+    try {
+      setCarregando(true);
+
+      const resposta = await api<EstacaoApi[]>('/estacoes');
+
+      const estacoesConvertidas: Estacao[] = resposta.map(
+        (estacao) => ({
+          id: estacao.id,
+          nome: estacao.nome,
+          codigo: estacao.vid,
+          latitude: estacao.latitude,
+          longitude: estacao.longitude,
+          status:
+            estacao.statusOperacional === 'ATIVA'
+              ? 'Ativo'
+              : 'Não Ativo',
+          endereco: estacao.endereco,
+          sensores: estacao.sensores.map((sensor) => ({
+            id: sensor.id,
+            nome: sensor.nome,
+            tipo: sensor.nome,
+            unidade: sensor.unidade,
+          })),
+        }),
+      );
+
+      setEstacoes(estacoesConvertidas);
+    } catch (erro) {
+      if (erro instanceof ErroApi) {
+        if (erro.status === 401) {
+          router.push('/login?proximo=/estacoes');
+          return;
         }
 
-        return estacoes.filter((estacao) => {
-            const nomeEstacao = estacao.nome.toLowerCase();
-            const codigo = estacao.codigo.toLowerCase();
+        alert(erro.message);
+        return;
+      }
 
-            return nomeEstacao.includes(termo) || codigo.includes(termo);
-        });
-    }, [pesquisa, estacoes]);
+      console.error(erro);
+      alert('Não foi possível carregar as estações.');
+    } finally {
+      setCarregando(false);
+    }
+  }, [router]);
 
-    const totalPaginas = Math.max(1, Math.ceil(estacoesFiltradas.length / ITENS_POR_PAGINA));
+  useEffect(() => {
+    carregarEstacoes();
+  }, [carregarEstacoes]);
 
-    const paginaSegura = Math.min(paginaAtual, totalPaginas);
-    const indiceInicial = (paginaSegura - 1) * ITENS_POR_PAGINA;
-    const estacoesPagina = estacoesFiltradas.slice(
-        indiceInicial,
-        indiceInicial + ITENS_POR_PAGINA
+  const estacoesFiltradas = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+
+    if (!termo) {
+      return estacoes;
+    }
+
+    return estacoes.filter((estacao) => {
+      return (
+        estacao.nome.toLowerCase().includes(termo) ||
+        estacao.codigo.toLowerCase().includes(termo) ||
+        estacao.endereco.toLowerCase().includes(termo)
+      );
+    });
+  }, [estacoes, busca]);
+
+  const totalPaginas = Math.max(
+    1,
+    Math.ceil(
+      estacoesFiltradas.length / ITEMS_PER_PAGE,
+    ),
+  );
+
+  const paginaSegura = Math.min(
+    paginaAtual,
+    totalPaginas,
+  );
+
+  const estacoesPagina = useMemo(() => {
+    const inicio =
+      (paginaSegura - 1) * ITEMS_PER_PAGE;
+
+    return estacoesFiltradas.slice(
+      inicio,
+      inicio + ITEMS_PER_PAGE,
     );
+  }, [
+    estacoesFiltradas,
+    paginaSegura,
+  ]);
 
-    const indiceFinal = Math.min(
-        indiceInicial + estacoesPagina.length,
-        estacoesFiltradas.length
-    );
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [busca]);
 
-    const limparFormulario = () => {
-        setNome("");
-        setUuid("");
-        setLatitude("");
-        setLongitude("");
-        setEndereco("");
-        setStatusOperacional("ativo");
-    };
+  useEffect(() => {
+    if (paginaAtual > totalPaginas) {
+      setPaginaAtual(totalPaginas);
+    }
+  }, [paginaAtual, totalPaginas]);
 
-    const resetarAssociacao = () => {
-        setTipoSensor("Temperatura");
-        setUnidadeMedidaSelecionada("°C");
-        setNomeSensor("");
-        setListaSensores([]);
-    };
+  const limparFormulario = () => {
+    setNome('');
+    setVid('');
+    setLatitude('');
+    setLongitude('');
+    setEndereco('');
+    setSensoresSelecionados([]);
+    setEstacaoSelecionada(null);
+  };
 
-    const handlePesquisa = (event: React.ChangeEvent<HTMLInputElement>) => {
-        setPesquisa(event.target.value);
-        setPaginaAtual(1);
-    };
+  const abrirModalCadastro = () => {
+    limparFormulario();
+    setModalCadastroAberto(true);
+  };
 
-    const proximaPagina = () => {
-        setPaginaAtual((atual) => Math.min(atual + 1, totalPaginas));
-    };
+  const cadastrarEstacao = async () => {
+    try {
+      if (!nome.trim()) {
+        alert('Informe o nome da estação.');
+        return;
+      }
 
-    const paginaAnterior = () => {
-        setPaginaAtual((atual) => Math.max(atual - 1, 1));
-    };
+      if (!endereco.trim()) {
+        alert('Informe o endereço ou região.');
+        return;
+      }
 
-    const abrirModal = () => {
-        setModoEdicao("cadastro");
-        setEstacaoSelecionada(null);
-        limparFormulario();
-        setModalAberto(true);
-        setMenuAbertoCodigo(null);
-    };
+      if (!vid.trim()) {
+        alert('Informe o UUID/MAC da estação.');
+        return;
+      }
 
-    const abrirModalEdicao = (estacao: Estacao) => {
-        setModoEdicao("edicao");
-        setEstacaoSelecionada(estacao);
-        setNome(estacao.nome);
-        setUuid(estacao.codigo);
-        setLatitude(String(estacao.latitude));
-        setLongitude(String(estacao.longitude));
-        setEndereco(estacao.endereco);
-        setStatusOperacional(estacao.status === "Ativo" ? "ativo" : "inativo");
-        setModalAberto(true);
-        setMenuAbertoCodigo(null);
-    };
+      if (!latitude.trim()) {
+        alert('Informe a latitude.');
+        return;
+      }
 
-    const fecharModal = () => {
-        setModalAberto(false);
-        setModoEdicao("cadastro");
-        setEstacaoSelecionada(null);
-        limparFormulario();
-    };
+      if (!longitude.trim()) {
+        alert('Informe a longitude.');
+        return;
+      }
 
-    const abrirModalAssociacao = (estacao: Estacao) => {
-        setEstacaoAssociada(estacao);
-        setTipoSensor(estacao.sensores[0]?.tipo ?? "Temperatura");
-        setUnidadeMedidaSelecionada(estacao.sensores[0]?.unidade ?? "°C");
-        setListaSensores(estacao.sensores);
-        setNomeSensor("");
-        setModalAssociacaoAberto(true);
-        setMenuAbertoCodigo(null);
-    };
+      const latitudeNumero = Number(latitude);
+      const longitudeNumero = Number(longitude);
 
-    const fecharModalAssociacao = () => {
-        setModalAssociacaoAberto(false);
-        setEstacaoAssociada(null);
-        resetarAssociacao();
-    };
+      if (!Number.isFinite(latitudeNumero)) {
+        alert('Informe uma latitude válida.');
+        return;
+      }
 
-    const adicionarSensorLista = () => {
-        const sensorLimpo = nomeSensor.trim();
+      if (!Number.isFinite(longitudeNumero)) {
+        alert('Informe uma longitude válida.');
+        return;
+      }
 
-        if (!sensorLimpo) {
-            return;
-        }
+      if (
+        latitudeNumero < -90 ||
+        latitudeNumero > 90
+      ) {
+        alert('A latitude deve estar entre -90 e 90.');
+        return;
+      }
 
-        setListaSensores((listaAtuais) => {
-            if (listaAtuais.some((sensor) => sensor.nome === sensorLimpo)) {
-                return listaAtuais;
-            }
-
-            return [
-                ...listaAtuais,
-                {
-                    id: `S-${Date.now()}`,
-                    nome: sensorLimpo,
-                    tipo: tipoSensor,
-                    unidade: unidadeMedidaSelecionada,
-                },
-            ];
-        });
-        setNomeSensor("");
-    };
-
-    const removerSensorLista = (id: string) => {
-        setListaSensores((listaAtuais) => listaAtuais.filter((sensor) => sensor.id !== id));
-    };
-
-    const salvarAssociacao = () => {
-        if (!estacaoAssociada || listaSensores.length === 0) {
-            return;
-        }
-
-        setEstacoes((lista) =>
-            lista.map((estacao) =>
-                estacao.codigo === estacaoAssociada.codigo
-                    ? { ...estacao, sensores: listaSensores }
-                    : estacao
-            )
+      if (
+        longitudeNumero < -180 ||
+        longitudeNumero > 180
+      ) {
+        alert(
+          'A longitude deve estar entre -180 e 180.',
         );
+        return;
+      }
 
-        fecharModalAssociacao();
-    };
+      const payload: CriarEstacaoPayload = {
+        nome: nome.trim(),
+        endereco: endereco.trim(),
+        vid: vid.trim(),
+        latitude: latitudeNumero,
+        longitude: longitudeNumero,
+        tipoParametroIds:
+          sensoresSelecionados.map(
+            (sensor) => sensor.id,
+          ),
+      };
 
-    const cadastrarEstacao = () => {
-        const nomeDaEstacao = nome.trim();
+      const novaEstacaoApi =
+        await api<EstacaoApi>('/estacoes', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
 
-        if (!nomeDaEstacao) {
-            return;
+      const novaEstacao: Estacao = {
+        id: novaEstacaoApi.id,
+        nome: novaEstacaoApi.nome,
+        codigo: novaEstacaoApi.vid,
+        latitude: novaEstacaoApi.latitude,
+        longitude: novaEstacaoApi.longitude,
+        status:
+          novaEstacaoApi.statusOperacional === 'ATIVA'
+            ? 'Ativo'
+            : 'Não Ativo',
+        endereco: novaEstacaoApi.endereco,
+        sensores: novaEstacaoApi.sensores.map(
+          (sensor) => ({
+            id: sensor.id,
+            nome: sensor.nome,
+            tipo: sensor.nome,
+            unidade: sensor.unidade,
+          }),
+        ),
+      };
+
+      setEstacoes((anteriores) => [
+        ...anteriores,
+        novaEstacao,
+      ]);
+
+      setModalCadastroAberto(false);
+      limparFormulario();
+      setPaginaAtual(1);
+
+      alert('Estação cadastrada com sucesso!');
+    } catch (erro) {
+      if (erro instanceof ErroApi) {
+        if (erro.status === 401) {
+          router.push('/login?proximo=/estacoes');
+          return;
         }
 
-        const codigo = uuid.trim() || `EST-${Math.floor(1000 + Math.random() * 9000)}`;
-        const statusFinal = statusOperacional === "ativo" ? "Ativo" : "Não Ativo";
-        const novoEndereco = endereco.trim() || "Endereço não informado";
+        alert(erro.message);
+        return;
+      }
 
-        if (modoEdicao === "edicao" && estacaoSelecionada) {
-            setEstacoes((lista) =>
-                lista.map((estacao) =>
-                    estacao.codigo === estacaoSelecionada.codigo
-                        ? {
-                              ...estacao,
-                              nome: nomeDaEstacao,
-                              codigo,
-                              latitude: Number(latitude) || estacao.latitude,
-                              longitude: Number(longitude) || estacao.longitude,
-                              status: statusFinal,
-                              endereco: novoEndereco,
-                          }
-                        : estacao
-                )
-            );
-            fecharModal();
-            return;
+      console.error(erro);
+      alert('Não foi possível cadastrar a estação.');
+    }
+  };
+
+  const abrirMenu = (
+    event: React.MouseEvent<HTMLButtonElement>,
+    codigo: string,
+  ) => {
+    if (menuAbertoCodigo === codigo) {
+      setMenuAbertoCodigo(null);
+      return;
+    }
+
+    const retangulo =
+      event.currentTarget.getBoundingClientRect();
+
+    const larguraMenu = 160;
+
+    setPosicaoMenu({
+      top: retangulo.bottom + 4,
+      left: Math.max(
+        8,
+        Math.min(
+          retangulo.right - larguraMenu,
+          window.innerWidth -
+            larguraMenu -
+            8,
+        ),
+      ),
+    });
+
+    setMenuAbertoCodigo(codigo);
+  };
+
+  const abrirModalEdicao = (estacao: Estacao) => {
+    setMenuAbertoCodigo(null);
+
+    setEstacaoSelecionada(estacao);
+
+    setNome(estacao.nome);
+    setVid(estacao.codigo);
+    setLatitude(String(estacao.latitude));
+    setLongitude(String(estacao.longitude));
+    setEndereco(estacao.endereco);
+    setSensoresSelecionados(estacao.sensores);
+
+    setModalEdicaoAberto(true);
+  };
+
+  const confirmarExclusao = (codigo: string) => {
+    const estacao = estacoes.find(
+      (item) => item.codigo === codigo,
+    );
+
+    if (!estacao) {
+      return;
+    }
+
+    setMenuAbertoCodigo(null);
+    setEstacaoSelecionada(estacao);
+    setModalExclusaoAberto(true);
+  };
+
+  const excluirEstacao = () => {
+    if (!estacaoSelecionada) {
+      return;
+    }
+
+    /*
+     * ATENÇÃO:
+     * Seu backend atual não possui DELETE /estacoes/:id.
+     *
+     * Portanto, por enquanto esta alteração é apenas local.
+     *
+     * Quando o endpoint DELETE existir, substituímos
+     * este código por uma chamada à API.
+     */
+
+    setEstacoes((anteriores) =>
+      anteriores.filter(
+        (estacao) =>
+          estacao.id !== estacaoSelecionada.id,
+      ),
+    );
+
+    setModalExclusaoAberto(false);
+    setEstacaoSelecionada(null);
+  };
+
+  const salvarEdicao = () => {
+    if (!estacaoSelecionada) {
+      return;
+    }
+
+    const latitudeNumero = Number(latitude);
+    const longitudeNumero = Number(longitude);
+
+    if (!nome.trim()) {
+      alert('Informe o nome da estação.');
+      return;
+    }
+
+    if (!endereco.trim()) {
+      alert('Informe o endereço.');
+      return;
+    }
+
+    if (!Number.isFinite(latitudeNumero)) {
+      alert('Informe uma latitude válida.');
+      return;
+    }
+
+    if (!Number.isFinite(longitudeNumero)) {
+      alert('Informe uma longitude válida.');
+      return;
+    }
+
+    setEstacoes((anteriores) =>
+      anteriores.map((estacao) => {
+        if (
+          estacao.id !== estacaoSelecionada.id
+        ) {
+          return estacao;
         }
 
-        const novaEstacao: Estacao = {
-            nome: nomeDaEstacao,
-            codigo,
-            latitude: Number(latitude) || -23.5505,
-            longitude: Number(longitude) || -46.6333,
-            status: statusFinal,
-            endereco: novoEndereco,
-            sensores: [],
+        return {
+          ...estacao,
+          nome: nome.trim(),
+          endereco: endereco.trim(),
+          codigo: vid.trim(),
+          latitude: latitudeNumero,
+          longitude: longitudeNumero,
+          sensores: sensoresSelecionados,
         };
+      }),
+    );
 
-        setEstacoes((lista) => [novaEstacao, ...lista]);
-        setPesquisa("");
-        setPaginaAtual(1);
-        fecharModal();
-    };
+    setModalEdicaoAberto(false);
+    limparFormulario();
+  };
 
-    const confirmarExclusao = (codigo: string) => {
-        setConfirmacaoExclusao(codigo);
-        setMenuAbertoCodigo(null);
-    };
+  const alternarSensor = (sensor: Sensor) => {
+    setSensoresSelecionados((anteriores) => {
+      const existe = anteriores.some(
+        (item) => item.id === sensor.id,
+      );
 
-    const excluirEstacao = () => {
-        if (!confirmacaoExclusao) {
-            return;
-        }
-
-        setEstacoes((lista) =>
-            lista.filter((estacao) => estacao.codigo !== confirmacaoExclusao)
+      if (existe) {
+        return anteriores.filter(
+          (item) => item.id !== sensor.id,
         );
-        setConfirmacaoExclusao(null);
-    };
+      }
 
-    const renderizarContagemSensores = (estacao: Estacao) => {
-        const total = estacao.sensores.length;
+      return [...anteriores, sensor];
+    });
+  };
 
-        if (total === 0) {
-            return "0 sensores";
-        }
+  const tableColumns: Column<Estacao>[] = [
+    {
+      key: 'nome',
+      header: 'Estação',
+      render: (_, estacao) => (
+        <div>
+          <p className="font-medium">
+            {estacao.nome}
+          </p>
 
-        return `${total} ${total === 1 ? "sensor" : "sensores"}`;
-    };
+          <p className="text-xs text-muted-foreground">
+            {estacao.codigo}
+          </p>
+        </div>
+      ),
+    },
 
-    const tableColumns: Column<Estacao>[] = [
-        {
-            header: "Estação",
-            key: "nome",
-            render: (_, estacao) => (
-                <div className="flex flex-col">
-                    <span className="font-medium">{estacao.nome}</span>
-                    <span className="font-mono text-[10px] text-muted-foreground">{estacao.codigo}</span>
-                </div>
-            ),
-        },
-        {
-            header: "Latitude/Longitude",
-            key: "latitude",
-            render: (_, estacao) => `${estacao.latitude}, ${estacao.longitude}`,
-        },
-        {
-            header: "Status",
-            key: "status",
-            render: (_, estacao) => (
-                <span className={cn(
-                    "inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium",
-                    estacao.status === "Ativo"
-                        ? "bg-lime/15 text-lime"
-                        : "bg-destructive/15 text-destructive"
-                )}>
-                    <span className={cn(
-                        "size-1.5 rounded-full",
-                        estacao.status === "Ativo" ? "bg-lime" : "bg-destructive"
-                    )} />
-                    {estacao.status}
-                </span>
-            ),
-        },
-        {
-            header: "Sensores",
-            key: "sensores",
-            render: (_, estacao) => renderizarContagemSensores(estacao),
-        },
-        {
-            header: "Ações",
-            key: "codigo",
-            render: (_, estacao) => (
-                <div className="flex items-center justify-end gap-2">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        aria-label={`Associar sensores à ${estacao.nome}`}
-                        onClick={() => abrirModalAssociacao(estacao)}
-                    >
-                        +
-                    </Button>
+    {
+      key: 'endereco',
+      header: 'Endereço',
+      render: (_, estacao) => (
+        <span>{estacao.endereco}</span>
+      ),
+    },
 
-                    <div className="relative">
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            type="button"
-                            aria-label={`Mais opções para ${estacao.nome}`}
-                            onClick={() =>
-                                setMenuAbertoCodigo(
-                                    menuAbertoCodigo === estacao.codigo ? null : estacao.codigo
-                                )
-                            }
-                        >
-                            …
-                        </Button>
+    {
+      key: 'latitude',
+      header: 'Localização',
+      render: (_, estacao) => (
+        <div className="text-sm">
+          <p>
+            Lat: {estacao.latitude}
+          </p>
 
-                        {menuAbertoCodigo === estacao.codigo && (
-                            <div className="absolute right-0 top-full z-10 mt-1 w-40 rounded-lg border border-border bg-card shadow-lg" role="menu">
-                                <button
-                                    type="button"
-                                    className="block w-full px-4 py-2 text-left text-sm hover:bg-muted"
-                                    onClick={() => abrirModalEdicao(estacao)}
-                                >
-                                    Editar
-                                </button>
-                                <button
-                                    type="button"
-                                    className="block w-full px-4 py-2 text-left text-sm text-destructive hover:bg-destructive/10"
-                                    onClick={() => confirmarExclusao(estacao.codigo)}
-                                >
-                                    Deletar
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            ),
-        },
-    ];
+          <p>
+            Long: {estacao.longitude}
+          </p>
+        </div>
+      ),
+    },
 
-    return (
-        <div className="space-y-5">
-            <PageHeading
-                title="Estações"
-                description="Acompanhe e gerencie as estações do sistema."
-                action={
-                    <Button type="button" onClick={abrirModal}>
-                        + Nova Estação
-                    </Button>
-                }
-            />
+    {
+      key: 'status',
+      header: 'Status',
+      render: (_, estacao) => (
+        <span
+          className={
+            estacao.status === 'Ativo'
+              ? 'inline-flex rounded-full px-3 py-1 text-xs font-medium bg-green-100 text-green-700'
+              : 'inline-flex rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-600'
+          }
+        >
+          {estacao.status}
+        </span>
+      ),
+    },
 
-            <Input
-                placeholder="Buscar por estação ou código"
-                value={pesquisa}
-                onChange={handlePesquisa}
-                className="rise delay-0"
-            />
+    {
+      key: 'sensores',
+      header: 'Sensores',
+      render: (_, estacao) => (
+        <div className="flex flex-wrap gap-1">
+          {estacao.sensores.length === 0 ? (
+            <span className="text-sm text-muted-foreground">
+              Nenhum
+            </span>
+          ) : (
+            estacao.sensores.map((sensor) => (
+              <span
+                key={sensor.id}
+                className="rounded-md bg-muted px-2 py-1 text-xs"
+              >
+                {sensor.nome}
+              </span>
+            ))
+          )}
+        </div>
+      ),
+    },
 
-            <DataTable
-                columns={tableColumns}
-                data={estacoesPagina}
-                currentPage={paginaSegura}
-                totalPages={totalPaginas}
-                onPageChange={(page) => setPaginaAtual(page)}
-                rowKey="codigo"
-            />
+    {
+      key: 'longitude',
+      header: '',
+      render: (_, estacao) => (
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={(event) =>
+              abrirMenu(
+                event,
+                estacao.codigo,
+              )
+            }
+            className="rounded-md p-2 hover:bg-muted"
+            aria-label={`Ações para ${estacao.nome}`}
+          >
+            <MoreHorizontal className="h-5 w-5" />
+          </button>
 
-            {modalAberto && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={fecharModal}>
-                    <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
-                        <button
-                            type="button"
-                            className="absolute right-4 top-4 text-2xl text-muted-foreground hover:text-foreground"
-                            aria-label="Fechar modal"
-                            onClick={fecharModal}
-                        >
-                            ×
-                        </button>
+          {menuAbertoCodigo ===
+            estacao.codigo &&
+            posicaoMenu &&
+            typeof document !== 'undefined' &&
+            createPortal(
+              <div
+                className="fixed z-[100] w-40 rounded-lg border border-border bg-card p-1 shadow-lg"
+                style={{
+                  top: posicaoMenu.top,
+                  left: posicaoMenu.left,
+                }}
+                role="menu"
+              >
+                <button
+                  type="button"
+                  className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                  onClick={() =>
+                    abrirModalEdicao(estacao)
+                  }
+                >
+                  Editar
+                </button>
 
-                        <h2 className="mb-6 text-lg font-semibold">
-                            {modoEdicao === "edicao" ? "Editar estação" : "Cadastrar estação"}
-                        </h2>
-
-                        <div className="space-y-4">
-                            <div className="flex flex-col gap-1">
-                                <label htmlFor="nome" className="font-mono text-[10px] uppercase text-muted-foreground">
-                                    Nome
-                                </label>
-                                <Input
-                                    id="nome"
-                                    type="text"
-                                    value={nome}
-                                    onChange={(event) => setNome(event.target.value)}
-                                />
-                            </div>
-
-                            <div className="flex flex-col gap-1">
-                                <label htmlFor="uuid" className="font-mono text-[10px] uppercase text-muted-foreground">
-                                    UUID/MAC
-                                </label>
-                                <Input
-                                    id="uuid"
-                                    type="text"
-                                    value={uuid}
-                                    onChange={(event) => setUuid(event.target.value)}
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="flex flex-col gap-1">
-                                    <label htmlFor="latitude" className="font-mono text-[10px] uppercase text-muted-foreground">
-                                        Latitude
-                                    </label>
-                                    <Input
-                                        id="latitude"
-                                        type="number"
-                                        step="any"
-                                        value={latitude}
-                                        onChange={(event) => setLatitude(event.target.value)}
-                                        placeholder="Ex: -23.5505"
-                                    />
-                                </div>
-
-                                <div className="flex flex-col gap-1">
-                                    <label htmlFor="longitude" className="font-mono text-[10px] uppercase text-muted-foreground">
-                                        Longitude
-                                    </label>
-                                    <Input
-                                        id="longitude"
-                                        type="number"
-                                        step="any"
-                                        value={longitude}
-                                        onChange={(event) => setLongitude(event.target.value)}
-                                        placeholder="Ex: -46.6333"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex flex-col gap-1">
-                                <label htmlFor="endereco" className="font-mono text-[10px] uppercase text-muted-foreground">
-                                    Endereço/Região
-                                </label>
-                                <Input
-                                    id="endereco"
-                                    type="text"
-                                    value={endereco}
-                                    onChange={(event) => setEndereco(event.target.value)}
-                                />
-                            </div>
-
-                            <div className="flex flex-col gap-1">
-                                <label htmlFor="status" className="font-mono text-[10px] uppercase text-muted-foreground">
-                                    Status Operacional
-                                </label>
-                                <select
-                                    id="status"
-                                    value={statusOperacional}
-                                    onChange={(event) => setStatusOperacional(event.target.value as StatusOperacional)}
-                                    className="rounded border border-border bg-card px-3 py-2 text-sm"
-                                >
-                                    <option value="ativo">Ativo</option>
-                                    <option value="inativo">Não Ativo</option>
-                                </select>
-                            </div>
-                        </div>
-
-                        <div className="mt-6 flex justify-end gap-3">
-                            <Button variant="outline" type="button" onClick={fecharModal}>
-                                Cancelar
-                            </Button>
-                            <Button type="button" onClick={cadastrarEstacao}>
-                                {modoEdicao === "edicao" ? "Salvar" : "Cadastrar"}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {modalAssociacaoAberto && estacaoAssociada && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={fecharModalAssociacao}>
-                    <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
-                        <button
-                            type="button"
-                            className="absolute right-4 top-4 text-2xl text-muted-foreground hover:text-foreground"
-                            aria-label="Fechar modal de associação"
-                            onClick={fecharModalAssociacao}
-                        >
-                            ×
-                        </button>
-
-                        <h2 className="text-lg font-semibold">Sensores da estação</h2>
-                        <p className="mt-1 text-sm text-muted-foreground">{estacaoAssociada.nome}</p>
-
-                        <div className="mt-6 space-y-4">
-                            <div className="grid grid-cols-2 gap-3">
-                                <div className="flex flex-col gap-1">
-                                    <label htmlFor="tipoSensor" className="font-mono text-[10px] uppercase text-muted-foreground">
-                                        Tipo
-                                    </label>
-                                    <select
-                                        id="tipoSensor"
-                                        value={tipoSensor}
-                                        onChange={(event) => setTipoSensor(event.target.value)}
-                                        className="rounded border border-border bg-card px-3 py-2 text-sm"
-                                    >
-                                        {tiposSensores.map((tipo) => (
-                                            <option key={tipo} value={tipo}>
-                                                {tipo}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-
-                                <div className="flex flex-col gap-1">
-                                    <label htmlFor="unidadeMedida" className="font-mono text-[10px] uppercase text-muted-foreground">
-                                        Unidade de medida
-                                    </label>
-                                    <select
-                                        id="unidadeMedida"
-                                        value={unidadeMedidaSelecionada}
-                                        onChange={(event) => setUnidadeMedidaSelecionada(event.target.value)}
-                                        className="rounded border border-border bg-card px-3 py-2 text-sm"
-                                    >
-                                        {unidadesMedida.map((unidade) => (
-                                            <option key={unidade} value={unidade}>
-                                                {unidade}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div className="flex flex-col gap-1">
-                                <label htmlFor="nomeSensor" className="font-mono text-[10px] uppercase text-muted-foreground">
-                                    Nome do sensor
-                                </label>
-                                <div className="flex gap-2">
-                                    <Input
-                                        id="nomeSensor"
-                                        type="text"
-                                        value={nomeSensor}
-                                        onChange={(event) => setNomeSensor(event.target.value)}
-                                        placeholder="Digite o nome do sensor"
-                                    />
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        onClick={adicionarSensorLista}
-                                    >
-                                        Adicionar
-                                    </Button>
-                                </div>
-                            </div>
-
-                            {listaSensores.length === 0 ? (
-                                <div className="rounded border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
-                                    Nenhum sensor adicionado
-                                </div>
-                            ) : (
-                                <div className="space-y-2 rounded border border-border bg-muted/30 p-4">
-                                    {listaSensores.map((sensor) => (
-                                        <div key={sensor.id} className="flex items-center justify-between gap-2 rounded border border-border bg-card p-3 text-sm">
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex gap-2 text-xs text-muted-foreground">
-                                                    <span className="font-mono">{sensor.id}</span>
-                                                    <span>{sensor.tipo}</span>
-                                                    <span>{sensor.unidade}</span>
-                                                </div>
-                                                <div className="mt-1 font-medium">{sensor.nome}</div>
-                                            </div>
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="sm"
-                                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                                aria-label={`Remover ${sensor.nome}`}
-                                                onClick={() => removerSensorLista(sensor.id)}
-                                            >
-                                                Remover
-                                            </Button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="mt-6 flex justify-end gap-3">
-                            <Button variant="outline" type="button" onClick={fecharModalAssociacao}>
-                                Cancelar
-                            </Button>
-                            <Button type="button" onClick={salvarAssociacao}>
-                                Salvar sensores
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {confirmacaoExclusao && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setConfirmacaoExclusao(null)}>
-                    <div className="w-full max-w-md rounded-lg border border-border bg-card p-6 shadow-lg" onClick={(event) => event.stopPropagation()}>
-                        <h2 className="text-lg font-semibold">Confirmar exclusão</h2>
-                        <p className="mt-3 text-sm text-muted-foreground">
-                            Tem certeza que deseja deletar esta estação? Essa ação não pode ser desfeita.
-                        </p>
-
-                        <div className="mt-6 flex justify-end gap-3">
-                            <Button variant="outline" type="button" onClick={() => setConfirmacaoExclusao(null)}>
-                                Cancelar
-                            </Button>
-                            <Button
-                                type="button"
-                                onClick={excluirEstacao}
-                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                            >
-                                Deletar
-                            </Button>
-                        </div>
-                    </div>
-                </div>
+                <button
+                  type="button"
+                  className="w-full rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                  onClick={() =>
+                    confirmarExclusao(
+                      estacao.codigo,
+                    )
+                  }
+                >
+                  Deletar
+                </button>
+              </div>,
+              document.body,
             )}
         </div>
-    );
+      ),
+    },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <PageHeading
+        title="Estações"
+        description="Gerencie as estações e seus sensores."
+      />
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+
+          <Input
+            value={busca}
+            onChange={(event) =>
+              setBusca(event.target.value)
+            }
+            placeholder="Buscar estação..."
+            className="pl-9"
+          />
+        </div>
+
+        <Button
+          type="button"
+          onClick={abrirModalCadastro}
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          Nova estação
+        </Button>
+      </div>
+
+      <div className="min-h-[300px]">
+        {carregando ? (
+          <div className="flex min-h-[300px] items-center justify-center rounded-lg border">
+            <p className="text-sm text-muted-foreground">
+              Carregando estações...
+            </p>
+          </div>
+        ) : estacoesPagina.length === 0 ? (
+          <div className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border">
+            <p className="font-medium">
+              Nenhuma estação encontrada
+            </p>
+
+            <p className="mt-1 text-sm text-muted-foreground">
+              {busca
+                ? 'Tente alterar os termos da busca.'
+                : 'Cadastre a primeira estação.'}
+            </p>
+          </div>
+        ) : (
+          <DataTable
+            columns={tableColumns}
+            data={estacoesPagina}
+            currentPage={paginaSegura}
+            totalPages={totalPaginas}
+            onPageChange={(page: number) =>
+              setPaginaAtual(page)
+            }
+            rowKey="codigo"
+          />
+        )}
+      </div>
+
+      {modalCadastroAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-xl bg-card p-6 shadow-xl">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">
+                  Cadastrar estação
+                </h2>
+
+                <p className="text-sm text-muted-foreground">
+                  Preencha os dados da estação.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setModalCadastroAberto(false)
+                }
+                className="rounded-md p-2 hover:bg-muted"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium">
+                  Nome da estação
+                </label>
+
+                <Input
+                  value={nome}
+                  onChange={(event) =>
+                    setNome(event.target.value)
+                  }
+                  placeholder="Ex.: Estação Centro"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium">
+                  UUID/MAC
+                </label>
+
+                <Input
+                  value={vid}
+                  onChange={(event) =>
+                    setVid(event.target.value)
+                  }
+                  placeholder="UUID ou MAC do dispositivo"
+                />
+
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Este é o identificador do dispositivo.
+                  O UUID interno da estação é gerado
+                  automaticamente pelo banco.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Latitude
+                </label>
+
+                <Input
+                  type="number"
+                  step="any"
+                  value={latitude}
+                  onChange={(event) =>
+                    setLatitude(event.target.value)
+                  }
+                  placeholder="-23.1896"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Longitude
+                </label>
+
+                <Input
+                  type="number"
+                  step="any"
+                  value={longitude}
+                  onChange={(event) =>
+                    setLongitude(event.target.value)
+                  }
+                  placeholder="-45.8841"
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium">
+                  Endereço / Região
+                </label>
+
+                <Input
+                  value={endereco}
+                  onChange={(event) =>
+                    setEndereco(event.target.value)
+                  }
+                  placeholder="Ex.: Parque Central, São Paulo - SP"
+                />
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <div className="mb-2 flex items-center justify-between">
+                <div>
+                  <label className="block text-sm font-medium">
+                    Sensores
+                  </label>
+
+                  <p className="text-xs text-muted-foreground">
+                    Selecione os tipos de parâmetro associados.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setModalSensoresAberto(true)
+                  }
+                  className="text-sm font-medium text-primary hover:underline"
+                >
+                  Selecionar sensores
+                </button>
+              </div>
+
+              {sensoresSelecionados.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-4 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum sensor selecionado.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {sensoresSelecionados.map(
+                    (sensor) => (
+                      <span
+                        key={sensor.id}
+                        className="rounded-md bg-muted px-3 py-1.5 text-sm"
+                      >
+                        {sensor.nome} ({sensor.unidade})
+                      </span>
+                    ),
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setModalCadastroAberto(false);
+                  limparFormulario();
+                }}
+              >
+                Cancelar
+              </Button>
+
+              <Button
+                type="button"
+                onClick={cadastrarEstacao}
+              >
+                Cadastrar estação
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalSensoresAberto && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-card p-6 shadow-xl">
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Selecionar sensores
+                </h2>
+
+                <p className="text-sm text-muted-foreground">
+                  Selecione os sensores da estação.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setModalSensoresAberto(false)
+                }
+                className="rounded-md p-2 hover:bg-muted"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {SENSORES_DISPONIVEIS.map(
+                (sensor) => {
+                  const selecionado =
+                    sensoresSelecionados.some(
+                      (item) =>
+                        item.id === sensor.id,
+                    );
+
+                  return (
+                    <button
+                      key={sensor.id}
+                      type="button"
+                      onClick={() =>
+                        alternarSensor(sensor)
+                      }
+                      className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${
+                        selecionado
+                          ? 'border-primary bg-primary/10'
+                          : 'hover:bg-muted'
+                      }`}
+                    >
+                      <div>
+                        <p className="font-medium">
+                          {sensor.nome}
+                        </p>
+
+                        <p className="text-xs text-muted-foreground">
+                          Unidade: {sensor.unidade}
+                        </p>
+                      </div>
+
+                      {selecionado && (
+                        <span className="text-sm font-medium">
+                          Selecionado
+                        </span>
+                      )}
+                    </button>
+                  );
+                },
+              )}
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <Button
+                type="button"
+                onClick={() =>
+                  setModalSensoresAberto(false)
+                }
+              >
+                Confirmar
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalEdicaoAberto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-2xl rounded-xl bg-card p-6 shadow-xl">
+            <div className="mb-6 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold">
+                  Editar estação
+                </h2>
+
+                <p className="text-sm text-muted-foreground">
+                  Edite os dados da estação.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setModalEdicaoAberto(false);
+                  limparFormulario();
+                }}
+                className="rounded-md p-2 hover:bg-muted"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium">
+                  Nome
+                </label>
+
+                <Input
+                  value={nome}
+                  onChange={(event) =>
+                    setNome(event.target.value)
+                  }
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium">
+                  UUID/MAC
+                </label>
+
+                <Input
+                  value={vid}
+                  onChange={(event) =>
+                    setVid(event.target.value)
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Latitude
+                </label>
+
+                <Input
+                  type="number"
+                  step="any"
+                  value={latitude}
+                  onChange={(event) =>
+                    setLatitude(event.target.value)
+                  }
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Longitude
+                </label>
+
+                <Input
+                  type="number"
+                  step="any"
+                  value={longitude}
+                  onChange={(event) =>
+                    setLongitude(event.target.value)
+                  }
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="mb-1 block text-sm font-medium">
+                  Endereço
+                </label>
+
+                <Input
+                  value={endereco}
+                  onChange={(event) =>
+                    setEndereco(event.target.value)
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="mt-5">
+              <label className="mb-2 block text-sm font-medium">
+                Sensores
+              </label>
+
+              <div className="flex flex-wrap gap-2">
+                {sensoresSelecionados.map(
+                  (sensor) => (
+                    <span
+                      key={sensor.id}
+                      className="rounded-md bg-muted px-3 py-1.5 text-sm"
+                    >
+                      {sensor.nome} ({sensor.unidade})
+                    </span>
+                  ),
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setModalSensoresAberto(true)
+                }
+                className="mt-2 text-sm font-medium text-primary hover:underline"
+              >
+                Alterar sensores
+              </button>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setModalEdicaoAberto(false);
+                  limparFormulario();
+                }}
+              >
+                Cancelar
+              </Button>
+
+              <Button
+                type="button"
+                onClick={salvarEdicao}
+              >
+                Salvar alterações
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalExclusaoAberto &&
+        estacaoSelecionada && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
+            <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl">
+              <h2 className="text-lg font-semibold">
+                Excluir estação
+              </h2>
+
+              <p className="mt-2 text-sm text-muted-foreground">
+                Tem certeza que deseja excluir a
+                estação{' '}
+                <strong>
+                  {estacaoSelecionada.nome}
+                </strong>
+                ?
+              </p>
+
+              <p className="mt-2 text-xs text-muted-foreground">
+                A exclusão ainda está sendo feita
+                somente no frontend, pois o backend
+                informado não possui um endpoint DELETE.
+              </p>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setModalExclusaoAberto(false);
+                    setEstacaoSelecionada(null);
+                  }}
+                >
+                  Cancelar
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={excluirEstacao}
+                  className="bg-red-600 text-white hover:bg-red-700"
+                >
+                  Excluir
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+    </div>
+  );
 }
