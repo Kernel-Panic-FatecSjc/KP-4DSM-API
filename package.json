@@ -1,0 +1,25 @@
+{
+  "name": "kp-4dsm-api",
+  "private": true,
+  "scripts": {
+    "prepare": "husky",
+    "commit": "cz"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-customizable"
+    },
+    "cz-customizable": {
+      "config": ".config/.cz-config.cjs"
+    }
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.3",
+    "commitizen": "^4.3.2",
+    "cz-customizable": "^7.5.4",
+    "husky": "^9.1.7"
+  },
+  "overrides": {
+    "tmp": "^0.2.6"
+  }
+}
