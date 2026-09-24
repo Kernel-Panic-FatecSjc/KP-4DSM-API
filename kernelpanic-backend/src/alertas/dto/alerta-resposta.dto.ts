@@ -26,7 +26,7 @@ export class AlertaRespostaDto {
     this.criadoEm = alerta.criadoEm;
     this.estacao = { id: alerta.parametro.estacao.id, nome: alerta.parametro.estacao.nome };
     this.parametro = {
-      id: alerta.parametro.tipoParametro.id,
+      id: alerta.parametro.id,
       nome: alerta.parametro.tipoParametro.nome,
       unidade: alerta.parametro.tipoParametro.unidade,
     };

@@ -80,12 +80,29 @@ export class AlertasService {
   }
 
   async buscarOpcoesFiltro(): Promise<OpcoesFiltroAlertasRespostaDto> {
-    const [estacoes, tiposParametro] = await Promise.all([
+    const [estacoes, tiposParametro, parametros] = await Promise.all([
       this.prisma.estacao.findMany({ select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
       this.prisma.tipoParametro.findMany({ select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
+      this.prisma.parametro.findMany({
+        include: {
+          estacao: { select: { id: true, nome: true } },
+          tipoParametro: { select: { nome: true, unidade: true } },
+        },
+        orderBy: [{ estacao: { nome: 'asc' } }, { tipoParametro: { nome: 'asc' } }],
+      }),
     ]);
 
-    return new OpcoesFiltroAlertasRespostaDto(estacoes, tiposParametro);
+    return new OpcoesFiltroAlertasRespostaDto(
+      estacoes,
+      tiposParametro,
+      parametros.map((parametro) => ({
+        id: parametro.id,
+        nome: parametro.tipoParametro.nome,
+        unidade: parametro.tipoParametro.unidade,
+        estacaoId: parametro.estacao.id,
+        estacaoNome: parametro.estacao.nome,
+      })),
+    );
   }
 
   private async garantirParametroExistente(parametroId: string): Promise<void> {
