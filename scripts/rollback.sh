@@ -12,11 +12,12 @@ source "$(dirname "${BASH_SOURCE[0]}")/comum.sh"
 
 ALVO="${1:?uso: rollback.sh sha-<commit>}"
 validar_tag "$ALVO"
+TAG_EM_USO="$ALVO"
 
 echo "Rollback para $ALVO (no ar: $(cat "$ARQUIVO_VERSAO" 2>/dev/null || echo nenhuma))"
 
 # A imagem provavelmente ainda está em cache local; o pull só garante.
-IMAGE_TAG="$ALVO" compose pull api web
+compose pull api web
 definir_tag "$ALVO"
 compose up -d --remove-orphans
 

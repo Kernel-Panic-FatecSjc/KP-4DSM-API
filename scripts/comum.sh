@@ -20,8 +20,13 @@ INTERVALO_SAUDE="${INTERVALO_SAUDE:-3}"
 
 [ -f "$ARQUIVO_ENV" ] || { echo "::error::$ARQUIVO_ENV não existe. Veja docs/CD.md, 'Preparar o servidor'."; exit 1; }
 
+# IMAGE_TAG vem de TAG_EM_USO quando o script está trocando de versão (deploy e
+# rollback definem essa variável antes de gravar a tag no .env); senão, do .env.
+# TAG_EM_USO nunca é exportada: o rollback.sh chamado pelo deploy.sh não pode
+# herdar a tag nova, senão "reverteria" para a versão quebrada.
 compose() {
-  docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.prod.yml" --env-file "$ARQUIVO_ENV" "$@"
+  IMAGE_TAG="${TAG_EM_USO:-$(ler_env IMAGE_TAG)}" \
+    docker compose --project-directory "$APP_DIR" -f "$APP_DIR/docker-compose.prod.yml" --env-file "$ARQUIVO_ENV" "$@"
 }
 
 # Lê uma chave do .env sem dar `source` nele: o arquivo tem segredos e não deve

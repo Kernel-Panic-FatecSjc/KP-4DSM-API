@@ -16,6 +16,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/comum.sh"
 
 NOVA="${1:?uso: deploy.sh sha-<commit>}"
 validar_tag "$NOVA"
+TAG_EM_USO="$NOVA"
 
 AMBIENTE=$(ler_env AMBIENTE)
 ANTERIOR=$(cat "$ARQUIVO_VERSAO" 2>/dev/null || true)
@@ -36,20 +37,22 @@ escrever_resultado() {
 
 # O resultado do deploy anterior não pode sobreviver: se este falhar no meio,
 # o workflow leria um "sucesso" velho. Qualquer erro não tratado vira "falha".
+# (trap em EXIT, e não em ERR: com set -e, uma falha dentro de função encerra o
+# script sem disparar o ERR.)
 rm -f "$ARQUIVO_RESULTADO_DEPLOY"
-trap 'escrever_resultado falha' ERR
+trap '[ -f "$ARQUIVO_RESULTADO_DEPLOY" ] || escrever_resultado falha' EXIT
 
 echo "Ambiente: $AMBIENTE | no ar: ${ANTERIOR:-nenhuma} | nova: $NOVA"
 
 echo "::group::Baixar imagens $NOVA"
-# IMAGE_TAG do shell tem precedência sobre o .env: a tag nova só é gravada no
-# .env depois que as migrations passarem.
-IMAGE_TAG="$NOVA" compose pull api web
+# A tag nova só é gravada no .env depois que as migrations passarem; até lá ela
+# chega ao compose por TAG_EM_USO.
+compose pull api web
 echo "::endgroup::"
 
 echo "::group::Migrations"
 compose up -d --wait postgres
-IMAGE_TAG="$NOVA" compose run --rm --no-deps api npx prisma migrate deploy
+compose run --rm --no-deps api npx prisma migrate deploy
 # Migrations aplicadas por ESTE deploy, para o registro de auditoria.
 MIGRATIONS=$(sql -c "SELECT string_agg(migration_name, ',' ORDER BY finished_at)
                      FROM _prisma_migrations
@@ -60,9 +63,9 @@ echo "::endgroup::"
 if [ "$AMBIENTE" = "homologacao" ]; then
   echo "::group::Seed sintético (homologação)"
   # O seed de bootstrap imprime a senha do admin; ela não vai para o log do CI.
-  IMAGE_TAG="$NOVA" compose run --rm --no-deps api npm run --silent db:seed \
+  compose run --rm --no-deps api npm run --silent db:seed \
     | sed -E 's#^(Usuário inicial disponível: [^ ]+ / ).*#\1[omitida]#'
-  IMAGE_TAG="$NOVA" compose run --rm --no-deps api npm run --silent db:seed:homologacao
+  compose run --rm --no-deps api npm run --silent db:seed:homologacao
   echo "::endgroup::"
 fi
 
