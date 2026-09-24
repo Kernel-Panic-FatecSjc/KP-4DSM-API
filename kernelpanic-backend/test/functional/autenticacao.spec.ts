@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { PREFIXO_TESTE, autenticar, criarAppDeTeste, emailDeTeste } from '../helpers';
+import { autenticar, criarAppDeTeste, emailDeTeste } from '../helpers';
 
 describe('Autenticação (funcional)', () => {
   let app: INestApplication;
@@ -33,7 +33,6 @@ describe('Autenticação (funcional)', () => {
   });
 
   afterAll(async () => {
-    await prisma.usuario.deleteMany({ where: { email: { contains: PREFIXO_TESTE } } });
     await app.close();
   });
 

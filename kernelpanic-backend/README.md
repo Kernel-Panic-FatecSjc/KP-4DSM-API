@@ -50,9 +50,15 @@ Os testes ficam em `test/`, separados por natureza:
 
 - `test/unit/` — serviços, DTOs, validators e guards isolados, com mocks. Não precisa de banco.
 - `test/functional/` — sobem a aplicação e batem via HTTP (supertest). As specs de
-  ingestão substituem o `PrismaService` por um mock; as de autenticação exigem o
-  Postgres do `docker-compose.yml` migrado.
+  ingestão e alertas substituem o `PrismaService` por um mock; as de autenticação
+  usam o banco de teste.
 - `test/helpers.ts`, `test/fixtures.ts`, `test/bootstrap.ts` — apoio compartilhado.
+
+Os testes funcionais nunca usam o banco de desenvolvimento: rodam num banco próprio,
+por padrão o de `DATABASE_URL` com o sufixo `_test` (ex.: `kernelpanic_test`). Antes de
+cada execução, `test/global-setup.ts` roda `prisma migrate reset` nele, então basta o
+Postgres do `docker-compose.yml` estar de pé, e o banco é criado e migrado sozinho. Para
+usar outro banco, defina `DATABASE_URL_TESTE`; o nome dele precisa terminar em `_test`.
 
 ```bash
 # testes unitários
