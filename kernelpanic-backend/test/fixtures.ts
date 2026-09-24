@@ -74,3 +74,13 @@ export const ESTACAO_COM_SENSORES = {
     },
   ],
 };
+
+export const ALARME_COM_RELACOES = {
+  id: 'alarme-1',
+  disparadoEm: new Date('2026-09-23T12:05:00.000Z'),
+  status: 'ABERTO',
+  alertaId: ALERTA_COM_RELACOES.id,
+  medidaId: 'medida-1',
+  medida: { id: 'medida-1', valor: 42, unixtime: 1_760_000_000n },
+  alerta: ALERTA_COM_RELACOES,
+};
