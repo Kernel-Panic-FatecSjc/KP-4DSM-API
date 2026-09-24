@@ -1,0 +1,19 @@
+# Front e back na mesma origem: o frontend é construído com
+# NEXT_PUBLIC_API_URL=/api, e é aqui que /api/* vira chamada ao backend.
+# Isso deixa a imagem do frontend idêntica em todos os ambientes e mantém o
+# cookie de sessão same-site (COOKIE_SAMESITE=lax).
+#
+# SITE_ADDRESS=":80" serve HTTP puro. Com um domínio apontado para a VPS
+# (ex.: SITE_ADDRESS="kp4dsm.exemplo.com.br") o Caddy emite o certificado TLS
+# sozinho; nesse caso use COOKIE_SECURE=true no .env.
+{$SITE_ADDRESS}
+
+encode gzip
+
+handle_path /api/* {
+	reverse_proxy api:3001
+}
+
+handle {
+	reverse_proxy web:3000
+}

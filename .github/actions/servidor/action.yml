@@ -1,0 +1,77 @@
+name: Preparar acesso ao servidor
+description: >-
+  Configura o SSH para o servidor do ambiente (alias "servidor"), envia o
+  docker-compose, o Caddyfile e os scripts de CD para APP_DIR e autentica o
+  servidor no GHCR para baixar as imagens.
+
+inputs:
+  host:
+    description: Endereço da VPS
+    required: true
+  usuario:
+    description: Usuário SSH (precisa estar no grupo docker)
+    required: true
+  chave-ssh:
+    description: Chave privada SSH de deploy
+    required: true
+  known-hosts:
+    description: Linha(s) do known_hosts da VPS (ssh-keyscan -H <host>)
+    required: true
+  porta:
+    description: Porta SSH
+    required: false
+    default: '22'
+  app-dir:
+    description: Diretório do ambiente no servidor
+    required: true
+  registry-token:
+    description: Token com packages:read para o servidor baixar as imagens
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Configurar SSH
+      shell: bash
+      env:
+        HOST: ${{ inputs.host }}
+        USUARIO: ${{ inputs.usuario }}
+        CHAVE: ${{ inputs.chave-ssh }}
+        KNOWN_HOSTS: ${{ inputs.known-hosts }}
+        PORTA: ${{ inputs.porta }}
+      run: |
+        # known_hosts vem de secret, e não de ssh-keyscan na hora: aceitar a
+        # chave que o host apresentar abriria espaço para man-in-the-middle.
+        install -m 700 -d ~/.ssh
+        printf '%s\n' "$CHAVE" > ~/.ssh/id_deploy
+        chmod 600 ~/.ssh/id_deploy
+        printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+        cat > ~/.ssh/config <<CONFIG
+        Host servidor
+          HostName $HOST
+          User $USUARIO
+          Port $PORTA
+          IdentityFile ~/.ssh/id_deploy
+          IdentitiesOnly yes
+          StrictHostKeyChecking yes
+          ServerAliveInterval 15
+        CONFIG
+
+    - name: Enviar compose e scripts
+      shell: bash
+      env:
+        APP_DIR: ${{ inputs.app-dir }}
+      run: |
+        ssh servidor "mkdir -p '$APP_DIR/scripts'"
+        scp -q infra/docker-compose.prod.yml infra/Caddyfile "servidor:$APP_DIR/"
+        scp -q scripts/*.sh "servidor:$APP_DIR/scripts/"
+        ssh servidor "chmod +x '$APP_DIR'/scripts/*.sh"
+
+    - name: Autenticar servidor no GHCR
+      shell: bash
+      env:
+        TOKEN: ${{ inputs.registry-token }}
+      run: |
+        # O GITHUB_TOKEN expira junto com o job, então a credencial que fica no
+        # servidor deixa de valer logo depois do deploy.
+        printf '%s' "$TOKEN" | ssh servidor "docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin" >/dev/null

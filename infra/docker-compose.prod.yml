@@ -1,0 +1,61 @@
+# Stack de homologação e produção (docs/CD.md). O mesmo arquivo serve aos dois
+# ambientes: o que muda é o .env de cada diretório no servidor
+# (/opt/kp4dsm/homologacao e /opt/kp4dsm/producao), incluindo
+# COMPOSE_PROJECT_NAME e HTTP_PORT, o que permite os dois na mesma VPS.
+#
+# IMAGE_TAG (sha-<commit>) é escrita no .env por scripts/deploy.sh e
+# scripts/rollback.sh. Não edite à mão: a fonte da verdade da versão no ar é o
+# arquivo versao_atual, ao lado deste compose.
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?defina POSTGRES_USER no .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:?defina POSTGRES_DB no .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Sem "ports": o banco só é alcançável pela rede interna do compose.
+
+  api:
+    image: ${IMAGEM_API:-ghcr.io/kernel-panic-fatecsjc/kp-4dsm-backend}:${IMAGE_TAG:?IMAGE_TAG ausente, rode scripts/deploy.sh}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: '3001'
+      APP_VERSION: ${IMAGE_TAG}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    image: ${IMAGEM_WEB:-ghcr.io/kernel-panic-fatecsjc/kp-4dsm-frontend}:${IMAGE_TAG}
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    depends_on:
+      - api
+      - web
+
+volumes:
+  postgres_data:
+  caddy_data:

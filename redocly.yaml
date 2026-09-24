@@ -1,0 +1,7 @@
+# Lint da especificação OpenAPI no CD (docs/CD.md, estágio 1).
+# "minimal" reprova spec estruturalmente inválida e deixa o resto como aviso.
+# Os controllers ainda não têm @ApiOperation/@ApiSecurity, então o ruleset
+# "recommended" reprovaria por falta de summary e de security em toda rota.
+# Troque para "recommended" quando as anotações estiverem completas.
+extends:
+  - minimal

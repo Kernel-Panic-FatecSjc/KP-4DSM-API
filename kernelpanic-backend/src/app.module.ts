@@ -10,6 +10,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { EstacoesModule } from './estacoes/estacoes.module';
 import { IngestaoModule } from './ingestao/ingestao.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { SaudeModule } from './saude/saude.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 
 @Module({
@@ -24,6 +25,7 @@ import { UsuariosModule } from './usuarios/usuarios.module';
     DashboardModule,
     EstacoesModule,
     IngestaoModule,
+    SaudeModule,
   ],
   controllers: [AppController],
   providers: [AppService],

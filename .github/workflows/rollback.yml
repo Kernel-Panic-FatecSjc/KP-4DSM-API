@@ -1,0 +1,131 @@
+name: Rollback
+
+# Rollback manual para qualquer tag já publicada (docs/CD.md, "Rollback").
+# O rollback automático do deploy só volta uma versão; este permite escolher
+# o alvo. Sem rebuild e sem migrations: só troca a imagem e confere a saúde.
+on:
+  workflow_dispatch:
+    inputs:
+      ambiente:
+        description: Ambiente a reverter
+        type: choice
+        options: [producao, homologacao]
+        required: true
+      tag:
+        description: Tag a colocar no ar (sha-<commit>, ver o resumo dos deploys ou o GHCR)
+        type: string
+        required: true
+      motivo:
+        description: Motivo (vai para a trilha de auditoria)
+        type: string
+        required: true
+
+concurrency:
+  group: rollback-${{ inputs.ambiente }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    name: Rollback de ${{ inputs.ambiente }} para ${{ inputs.tag }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Em produção a regra de proteção do environment também vale aqui: um
+    # revisor precisa aprovar o rollback, como aprovaria um deploy.
+    environment:
+      name: ${{ inputs.ambiente }}
+      url: ${{ vars.URL_PUBLICA }}
+    permissions:
+      contents: read
+      packages: read
+    env:
+      AMBIENTE: ${{ inputs.ambiente }}
+      TAG: ${{ inputs.tag }}
+      MOTIVO: ${{ inputs.motivo }}
+      APP_DIR: ${{ vars.APP_DIR || format('/opt/kp4dsm/{0}', inputs.ambiente) }}
+
+    steps:
+      # Os scripts vêm da main atual, e não da versão alvo: correções nos
+      # próprios scripts de rollback valem mesmo para voltar a versões antigas.
+      - uses: actions/checkout@v4
+
+      - name: Validar tag
+        run: |
+          if ! [[ "$TAG" =~ ^sha-[0-9a-f]{7,40}$ ]]; then
+            echo "::error::Tag inválida: '$TAG'. Use o formato sha-<commit>, ex.: sha-abc1234."
+            exit 1
+          fi
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Conferir que as imagens existem no registry
+        run: |
+          dono="${GITHUB_REPOSITORY_OWNER,,}"
+          for imagem in "ghcr.io/$dono/kp-4dsm-backend:$TAG" "ghcr.io/$dono/kp-4dsm-frontend:$TAG"; do
+            if ! docker manifest inspect "$imagem" >/dev/null 2>&1; then
+              echo "::error::$imagem não existe no registry."
+              exit 1
+            fi
+            echo "ok  $imagem"
+          done
+
+      - uses: ./.github/actions/servidor
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          usuario: ${{ secrets.VPS_USUARIO }}
+          chave-ssh: ${{ secrets.VPS_CHAVE_SSH }}
+          known-hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
+          porta: ${{ vars.VPS_PORTA || '22' }}
+          app-dir: ${{ env.APP_DIR }}
+          registry-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: rollback
+        name: Rollback
+        run: |
+          anterior=$(ssh servidor "cat '$APP_DIR/versao_atual' 2>/dev/null" || true)
+          echo "anterior=$anterior" >> "$GITHUB_OUTPUT"
+          echo "iniciado_em=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          ssh servidor "'$APP_DIR/scripts/rollback.sh' '$TAG'"
+
+      - name: Registrar rollback na trilha de auditoria
+        if: always() && steps.rollback.outcome != 'skipped'
+        env:
+          RESULTADO: ${{ steps.rollback.outcome }}
+          ANTERIOR: ${{ steps.rollback.outputs.anterior }}
+          INICIADO_EM: ${{ steps.rollback.outputs.iniciado_em }}
+        run: |
+          [ "$RESULTADO" = "success" ] && status=sucesso || status=falha
+          deploy_id="rbk_$(date -u +%Y_%m%d)_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+
+          jq -nc \
+            --arg deploy_id "$deploy_id" \
+            --arg ambiente "$AMBIENTE" \
+            --arg versao_alvo "$TAG" \
+            --arg versao_anterior "$ANTERIOR" \
+            --arg motivo "$MOTIVO" \
+            --arg disparado_por "$GITHUB_ACTOR" \
+            --arg iniciado_em "$INICIADO_EM" \
+            --arg concluido_em "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg status "$status" \
+            --arg run_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{deploy_id: $deploy_id, ambiente: $ambiente, tipo: "rollback_manual",
+              versao_alvo: $versao_alvo, versao_anterior: $versao_anterior, motivo: $motivo,
+              disparado_por: $disparado_por, iniciado_em: $iniciado_em,
+              concluido_em: $concluido_em, status: $status, run_url: $run_url}' > registro.json
+          cat registro.json
+
+          ssh servidor "'$APP_DIR/scripts/registrar-deploy.sh' deploy.rollback '$deploy_id'" < registro.json
+
+          {
+            echo "## Rollback de $AMBIENTE: \`$status\`"
+            echo
+            echo "\`${ANTERIOR:-?}\` → \`$TAG\` por $GITHUB_ACTOR"
+            echo
+            echo "Motivo: $MOTIVO"
+          } >> "$GITHUB_STEP_SUMMARY"

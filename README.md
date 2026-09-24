@@ -262,3 +262,4 @@ Equipe de Desenvolvimento 4DSM - FATEC São José dos Campos
 
 - [Product Backlog Detalhado](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/blob/main/docs/Product%20Backlog%204%C2%BADSM%20-%20Kernel%20Panic.pdf)
 - [Mapeamento de Requisitos](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/blob/main/docs/Requisitos.md)
+- [Pipeline de CD](docs/CD.md): deploy, rollback e configuração dos ambientes

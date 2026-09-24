@@ -1,0 +1,426 @@
+name: CD
+
+# Entrega contínua a partir do artefato que o CI validou (docs/CD.md).
+# Só roda depois de o CI passar num push na main: nenhum commit chega a
+# homologação sem lint, typecheck, build e testes verdes.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+# Um deploy nunca é cancelado no meio. Um segundo merge espera o primeiro
+# terminar, inclusive a aprovação manual de produção.
+concurrency:
+  group: cd-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SHA: ${{ github.event.workflow_run.head_sha }}
+
+jobs:
+  build:
+    name: '1. Build e versionamento'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.versao.outputs.tag }}
+      imagem_api: ${{ steps.versao.outputs.imagem_api }}
+      imagem_web: ${{ steps.versao.outputs.imagem_web }}
+      commit_em: ${{ steps.versao.outputs.commit_em }}
+
+    # Banco temporário só para subir a imagem recém-construída e extrair o
+    # /openapi.json dela (seção 6 do docs/CD.md).
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: kernelpanic
+          POSTGRES_PASSWORD: kernelpanic
+          POSTGRES_DB: kernelpanic
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kernelpanic"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - id: versao
+        name: Definir versão
+        run: |
+          # sha-<commit curto> é a tag imutável: é ela que vai para o .env dos
+          # servidores e que o rollback usa. "latest" é só conveniência.
+          dono="${GITHUB_REPOSITORY_OWNER,,}"
+          {
+            echo "tag=sha-${SHA:0:7}"
+            echo "imagem_api=ghcr.io/$dono/kp-4dsm-backend"
+            echo "imagem_web=ghcr.io/$dono/kp-4dsm-frontend"
+            echo "commit_em=$(git log -1 --format=%cI "$SHA")"
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Construídas uma única vez aqui. Homologação e produção recebem
+      # exatamente estas imagens; nenhum estágio seguinte reconstrói.
+      - name: Imagem do backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./kernelpanic-backend
+          push: true
+          tags: |
+            ${{ steps.versao.outputs.imagem_api }}:${{ steps.versao.outputs.tag }}
+            ${{ steps.versao.outputs.imagem_api }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SHA }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Imagem do frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend/frontend
+          push: true
+          tags: |
+            ${{ steps.versao.outputs.imagem_web }}:${{ steps.versao.outputs.tag }}
+            ${{ steps.versao.outputs.imagem_web }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ env.SHA }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Extrair OpenAPI da imagem
+        env:
+          IMAGEM: ${{ steps.versao.outputs.imagem_api }}:${{ steps.versao.outputs.tag }}
+          TAG: ${{ steps.versao.outputs.tag }}
+          DATABASE_URL: postgresql://kernelpanic:kernelpanic@localhost:5432/kernelpanic?schema=public
+        run: |
+          # Sobe a própria imagem publicada, e não o código-fonte: a spec
+          # descreve exatamente o artefato que vai ser promovido. De quebra,
+          # prova que as migrations rodam a partir da imagem.
+          docker run --rm --network host -e DATABASE_URL "$IMAGEM" npx prisma migrate deploy
+          docker run -d --name api-docs --network host \
+            -e DATABASE_URL -e JWT_SECRET=somente-para-gerar-docs -e APP_VERSION="$TAG" -e PORT=3001 \
+            "$IMAGEM"
+
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:3001/health >/dev/null && break
+            [ "$i" = 20 ] && { echo "::error::A imagem não ficou saudável."; docker logs api-docs; exit 1; }
+            sleep 3
+          done
+
+          curl -sf http://localhost:3001/openapi.json -o openapi.json
+          docker rm -f api-docs >/dev/null
+
+      - name: Validar OpenAPI
+        run: npx --yes @redocly/cli@2 lint openapi.json --config redocly.yaml
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: openapi.json
+          if-no-files-found: error
+
+  homologacao:
+    name: '2. Deploy em homologação'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: build
+    environment:
+      name: homologacao
+      url: ${{ vars.URL_PUBLICA }}
+    permissions:
+      contents: read
+      packages: read
+    env:
+      APP_DIR: ${{ vars.APP_DIR || '/opt/kp4dsm/homologacao' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - uses: ./.github/actions/servidor
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          usuario: ${{ secrets.VPS_USUARIO }}
+          chave-ssh: ${{ secrets.VPS_CHAVE_SSH }}
+          known-hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
+          porta: ${{ vars.VPS_PORTA || '22' }}
+          app-dir: ${{ env.APP_DIR }}
+          registry-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Migrations (expand/contract) + seed sintético + recreate + healthcheck.
+      - name: Deploy
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+        run: ssh servidor "'$APP_DIR/scripts/deploy.sh' '$TAG'"
+
+  smoke-homologacao:
+    name: '3. Smoke tests'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [build, homologacao]
+    environment: homologacao
+    permissions:
+      contents: read
+      packages: read
+    env:
+      APP_DIR: ${{ vars.APP_DIR || '/opt/kp4dsm/homologacao' }}
+    outputs:
+      resultado: ${{ steps.smoke.outputs.resultado }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - uses: ./.github/actions/servidor
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          usuario: ${{ secrets.VPS_USUARIO }}
+          chave-ssh: ${{ secrets.VPS_CHAVE_SSH }}
+          known-hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
+          porta: ${{ vars.VPS_PORTA || '22' }}
+          app-dir: ${{ env.APP_DIR }}
+          registry-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Saúde, ingestão ponta a ponta (US04) e disparo de alerta (US06), com a
+      # estação sintética SMOKE-001. Só em homologação.
+      - id: smoke
+        name: Saúde, ingestão e alerta
+        run: |
+          status=0
+          ssh servidor "'$APP_DIR/scripts/smoke-test.sh' homologacao" || status=$?
+          resultado=$(ssh servidor "cat '$APP_DIR/ultimo-smoke.env' 2>/dev/null" \
+            | jq -Rnc '[inputs | split("=") | {(.[0]): .[1]}] | add // {}') || resultado='{}'
+          echo "resultado=$resultado" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+  producao:
+    # O gate manual (estágio 4) é a regra de proteção do environment
+    # "producao": o job só começa depois de um revisor aprovar. Deliberado:
+    # publicar durante um evento climático ativo é risco operacional real, então
+    # a entrega é contínua, mas o deploy em produção não é automático.
+    name: '4-5. Aprovação e deploy em produção'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [build, smoke-homologacao]
+    environment:
+      name: producao
+      url: ${{ vars.URL_PUBLICA }}
+    permissions:
+      contents: read
+      packages: read
+      actions: read
+    env:
+      APP_DIR: ${{ vars.APP_DIR || '/opt/kp4dsm/producao' }}
+      TAG: ${{ needs.build.outputs.tag }}
+    outputs:
+      versao_anterior: ${{ steps.deploy.outputs.versao_anterior }}
+      concluido_em: ${{ steps.deploy.outputs.concluido_em }}
+      aprovado_por: ${{ steps.aprovacao.outputs.login }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+
+      - id: aprovacao
+        name: Identificar aprovador
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Só o login do GitHub (LGPD: nada de nome ou e-mail no registro).
+          login=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" \
+            --jq '[.[] | select(.state == "approved") | select(any(.environments[]; .name == "producao"))] | last | .user.login // ""')
+          echo "login=$login" >> "$GITHUB_OUTPUT"
+          echo "Aprovado por: ${login:-(sem regra de revisão configurada)}"
+
+      - uses: ./.github/actions/servidor
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          usuario: ${{ secrets.VPS_USUARIO }}
+          chave-ssh: ${{ secrets.VPS_CHAVE_SSH }}
+          known-hosts: ${{ secrets.VPS_KNOWN_HOSTS }}
+          porta: ${{ vars.VPS_PORTA || '22' }}
+          app-dir: ${{ env.APP_DIR }}
+          registry-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Deploy direto com healthcheck; se falhar, o próprio deploy.sh reverte
+      # para a tag em versao_atual. Blue-green foi descartado de propósito
+      # (docs/CD.md, "Por que não blue-green").
+      - id: deploy
+        name: Deploy com healthcheck e rollback automático
+        run: |
+          status=0
+          ssh servidor "'$APP_DIR/scripts/deploy.sh' '$TAG'" || status=$?
+          ssh servidor "cat '$APP_DIR/ultimo-deploy.env' 2>/dev/null" >> "$GITHUB_OUTPUT" || true
+          exit "$status"
+
+      # Nada aqui grava no banco de produção: sem ingestão e sem alerta.
+      - id: smoke
+        name: Smoke tests não destrutivos
+        run: ssh servidor "'$APP_DIR/scripts/smoke-test.sh' producao"
+
+      - id: rollback
+        name: Reverter após falha no smoke test
+        if: failure() && steps.smoke.outcome == 'failure' && steps.deploy.outputs.versao_anterior != ''
+        env:
+          ANTERIOR: ${{ steps.deploy.outputs.versao_anterior }}
+        run: ssh servidor "'$APP_DIR/scripts/rollback.sh' '$ANTERIOR'"
+
+      - name: Registrar deploy na trilha de auditoria
+        if: always() && steps.deploy.outcome != 'skipped'
+        env:
+          RESULTADO_DEPLOY: ${{ steps.deploy.outcome }}
+          RESULTADO_SMOKE: ${{ steps.smoke.outcome }}
+          RESULTADO_ROLLBACK: ${{ steps.rollback.outcome }}
+          STATUS_SCRIPT: ${{ steps.deploy.outputs.status }}
+          ANTERIOR: ${{ steps.deploy.outputs.versao_anterior }}
+          INICIADO_EM: ${{ steps.deploy.outputs.iniciado_em }}
+          CONCLUIDO_EM: ${{ steps.deploy.outputs.concluido_em }}
+          DOWNTIME: ${{ steps.deploy.outputs.downtime_segundos }}
+          MIGRATIONS: ${{ steps.deploy.outputs.migrations }}
+          APROVADOR: ${{ steps.aprovacao.outputs.login }}
+          IMAGEM_API: ${{ needs.build.outputs.imagem_api }}
+          IMAGEM_WEB: ${{ needs.build.outputs.imagem_web }}
+          COMMIT_EM: ${{ needs.build.outputs.commit_em }}
+          SMOKE_HOMOLOGACAO: ${{ needs.smoke-homologacao.outputs.resultado }}
+        run: |
+          if [ "$RESULTADO_SMOKE" = "failure" ]; then
+            [ "$RESULTADO_ROLLBACK" = "success" ] && status=revertido || status=falha_no_rollback
+          else
+            status="${STATUS_SCRIPT:-falha}"
+          fi
+
+          smoke_producao=$(ssh servidor "cat '$APP_DIR/ultimo-smoke.env' 2>/dev/null" \
+            | jq -Rnc '[inputs | split("=") | {(.[0]): .[1]}] | add // {}' || echo '{}')
+          deploy_id="dep_$(date -u +%Y_%m%d)_${GITHUB_RUN_ID}_${GITHUB_RUN_ATTEMPT}"
+
+          # Os campos cobrem as métricas DORA: frequência (concluido_em),
+          # lead time (commit_em -> concluido_em), taxa de falha (status) e
+          # tempo de recuperação (registros de rollback).
+          jq -nc \
+            --arg deploy_id "$deploy_id" \
+            --arg commit_sha "$SHA" \
+            --arg commit_em "$COMMIT_EM" \
+            --arg imagem "$IMAGEM_API:$TAG" \
+            --arg imagem_frontend "$IMAGEM_WEB:$TAG" \
+            --arg versao_anterior "$ANTERIOR" \
+            --arg downtime "$DOWNTIME" \
+            --arg aprovado_por "$APROVADOR" \
+            --arg iniciado_em "$INICIADO_EM" \
+            --arg concluido_em "$CONCLUIDO_EM" \
+            --arg migrations "$MIGRATIONS" \
+            --argjson smoke_homologacao "${SMOKE_HOMOLOGACAO:-{\}}" \
+            --argjson smoke_producao "$smoke_producao" \
+            --arg status "$status" \
+            --arg run_url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            '{
+              deploy_id: $deploy_id,
+              ambiente: "producao",
+              commit_sha: $commit_sha,
+              commit_em: $commit_em,
+              imagem: $imagem,
+              imagem_frontend: $imagem_frontend,
+              versao_anterior: $versao_anterior,
+              downtime_segundos: ($downtime | tonumber? // null),
+              aprovado_por: $aprovado_por,
+              iniciado_em: $iniciado_em,
+              concluido_em: $concluido_em,
+              migrations: ($migrations | split(",") | map(select(. != ""))),
+              smoke_tests: { homologacao: $smoke_homologacao, producao: $smoke_producao },
+              status: $status,
+              run_url: $run_url
+            }' > registro.json
+          cat registro.json
+
+          ssh servidor "'$APP_DIR/scripts/registrar-deploy.sh' deploy.producao '$deploy_id'" < registro.json
+
+          {
+            echo "## Deploy em produção: \`$status\`"
+            echo
+            echo "| | |"
+            echo "|---|---|"
+            echo "| Versão | \`$TAG\` |"
+            echo "| Versão anterior | \`${ANTERIOR:-nenhuma}\` |"
+            echo "| Aprovado por | ${APROVADOR:-não identificado} |"
+            echo "| Indisponibilidade | ${DOWNTIME:-?}s |"
+            echo "| Migrations | ${MIGRATIONS:-nenhuma} |"
+            echo "| Smoke homologação | \`$SMOKE_HOMOLOGACAO\` |"
+            echo "| Smoke produção | \`$smoke_producao\` |"
+            echo "| Registro | \`$deploy_id\` em logs_auditoria |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  pos-deploy:
+    name: '6. Pós-deploy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Só publica a documentação se a versão está de fato no ar e saudável:
+    # a página nunca descreve algo diferente do que está em produção.
+    needs: [build, producao]
+    if: success()
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+
+    steps:
+      # Não regera a spec: publica a que foi extraída da imagem no estágio 1.
+      - uses: actions/download-artifact@v4
+        with:
+          name: openapi
+
+      - name: Carimbar versão e montar a página
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          PUBLICADO_EM: ${{ needs.producao.outputs.concluido_em }}
+        run: |
+          mkdir -p site
+          jq --arg v "$TAG" --arg em "$PUBLICADO_EM" \
+            '.info.version = $v | .info["x-deployed-at"] = $em' openapi.json > site/openapi.json
+          npx --yes @redocly/cli@2 build-docs site/openapi.json -o site/index.html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: pages
+        uses: actions/deploy-pages@v4
+
+      - name: Resumo
+        env:
+          TAG: ${{ needs.build.outputs.tag }}
+          URL_DOCS: ${{ steps.pages.outputs.page_url }}
+        run: |
+          {
+            echo "## Documentação da API publicada"
+            echo
+            echo "\`$TAG\` em $URL_DOCS"
+          } >> "$GITHUB_STEP_SUMMARY"

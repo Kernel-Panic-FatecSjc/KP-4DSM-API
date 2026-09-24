@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+*.tsbuildinfo
+src/generated
+# Nenhum .env entra na imagem: as variáveis são injetadas pelo docker-compose
+# do servidor (docs/CD.md, seção de segurança).
+.env
+.env.*
+!.env.example
