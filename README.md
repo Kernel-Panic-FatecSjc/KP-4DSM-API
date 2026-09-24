@@ -232,7 +232,8 @@ git add <arquivos>
 npm run commit
 ```
 
-O comando pergunta o tipo, o escopo (`US06-02`, `#39` ou `not-US`) e o resumo. Commits
+O comando pergunta o tipo, o id da task (`US06-02` para tarefa de User Story, `#39` para
+issue ou `not-US` quando não há vínculo), que é obrigatório e vira o escopo do commit, e o resumo. Commits
 feitos direto com `git commit` também são validados pelo hook `commit-msg`, que recusa
 mensagens fora do padrão antes de o commit ser criado. Se a mensagem for recusada,
 `npx cz --retry` na raiz refaz o commit com as respostas anteriores.
