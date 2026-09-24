@@ -1,623 +1,108 @@
-"use client";
+'use client';
 
-import React, { useState, useMemo, useEffect } from "react";
-import { api, ErroApi } from "@/lib/api";
-import { PageHeading } from "@/components/PageHeading";
-import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
-import {
-  Search,
-  MapPin,
-  Clock,
-  Activity,
-  Gauge,
-  AlertTriangle,
-  CheckCircle2,
-  CircleDot,
-  XCircle,
-  User,
-  FileText,
-  Radio,
-  Navigation,
-  LucideIcon,
-} from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, Clock3, Gauge, Hash, MapPin, Radio, ShieldCheck, UserRound } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { PageHeading } from '@/components/PageHeading';
+import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/select';
+import { api, ErroApi, type AlarmeHistorico, type FiltrosAlarmes, type ListaAlarmes, type OpcoesFiltroAlarmes, type SeveridadeAlerta, type StatusAlarme } from '@/lib/api';
+import { useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
 
-type Severidade = "baixa" | "media" | "alta" | "critica";
-type Status = "aberta" | "em_analise" | "resolvida" | "falso_positivo";
+const LABEL_SEVERIDADE: Record<SeveridadeAlerta, string> = { ATENCAO: 'Atenção', ALERTA: 'Alerta', EMERGENCIA: 'Emergência' };
+const COR_SEVERIDADE: Record<SeveridadeAlerta, string> = { ATENCAO: 'bg-aqua', ALERTA: 'bg-warning', EMERGENCIA: 'bg-critical' };
+const LABEL_STATUS: Record<StatusAlarme, string> = { ABERTO: 'Aberto', RECONHECIDO: 'Reconhecido', RESOLVIDO: 'Resolvido' };
+const COR_STATUS: Record<StatusAlarme, string> = { ABERTO: 'bg-critical', RECONHECIDO: 'bg-aqua', RESOLVIDO: 'bg-lime' };
+const LABEL_OPERADOR: Record<string, string> = { MAIOR_QUE: 'Maior que', MENOR_QUE: 'Menor que', IGUAL_A: 'Igual a', DIFERENTE_DE: 'Diferente de', MAIOR_OU_IGUAL: 'Maior ou igual a', MENOR_OU_IGUAL: 'Menor ou igual a' };
 
-interface EventoHistorico {
-  hora: string;
-  evento: string;
+function montarQuery(filtros: FiltrosAlarmes): string {
+  const parametros = new URLSearchParams();
+  if (filtros.estacaoId) parametros.set('estacaoId', filtros.estacaoId);
+  if (filtros.tipoParametroId) parametros.set('tipoParametroId', filtros.tipoParametroId);
+  if (filtros.severidade) parametros.set('severidade', filtros.severidade);
+  if (filtros.status) parametros.set('status', filtros.status);
+  if (filtros.de) parametros.set('de', new Date(filtros.de).toISOString());
+  if (filtros.ate) parametros.set('ate', new Date(filtros.ate).toISOString());
+  parametros.set('pagina', String(filtros.pagina ?? 1));
+  parametros.set('tamanho', '20');
+  return parametros.toString();
 }
 
-interface Ocorrencia {
-  id: string;
-  dataHora: string;
-  estacao: string;
-  parametro: string;
-  unidade: string;
-  valor: number;
-  limiar: number;
-  severidade: Severidade;
-  status: Status;
-  coordenadas: string;
-  sensorId: string;
-  duracao: string;
-  responsavel: string;
-  observacoes: string;
-  historico: EventoHistorico[];
+function formatarData(data: string) { return new Date(data).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' }); }
+function formatarNumero(valor: number) { return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(valor); }
+
+function FiltroCampo({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="flex flex-col gap-1"><label className="font-mono text-[10px] uppercase text-muted-foreground">{label}</label>{children}</div>;
 }
 
-interface SeveridadeInfo {
-  label: string;
-  cor: string;
-  fundo: string;
-}
-
-interface StatusInfo {
-  label: string;
-  cor: string;
-  icon: LucideIcon;
-}
-
-const palette = {
-  bg: "#F5F9FF",
-  panel: "#FFFFFF",
-  panelAlt: "#F2F7FD",
-  border: "#DDEAF8",
-  borderSoft: "#EDF4FB",
-  textPrimary: "#15314C",
-  textMuted: "#4E647D",
-  textFaint: "#8193A8",
-  accent: "#3AA0D9",
-} as const;
-
-const severidadeConfig: Record<Severidade, SeveridadeInfo> = {
-  baixa: { label: "Baixa", cor: "#22C55E", fundo: "#ECFDF5" },
-  media: { label: "Média", cor: "#F59E0B", fundo: "#FFF7E8" },
-  alta: { label: "Alta", cor: "#F97316", fundo: "#FFF3E8" },
-  critica: { label: "Crítica", cor: "#EF4444", fundo: "#FEECEC" },
-};
-
-const statusConfig: Record<Status, StatusInfo> = {
-  aberta: { label: "Aberta", cor: "#EF4444", icon: AlertTriangle },
-  em_analise: { label: "Em análise", cor: "#F59E0B", icon: CircleDot },
-  resolvida: { label: "Resolvida", cor: "#22C55E", icon: CheckCircle2 },
-  falso_positivo: { label: "Falso positivo", cor: "#7C8BA0", icon: XCircle },
-};
-
-const normalizarSeveridade = (valor?: string): Severidade => {
-  const mapa: Record<string, Severidade> = {
-    baixa: "baixa",
-    media: "media",
-    media_outra: "media",
-    média: "media",
-    alta: "alta",
-    critica: "critica",
-    crítica: "critica",
-  };
-
-  return mapa[String(valor ?? "").toLowerCase()] ?? "media";
-};
-
-const normalizarStatus = (valor?: string): Status => {
-  const mapa: Record<string, Status> = {
-    aberta: "aberta",
-    em_analise: "em_analise",
-    emanalise: "em_analise",
-    "em análise": "em_analise",
-    resolvida: "resolvida",
-    falso_positivo: "falso_positivo",
-    falso: "falso_positivo",
-  };
-
-  return mapa[String(valor ?? "").toLowerCase().replace(/\s+/g, "_")] ?? "aberta";
-};
-
-const normalizarOcorrencia = (
-  item: Partial<Ocorrencia> & Record<string, unknown>,
-  indice = 0,
-): Ocorrencia => {
-  const base = ocorrenciasBase[indice] ?? ocorrenciasBase[0];
-
-  return {
-    ...base,
-    ...item,
-    id: String(item.id ?? base.id),
-    dataHora: String(item.dataHora ?? base.dataHora),
-    estacao: String(item.estacao ?? base.estacao),
-    parametro: String(item.parametro ?? base.parametro),
-    unidade: String(item.unidade ?? base.unidade),
-    valor: Number(item.valor ?? base.valor),
-    limiar: Number(item.limiar ?? base.limiar),
-    severidade: normalizarSeveridade(String(item.severidade ?? base.severidade)),
-    status: normalizarStatus(String(item.status ?? base.status)),
-    coordenadas: String(item.coordenadas ?? base.coordenadas),
-    sensorId: String(item.sensorId ?? base.sensorId),
-    duracao: String(item.duracao ?? base.duracao),
-    responsavel: String(item.responsavel ?? base.responsavel),
-    observacoes: String(item.observacoes ?? base.observacoes),
-    historico: Array.isArray(item.historico)
-      ? (item.historico as EventoHistorico[])
-      : base.historico,
-  };
-};
-
-const ocorrenciasBase: Ocorrencia[] = [
-  {
-    id: "OC-2026-0148",
-    dataHora: "14/09/2026 06:12",
-    estacao: "Estação Rio Paraíba — Ponte Nova",
-    parametro: "Nível do rio",
-    unidade: "m",
-    valor: 4.8,
-    limiar: 3.5,
-    severidade: "critica",
-    status: "aberta",
-    coordenadas: "-23.1896, -45.8841",
-    sensorId: "SNS-HDR-014",
-    duracao: "1h 42min",
-    responsavel: "Não atribuído",
-    observacoes:
-      "Nível subiu 1,3 m nas últimas 3 horas após chuva intensa na cabeceira. Comporta de contenção a jusante ainda não acionada.",
-    historico: [
-      { hora: "04:30", evento: "Leitura acima do normal registrada" },
-      { hora: "05:15", evento: "Alerta automático gerado" },
-      { hora: "06:12", evento: "Limiar crítico ultrapassado" },
-    ],
-  },
-  {
-    id: "OC-2026-0147",
-    dataHora: "13/09/2026 22:47",
-    estacao: "Estação Serra do Mar — Encosta 3",
-    parametro: "Umidade do solo",
-    unidade: "%",
-    valor: 92,
-    limiar: 85,
-    severidade: "alta",
-    status: "em_analise",
-    coordenadas: "-23.4531, -45.9502",
-    sensorId: "SNS-SOL-027",
-    duracao: "9h 05min",
-    responsavel: "Marcos Vieira — Equipe de campo",
-    observacoes:
-      "Saturação do solo elevada por 3 dias consecutivos de chuva. Equipe de campo enviada para inspeção visual da encosta.",
-    historico: [
-      { hora: "18:00", evento: "Umidade em elevação constante" },
-      { hora: "22:47", evento: "Limiar de alerta ultrapassado" },
-      { hora: "23:30", evento: "Equipe de campo acionada" },
-    ],
-  },
-  {
-    id: "OC-2026-0146",
-    dataHora: "13/09/2026 15:03",
-    estacao: "Estação Vale do Una — Bairro Industrial",
-    parametro: "Índice pluviométrico",
-    unidade: "mm/h",
-    valor: 38,
-    limiar: 40,
-    severidade: "media",
-    status: "resolvida",
-    coordenadas: "-23.2237, -45.9009",
-    sensorId: "SNS-PLU-009",
-    duracao: "2h 20min",
-    responsavel: "Camila Duarte — Monitoramento",
-    observacoes:
-      "Intensidade de chuva reduziu naturalmente após frente fria se deslocar para o litoral. Nenhuma ação de campo necessária.",
-    historico: [
-      { hora: "14:40", evento: "Índice se aproximando do limiar" },
-      { hora: "15:03", evento: "Alerta de atenção gerado" },
-      { hora: "17:23", evento: "Índice normalizado, ocorrência encerrada" },
-    ],
-  },
-  {
-    id: "OC-2026-0145",
-    dataHora: "12/09/2026 09:18",
-    estacao: "Estação Serra do Mar — Encosta 1",
-    parametro: "Inclinação do terreno",
-    unidade: "°",
-    valor: 1.2,
-    limiar: 2.0,
-    severidade: "baixa",
-    status: "falso_positivo",
-    coordenadas: "-23.4489, -45.9438",
-    sensorId: "SNS-INC-003",
-    duracao: "38min",
-    responsavel: "Rafael Nunes — Manutenção",
-    observacoes:
-      "Variação registrada pelo inclinômetro foi causada por instabilidade elétrica no sensor. Manutenção corretiva agendada.",
-    historico: [
-      { hora: "09:18", evento: "Variação abrupta detectada" },
-      { hora: "09:56", evento: "Sensor identificado como instável" },
-      { hora: "10:10", evento: "Classificada como falso positivo" },
-    ],
-  },
-  {
-    id: "OC-2026-0144",
-    dataHora: "11/09/2026 20:55",
-    estacao: "Estação Rio Paraíba — Jusante Sul",
-    parametro: "Nível do rio",
-    unidade: "m",
-    valor: 3.1,
-    limiar: 3.0,
-    severidade: "media",
-    status: "em_analise",
-    coordenadas: "-23.2012, -45.8790",
-    sensorId: "SNS-HDR-008",
-    duracao: "14h 30min",
-    responsavel: "Marcos Vieira — Equipe de campo",
-    observacoes:
-      "Nível estabilizado logo acima do limiar. Monitoramento contínuo mantido devido a previsão de nova chuva à noite.",
-    historico: [
-      { hora: "20:10", evento: "Nível se aproximando do limiar" },
-      { hora: "20:55", evento: "Limiar ultrapassado" },
-    ],
-  },
-];
-
-function formatNumero(valor: number): string {
-  return Number.isInteger(valor) ? String(valor) : valor.toFixed(1).replace(".", ",");
-}
-
-interface BarraProps {
-  valor: number;
-  limiar: number;
-  cor: string;
-}
-
-function Barra({ valor, limiar, cor }: BarraProps) {
-  const proporcao = Math.min((valor / limiar) * 100, 160);
-  const larguraValor = Math.min(proporcao, 100);
-
-  return (
-    <div className="mt-3.5">
-      <div className="relative h-2.5 overflow-visible rounded border border-border bg-muted">
-        <div
-          className="absolute left-0 top-0 bottom-0 rounded transition-all duration-300"
-          style={{
-            width: `${larguraValor}%`,
-            background: cor,
-          }}
-        />
-        <div
-          className="absolute top-[-4px] bottom-[-4px] w-0.5 bg-foreground/60"
-          style={{
-            left: `${Math.min((limiar / limiar) * (100 / 1.6), 62.5)}%`,
-          }}
-        />
-      </div>
-      <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
-        <span>0</span>
-        <span>Limiar configurado à direita da marca</span>
-      </div>
-    </div>
-  );
-}
-
-interface InfoLinhaProps {
-  icon: LucideIcon;
-  rotulo: string;
-  valor: string;
-  mono?: boolean;
-}
-
-function InfoLinha({ icon: Icon, rotulo, valor, mono }: InfoLinhaProps) {
-  return (
-    <div className="flex gap-2.5 border-b border-muted px-0 py-2.5">
-      <Icon size={15} className="mt-0.5 flex-shrink-0 text-muted-foreground" />
-      <div>
-        <div className="text-xs text-muted-foreground">{rotulo}</div>
-        <div className={cn("mt-0.5 text-sm text-foreground", mono && "font-mono")}>
-          {valor}
-        </div>
-      </div>
-    </div>
-  );
+function InfoItem({ icon: Icon, label, value, mono = false }: { icon: typeof MapPin; label: string; value: string; mono?: boolean }) {
+  return <div className="flex gap-2.5 border-b border-border py-3 last:border-0"><Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" /><div className="min-w-0"><div className="text-xs text-muted-foreground">{label}</div><div className={cn('mt-0.5 break-words text-sm text-foreground', mono && 'font-mono text-[12px]')}>{value}</div></div></div>;
 }
 
 export default function AlertaLogPage() {
-  const [ocorrencias, setOcorrencias] = useState<Ocorrencia[]>(ocorrenciasBase);
-  const [selecionadaId, setSelecionadaId] = useState<string>(ocorrenciasBase[0]?.id ?? "");
-  const [busca, setBusca] = useState<string>("");
-  const [carregando, setCarregando] = useState<boolean>(true);
-  const [erroApi, setErroApi] = useState<string | null>(null);
+  const router = useRouter();
+  const [opcoes, setOpcoes] = useState<OpcoesFiltroAlarmes | null>(null);
+  const [resultado, setResultado] = useState<ListaAlarmes | null>(null);
+  const [selecionadaId, setSelecionadaId] = useState<string | null>(null);
+  const [filtros, setFiltros] = useState<FiltrosAlarmes>({ pagina: 1 });
+  const [erro, setErro] = useState<string | null>(null);
+
+  const carregar = useCallback(async (filtrosAtuais: FiltrosAlarmes) => {
+    setErro(null);
+    try {
+      const dados = await api<ListaAlarmes>(`/alarmes?${montarQuery(filtrosAtuais)}`);
+      setResultado(dados);
+      setSelecionadaId((atual) => dados.itens.some((item) => item.id === atual) ? atual : dados.itens[0]?.id ?? null);
+    } catch (erroCapturado) {
+      if (erroCapturado instanceof ErroApi && erroCapturado.status === 401) { router.push('/login'); return; }
+      setResultado(null);
+      setSelecionadaId(null);
+      setErro(erroCapturado instanceof ErroApi ? erroCapturado.message : 'Erro ao carregar ocorrências.');
+    }
+  }, [router]);
 
   useEffect(() => {
-    let ativo = true;
+    api<OpcoesFiltroAlarmes>('/alarmes/filtros').then(setOpcoes).catch((erroCapturado) => {
+      if (erroCapturado instanceof ErroApi && erroCapturado.status === 401) router.push('/login');
+    });
+  }, [router]);
 
-    async function carregarOcorrencias() {
-      try {
-        setCarregando(true);
-        const dadosApi = await api<Array<Partial<Ocorrencia> & Record<string, unknown>>>('/alertas');
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- recarrega a lista quando os filtros mudam
+    void carregar(filtros);
+  }, [carregar, filtros]);
 
-        if (!ativo) return;
+  function atualizarFiltro<K extends keyof FiltrosAlarmes>(campo: K, valor: FiltrosAlarmes[K]) {
+    setFiltros((atual) => ({ ...atual, [campo]: valor || undefined, pagina: 1 }));
+  }
 
-        if (Array.isArray(dadosApi) && dadosApi.length > 0) {
-          const normalizadas = dadosApi.map((item, indice) => normalizarOcorrencia(item, indice));
-          setOcorrencias(normalizadas);
-          setSelecionadaId(normalizadas[0].id);
-        } else {
-          setOcorrencias(ocorrenciasBase);
-          setSelecionadaId(ocorrenciasBase[0]?.id ?? "");
-        }
+  const ocorrencia: AlarmeHistorico | null = resultado?.itens.find((item) => item.id === selecionadaId) ?? resultado?.itens[0] ?? null;
+  const totalPaginas = resultado ? Math.max(1, Math.ceil(resultado.total / resultado.tamanho)) : 1;
 
-        setErroApi(null);
-      } catch (erro) {
-        if (!ativo) return;
+  return <div className="space-y-5">
+    <PageHeading title="Detalhamento de ocorrência" description="Consulte ocorrências disparadas e selecione um registro para visualizar todos os dados do evento." />
+    <section className="rise delay-1 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6" aria-label="Filtros de ocorrências">
+      <FiltroCampo label="Estação"><Select value={filtros.estacaoId ?? ''} onChange={(e) => atualizarFiltro('estacaoId', e.target.value)}><option value="">Todas</option>{opcoes?.estacoes.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</Select></FiltroCampo>
+      <FiltroCampo label="Parâmetro"><Select value={filtros.tipoParametroId ?? ''} onChange={(e) => atualizarFiltro('tipoParametroId', e.target.value)}><option value="">Todos</option>{opcoes?.tiposParametro.map((item) => <option key={item.id} value={item.id}>{item.nome}</option>)}</Select></FiltroCampo>
+      <FiltroCampo label="Severidade"><Select value={filtros.severidade ?? ''} onChange={(e) => atualizarFiltro('severidade', e.target.value as SeveridadeAlerta)}><option value="">Todas</option>{opcoes?.severidades.map((item) => <option key={item} value={item}>{LABEL_SEVERIDADE[item]}</option>)}</Select></FiltroCampo>
+      <FiltroCampo label="Status"><Select value={filtros.status ?? ''} onChange={(e) => atualizarFiltro('status', e.target.value as StatusAlarme)}><option value="">Todos</option>{opcoes?.status.map((item) => <option key={item} value={item}>{LABEL_STATUS[item]}</option>)}</Select></FiltroCampo>
+      <FiltroCampo label="De"><input type="datetime-local" value={filtros.de ?? ''} onChange={(e) => atualizarFiltro('de', e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" /></FiltroCampo>
+      <FiltroCampo label="Até"><div className="flex gap-2"><input type="datetime-local" value={filtros.ate ?? ''} onChange={(e) => atualizarFiltro('ate', e.target.value)} className="h-9 w-full rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" /><Button type="button" variant="outline" size="sm" onClick={() => setFiltros({ pagina: 1 })}>Limpar</Button></div></FiltroCampo>
+    </section>
+    {erro && <p className="text-sm text-destructive">{erro}</p>}
+    <section className="rise delay-2 grid gap-5 lg:grid-cols-[minmax(280px,0.8fr)_minmax(0,1.5fr)]" aria-label="Ocorrências e detalhe selecionado">
+      <article className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="border-b border-border px-4 py-3"><h2 className="font-display text-sm font-semibold">Ocorrências disparadas</h2><p className="font-mono text-[10px] text-muted-foreground">{resultado ? `${resultado.total} registro(s)` : 'Carregando...'}</p></div>
+        {!resultado ? <div className="grid min-h-52 place-items-center px-6 text-center text-sm text-muted-foreground">Carregando ocorrências...</div> : resultado.itens.length === 0 ? <div className="grid min-h-52 place-items-center px-6 text-center"><div><ShieldCheck className="mx-auto mb-3 size-8 text-aqua" /><p className="font-display text-sm font-semibold">Nenhuma ocorrência encontrada</p><p className="mt-1 text-xs text-muted-foreground">Ajuste os filtros selecionados.</p></div></div> : <div>{resultado.itens.map((item) => <button key={item.id} type="button" onClick={() => setSelecionadaId(item.id)} className={cn('flex w-full border-b border-border text-left transition-colors last:border-0 hover:bg-muted/40', item.id === ocorrencia?.id && 'bg-muted/60')}><span className={cn('w-1 shrink-0', COR_SEVERIDADE[item.severidade])} /><span className="min-w-0 flex-1 px-3.5 py-3"><span className="block truncate text-sm font-semibold">{item.estacao.nome}</span><span className="mt-0.5 block text-xs text-muted-foreground">{item.parametro.nome} · {formatarNumero(item.valorMedido)} {item.parametro.unidade}</span><span className="mt-2 flex items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground"><span>{formatarData(item.disparadoEm)}</span><span className="inline-flex items-center gap-1"><span className={cn('size-1.5 rounded-full', COR_STATUS[item.status])} />{LABEL_STATUS[item.status]}</span></span></span></button>)}</div>}
+        {resultado && resultado.total > 0 && <div className="flex items-center justify-between border-t border-border px-4 py-3"><span className="font-mono text-[10px] text-muted-foreground">Página {resultado.pagina} de {totalPaginas}</span><div className="flex gap-1"><Button variant="outline" size="icon" className="size-7" disabled={resultado.pagina <= 1} onClick={() => setFiltros((atual) => ({ ...atual, pagina: resultado.pagina - 1 }))} aria-label="Página anterior"><ChevronLeft /></Button><Button variant="outline" size="icon" className="size-7" disabled={resultado.pagina >= totalPaginas} onClick={() => setFiltros((atual) => ({ ...atual, pagina: resultado.pagina + 1 }))} aria-label="Próxima página"><ChevronRight /></Button></div></div>}
+      </article>
+      <article className="rounded-lg border border-border bg-card p-5 sm:p-6">{!ocorrencia ? <div className="grid min-h-64 place-items-center text-center text-sm text-muted-foreground">Selecione uma ocorrência para ver os detalhes.</div> : <DetalheOcorrencia ocorrencia={ocorrencia} />}</article>
+    </section>
+  </div>;
+}
 
-        console.warn('Falha ao carregar ocorrências da API, usando dados locais.', erro);
-        setOcorrencias(ocorrenciasBase);
-        setSelecionadaId(ocorrenciasBase[0]?.id ?? "");
-        setErroApi(erro instanceof ErroApi ? erro.message : 'Mostrando dados de exemplo');
-      } finally {
-        if (ativo) setCarregando(false);
-      }
-    }
-
-    carregarOcorrencias();
-
-    return () => {
-      ativo = false;
-    };
-  }, []);
-
-  const listaFiltrada: Ocorrencia[] = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
-    if (!termo) return ocorrencias;
-    return ocorrencias.filter(
-      (o) =>
-        o.estacao.toLowerCase().includes(termo) ||
-        o.parametro.toLowerCase().includes(termo) ||
-        o.id.toLowerCase().includes(termo)
-    );
-  }, [busca, ocorrencias]);
-
-  const ocorrencia: Ocorrencia =
-    ocorrencias.find((o) => o.id === selecionadaId) ?? ocorrencias[0] ?? ocorrenciasBase[0];
-  const sev = severidadeConfig[ocorrencia.severidade];
-  const st = statusConfig[ocorrencia.status];
-  const StatusIcon = st.icon;
-  const excedeu = ocorrencia.valor >= ocorrencia.limiar;
-
-  return (
-    <div className="flex flex-1 flex-col">
-        <style>{`
-          @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-          .font-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; }
-          .lista-item:hover { background: rgb(242, 247, 253); }
-          .lista-item.ativo { background: rgb(242, 247, 253); }
-          input.busca::placeholder { color: rgb(129, 147, 168); }
-        `}</style>
-
-        <div className="space-y-5 p-7">
-          <PageHeading
-            title="Detalhamento de ocorrência"
-            description="Monitoramento de parâmetros hidrológicos e geotécnicos — SIGVIA"
-          />
-
-          {erroApi && (
-            <p className="text-xs text-muted-foreground">
-              {erroApi}
-            </p>
-          )}
-
-          <div
-            className="grid gap-5 lg:grid-cols-[340px_1fr] sigvia-grid"
-          >
-            <div className="rise delay-0 flex flex-col overflow-hidden rounded-lg border border-border bg-card">
-              <div className="border-b border-border p-3.5">
-                <div className="flex items-center gap-2 rounded border border-border bg-muted px-2.5 py-2">
-                  <Search size={15} className="text-muted-foreground" />
-                  <input
-                    className="busca w-full bg-transparent text-sm outline-none"
-                    value={busca}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBusca(e.target.value)}
-                    placeholder="Buscar estação, parâmetro ou ID"
-                  />
-                </div>
-              </div>
-
-              <div className="overflow-y-auto">
-                {carregando && (
-                  <div className="p-5 text-center text-sm text-muted-foreground">
-                    Carregando ocorrências...
-                  </div>
-                )}
-
-                {!carregando &&
-                  listaFiltrada.map((o) => {
-                    const s = severidadeConfig[o.severidade];
-                    const ativo = o.id === selecionadaId;
-                    return (
-                      <button
-                        key={o.id}
-                        onClick={() => setSelecionadaId(o.id)}
-                        className={`lista-item w-full border-b border-muted text-left transition-colors hover:bg-muted last:border-b-0 ${
-                          ativo ? "ativo bg-muted" : ""
-                        }`}
-                      >
-                        <div className="flex">
-                          <div className="w-1 flex-shrink-0" style={{ background: s.cor }} />
-                          <div className="flex-1 px-3.5 py-3">
-                            <div className="flex justify-between gap-2">
-                              <span className="truncate text-sm font-medium text-foreground">
-                                {o.estacao}
-                              </span>
-                            </div>
-                            <div className="mt-0.5 text-xs text-muted-foreground">
-                              {o.parametro}
-                            </div>
-                            <div className="mt-2 flex justify-between">
-                              <span className="font-mono text-xs text-muted-foreground">
-                                {o.dataHora}
-                              </span>
-                              <span
-                                className="flex items-center gap-1 text-xs"
-                                style={{
-                                  color: statusConfig[o.status].cor,
-                                }}
-                              >
-                                <span
-                                  className="size-1.5 rounded-full"
-                                  style={{
-                                    background: statusConfig[o.status].cor,
-                                  }}
-                                />
-                                {statusConfig[o.status].label}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-
-                {listaFiltrada.length === 0 && (
-                  <div className="p-5 text-center text-sm text-muted-foreground">
-                    Nenhuma ocorrência encontrada para esta busca.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="rise delay-1 rounded-lg border border-border bg-card p-6 space-y-6">
-              <div className="flex flex-wrap justify-between gap-3">
-                <div>
-                  <div className="font-mono text-xs text-muted-foreground mb-1.5">
-                    {ocorrencia.id}
-                  </div>
-                  <h2 className="text-xl font-semibold">
-                    {ocorrencia.estacao}
-                  </h2>
-                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Clock size={14} />
-                    <span className="font-mono">{ocorrencia.dataHora}</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium"
-                    style={{
-                      background: sev.fundo,
-                      color: sev.cor,
-                    }}
-                  >
-                    <AlertTriangle size={14} />
-                    Severidade {sev.label}
-                  </span>
-                  <span
-                    className="inline-flex items-center gap-1.5 rounded border border-border bg-muted px-3 py-1.5 text-xs font-medium"
-                    style={{
-                      color: st.cor,
-                    }}
-                  >
-                    <StatusIcon size={14} />
-                    {st.label}
-                  </span>
-                </div>
-              </div>
-
-              <div className="rounded-lg border border-border bg-muted p-4.5">
-                <div className="mb-1 flex items-center gap-2">
-                  <Gauge size={15} className="text-aqua" />
-                  <span className="text-xs text-muted-foreground">
-                    Parâmetro monitorado
-                  </span>
-                </div>
-                <div className="mb-3.5 text-base font-medium">
-                  {ocorrencia.parametro}
-                </div>
-
-                <div className="flex flex-wrap gap-8">
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">
-                      Valor registrado
-                    </div>
-                    <div
-                      className="font-mono text-2xl font-semibold"
-                      style={{
-                        color: excedeu ? sev.cor : "currentColor",
-                      }}
-                    >
-                      {formatNumero(ocorrencia.valor)}
-                      <span className="ml-1 text-sm text-muted-foreground">
-                        {ocorrencia.unidade}
-                      </span>
-                    </div>
-                  </div>
-                  <div>
-                    <div className="mb-1 text-xs text-muted-foreground">
-                      Limiar configurado
-                    </div>
-                    <div className="font-mono text-2xl font-semibold">
-                      {formatNumero(ocorrencia.limiar)}
-                      <span className="ml-1 text-sm text-muted-foreground">
-                        {ocorrencia.unidade}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <Barra valor={ocorrencia.valor} limiar={ocorrencia.limiar} cor={sev.cor} />
-              </div>
-
-              <div
-                className="grid gap-3.5 sigvia-info-grid sm:grid-cols-2"
-              >
-                <InfoLinha icon={MapPin} rotulo="Coordenadas" valor={ocorrencia.coordenadas} mono />
-                <InfoLinha icon={Radio} rotulo="Sensor / equipamento" valor={ocorrencia.sensorId} mono />
-                <InfoLinha icon={Activity} rotulo="Duração do evento" valor={ocorrencia.duracao} />
-                <InfoLinha icon={User} rotulo="Responsável" valor={ocorrencia.responsavel} />
-              </div>
-
-              <div>
-                <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
-                  <FileText size={15} />
-                  Observações técnicas
-                </div>
-                <p className="rounded-lg border border-border bg-muted p-3.5 text-sm leading-relaxed">
-                  {ocorrencia.observacoes}
-                </p>
-              </div>
-
-              <div>
-                <div className="mb-2.5 flex items-center gap-2 text-sm text-muted-foreground">
-                  <Navigation size={15} />
-                  Histórico do evento
-                </div>
-                <div className="border-l-2 border-border pl-4">
-                  {ocorrencia.historico.map((h, i) => (
-                    <div
-                      key={i}
-                      className="relative"
-                      style={{
-                        paddingBottom: i === ocorrencia.historico.length - 1 ? 0 : 16,
-                      }}
-                    >
-                      <span
-                        className="absolute left-[-17px] top-1 size-2 rounded-full bg-aqua"
-                      />
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {h.hora}
-                      </span>
-                      <div className="mt-0.5 text-sm">
-                        {h.evento}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <style>{`
-          @media (max-width: 860px) {
-            .sigvia-grid { grid-template-columns: 1fr !important; }
-            .sigvia-info-grid { grid-template-columns: 1fr !important; }
-          }
-        `}</style>
-    </div>
-  );
+function DetalheOcorrencia({ ocorrencia }: { ocorrencia: AlarmeHistorico }) {
+  const operador = LABEL_OPERADOR[ocorrencia.operador] ?? ocorrencia.operador;
+  const percentual = ocorrencia.valorLimite === 0 ? 100 : Math.min((ocorrencia.valorMedido / ocorrencia.valorLimite) * 100, 100);
+  return <div className="space-y-6"><div className="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-5"><div><div className="font-mono text-xs text-muted-foreground">{ocorrencia.id}</div><h2 className="mt-1 text-xl font-semibold">{ocorrencia.estacao.nome}</h2><div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground"><Clock3 className="size-4" /><span className="font-mono">{formatarData(ocorrencia.disparadoEm)}</span></div></div><div className="flex flex-wrap gap-2"><span className="inline-flex items-center gap-1.5 rounded bg-warning/10 px-3 py-1.5 text-xs font-medium text-warning"><AlertTriangle className="size-4" />{LABEL_SEVERIDADE[ocorrencia.severidade]}</span><span className="inline-flex items-center gap-1.5 rounded border border-border bg-muted px-3 py-1.5 text-xs font-medium"><CheckCircle2 className={cn('size-4', ocorrencia.status === 'ABERTO' && 'text-critical', ocorrencia.status === 'RECONHECIDO' && 'text-aqua', ocorrencia.status === 'RESOLVIDO' && 'text-lime')} />{LABEL_STATUS[ocorrencia.status]}</span></div></div><div className="rounded-lg border border-border bg-muted p-4"><div className="flex items-center gap-2 text-xs text-muted-foreground"><Gauge className="size-4 text-aqua" />Parâmetro que violou o limiar</div><div className="mt-1 text-base font-semibold">{ocorrencia.parametro.nome}</div><div className="mt-4 grid gap-4 sm:grid-cols-2"><div><div className="text-xs text-muted-foreground">Valor registrado</div><div className="mt-1 font-mono text-2xl font-semibold text-critical">{formatarNumero(ocorrencia.valorMedido)} <span className="text-sm text-muted-foreground">{ocorrencia.parametro.unidade}</span></div></div><div><div className="text-xs text-muted-foreground">Limiar configurado</div><div className="mt-1 font-mono text-2xl font-semibold">{formatarNumero(ocorrencia.valorLimite)} <span className="text-sm text-muted-foreground">{ocorrencia.parametro.unidade}</span></div></div></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-border"><div className="h-full rounded-full bg-critical transition-all" style={{ width: `${percentual}%` }} /></div><div className="mt-1.5 flex justify-between text-xs text-muted-foreground"><span>0</span><span>Valor medido / limiar</span></div></div><div className="grid gap-x-6 sm:grid-cols-2"><InfoItem icon={MapPin} label="Estação afetada" value={ocorrencia.estacao.nome} /><InfoItem icon={Radio} label="Unidade do parâmetro" value={ocorrencia.parametro.unidade} mono /><InfoItem icon={Hash} label="ID do parâmetro" value={ocorrencia.parametro.id} mono /><InfoItem icon={UserRound} label="Regra aplicada" value={`${operador} ${formatarNumero(ocorrencia.valorLimite)} ${ocorrencia.parametro.unidade}`} /></div></div>;
 }
