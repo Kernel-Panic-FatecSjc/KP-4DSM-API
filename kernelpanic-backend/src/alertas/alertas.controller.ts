@@ -1,9 +1,10 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { GuardaAdministrador } from '../autenticacao/guarda-administrador.guard';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import type { PayloadJwt } from '../autenticacao/payload-jwt.interface';
 import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { camposInformados } from '../auditoria/campos-informados';
 import { AlertasService } from './alertas.service';
 import { AlertaRespostaDto } from './dto/alerta-resposta.dto';
 import { AtualizarAlertaDto } from './dto/atualizar-alerta.dto';
@@ -70,9 +71,25 @@ export class AlertasController {
       entidade: 'Alerta',
       entidadeId: id,
       usuarioId: usuario.sub,
-      detalhes: { campos: Object.keys(dto) },
+      detalhes: { campos: camposInformados(dto) },
     });
     return new AlertaRespostaDto(alerta);
+  }
+
+  @Delete(':id')
+  @UseGuards(GuardaAdministrador)
+  async inativar(
+    @Param('id') id: string,
+    @UsuarioAutenticado() usuario: PayloadJwt,
+  ): Promise<{ mensagem: string }> {
+    await this.alertasService.inativar(id);
+    await this.auditoriaService.registrar({
+      acao: 'alertas.inativar',
+      entidade: 'Alerta',
+      entidadeId: id,
+      usuarioId: usuario.sub,
+    });
+    return { mensagem: 'Alerta inativado com sucesso' };
   }
 
   @Get('filtros')
