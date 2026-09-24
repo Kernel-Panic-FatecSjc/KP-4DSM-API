@@ -217,8 +217,11 @@ KP-4DSM-API
 ```bash
 git clone https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API.git
 cd KP-4DSM-API
-npm install   # ferramentas de commit da raiz; também ativa o hook de validação
+npm ci   # ferramentas de commit da raiz; também ativa o hook de validação
 ```
+
+Use `npm ci`, e não `npm install`: ele instala exatamente as versões do `package-lock.json`
+sem reescrevê-lo. `npm install` fica para quando for adicionar ou atualizar dependências.
 
 ### 📝 Fazendo commits
 
