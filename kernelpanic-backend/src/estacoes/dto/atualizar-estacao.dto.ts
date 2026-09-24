@@ -1,4 +1,4 @@
-import { ArrayNotEmpty, IsArray, IsEnum, IsLatitude, IsLongitude, IsNotEmpty, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
+import { IsArray, IsEnum, IsLatitude, IsLongitude, IsNotEmpty, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 import { StatusOperacionalEstacao } from '../../generated/prisma/client';
 import { IDENTIFICADOR_UUID_OU_MAC } from './criar-estacao.dto';
 
@@ -32,7 +32,6 @@ export class AtualizarEstacaoDto {
 
   @IsOptional()
   @IsArray()
-  @ArrayNotEmpty()
   @IsUUID('4', { each: true })
   tipoParametroIds?: string[];
 }
