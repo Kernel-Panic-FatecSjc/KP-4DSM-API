@@ -100,3 +100,79 @@ describe('Cadastro de alertas (funcional)', () => {
     expect(alerta.create).not.toHaveBeenCalled();
   });
 });
+
+describe('Inativação de alertas (funcional)', () => {
+  let app: INestApplication;
+  let adminCookie: string;
+  let monitorCookie: string;
+  const usuario = { findUnique: jest.fn() };
+  const alerta = { findUnique: jest.fn(), update: jest.fn() };
+  const logAuditoria = { create: jest.fn() };
+
+  beforeAll(async () => {
+    app = await criarAppDeTeste({
+      prismaMock: { usuario, alerta, logAuditoria, $connect: jest.fn(), $disconnect: jest.fn() },
+    });
+
+    const jwt = app.get(JwtService);
+    adminCookie = `access_token=${jwt.sign({ sub: ADMIN.id, email: ADMIN.email })}`;
+    monitorCookie = `access_token=${jwt.sign({ sub: MONITOR.id, email: MONITOR.email })}`;
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    usuario.findUnique.mockImplementation(({ where }) =>
+      [ADMIN, MONITOR].find((existente) => existente.id === where.id) ?? null,
+    );
+    alerta.findUnique.mockResolvedValue(ALERTA_COM_RELACOES);
+    alerta.update.mockResolvedValue({ ...ALERTA_COM_RELACOES, ativo: false });
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  const remover = (cookie = adminCookie) =>
+    request(app.getHttpServer()).delete(`/alertas/${ALERTA_COM_RELACOES.id}`).set('Cookie', cookie);
+
+  it('desativa a regra em vez de apagar, preservando os alarmes disparados', async () => {
+    const resposta = await remover().expect(200);
+
+    expect(resposta.body.mensagem).toMatch(/inativado/);
+    expect(alerta.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: ALERTA_COM_RELACOES.id }, data: { ativo: false } }),
+    );
+  });
+
+  it('registra a inativação na trilha de auditoria', async () => {
+    await remover().expect(200);
+
+    expect(logAuditoria.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        acao: 'alertas.inativar',
+        entidade: 'Alerta',
+        entidadeId: ALERTA_COM_RELACOES.id,
+        usuarioId: ADMIN.id,
+      }),
+    });
+  });
+
+  it('responde 404 quando o alerta não existe', async () => {
+    alerta.findUnique.mockResolvedValue(null);
+
+    await remover().expect(404);
+    expect(alerta.update).not.toHaveBeenCalled();
+  });
+
+  it('restringe a inativação ao administrador', async () => {
+    await remover(monitorCookie).expect(403);
+    expect(alerta.update).not.toHaveBeenCalled();
+  });
+
+  it('recusa com 401 sem autenticação', async () => {
+    await request(app.getHttpServer())
+      .delete(`/alertas/${ALERTA_COM_RELACOES.id}`)
+      .expect(401);
+    expect(alerta.update).not.toHaveBeenCalled();
+  });
+});

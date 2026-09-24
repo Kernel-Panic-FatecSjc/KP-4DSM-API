@@ -14,6 +14,8 @@ export const ESTACAO_COM_COORDENADAS = {
 
 export const TIPO_CHUVA = '11111111-1111-4111-8111-111111111111';
 
+export const TIPO_TEMPERATURA = '33333333-3333-4333-8333-333333333333';
+
 export const ESTACAO_COM_TIPOS = {
   id: 'estacao-1',
   vid: VID_ESTACAO,
@@ -52,4 +54,33 @@ export const ALERTA_COM_RELACOES = {
     estacao: { id: ESTACAO_COM_TIPOS.id, nome: ESTACAO_COM_TIPOS.nome },
     tipoParametro: ESTACAO_COM_TIPOS.parametros[0].tipoParametro,
   },
+};
+
+export const ESTACAO_COM_SENSORES = {
+  id: 'estacao-1',
+  nome: 'Estação Centro',
+  endereco: 'Rua A, 100',
+  vid: VID_ESTACAO,
+  latitude: -23.1,
+  longitude: -45.8,
+  statusOperacional: 'ATIVA',
+  criadoEm: new Date('2026-09-20T12:00:00.000Z'),
+  atualizadoEm: new Date('2026-09-20T12:00:00.000Z'),
+  parametros: [
+    {
+      id: 'parametro-chuva',
+      tipoParametroId: TIPO_CHUVA,
+      tipoParametro: ESTACAO_COM_TIPOS.parametros[0].tipoParametro,
+    },
+  ],
+};
+
+export const ALARME_COM_RELACOES = {
+  id: 'alarme-1',
+  disparadoEm: new Date('2026-09-23T12:05:00.000Z'),
+  status: 'ABERTO',
+  alertaId: ALERTA_COM_RELACOES.id,
+  medidaId: 'medida-1',
+  medida: { id: 'medida-1', valor: 42, unixtime: 1_760_000_000n },
+  alerta: ALERTA_COM_RELACOES,
 };

@@ -47,6 +47,20 @@ export class AlertasService {
     });
   }
 
+  async inativar(id: string) {
+    const existente = await this.prisma.alerta.findUnique({ where: { id } });
+    if (!existente) throw new NotFoundException('Alerta não encontrado');
+
+    // Apagar o alerta levaria junto os alarmes que ele disparou
+    // (onDelete: Cascade), destruindo o histórico de ocorrências que a
+    // auditoria precisa preservar. Desativar mantém a trilha intacta.
+    return this.prisma.alerta.update({
+      where: { id },
+      data: { ativo: false },
+      include: INCLUDE_RELACOES,
+    });
+  }
+
   async listar(query: ListarAlertasQueryDto): Promise<ListaAlertasRespostaDto> {
     const pagina = query.pagina ?? 1;
     const tamanho = query.tamanho ?? 50;
