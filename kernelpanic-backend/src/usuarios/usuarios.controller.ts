@@ -4,6 +4,7 @@ import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import type { PayloadJwt } from '../autenticacao/payload-jwt.interface';
 import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { camposInformados } from '../auditoria/campos-informados';
 import { AtualizarUsuarioDto } from './dto/atualizar-usuario.dto';
 import { BuscarUsuariosQueryDto } from './dto/buscar-usuarios-query.dto';
 import { CriarUsuarioDto } from './dto/criar-usuario.dto';
@@ -57,7 +58,7 @@ export class UsuariosController {
       entidade: 'Usuario',
       entidadeId: id,
       usuarioId: usuarioLogado.sub,
-      detalhes: { campos: Object.keys(dto) },
+      detalhes: { campos: camposInformados(dto) },
     });
     return new UsuarioRespostaDto(usuario);
   }
