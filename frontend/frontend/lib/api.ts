@@ -85,8 +85,6 @@ export interface CriarEstacaoPayload {
   tipoParametroIds: string[];
 }
 
-export type AtualizarEstacaoPayload = Partial<CriarEstacaoPayload>;
-
 export interface SensorApi {
   id: string;
   nome: string;
