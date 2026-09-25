@@ -19,6 +19,12 @@ export class AuditoriaAcessoMiddleware implements NestMiddleware {
     }
 
     response.once('finish', () => {
+      // 400 é erro de validação de entrada, não evento de acesso (não há
+      // "quem tentou acessar o quê" aqui) — cada rota já decide por conta
+      // própria se audita a ação de negócio. 401/403 continuam sendo
+      // registrados: são tentativas de acesso reais, negadas.
+      if (response.statusCode === 400) return;
+
       const usuarioId = request.user?.sub ?? request.user?.id;
       void this.auditoriaService.registrar({
         acao: 'acesso.http',
