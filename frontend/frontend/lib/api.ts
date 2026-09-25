@@ -1,5 +1,3 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
-
 export class ErroApi extends Error {
   constructor(
     public status: number,
@@ -8,6 +6,8 @@ export class ErroApi extends Error {
     super(message);
   }
 }
+
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
 
 export async function api<T>(caminho: string, opcoes: RequestInit = {}): Promise<T> {
   const resposta = await fetch(`${API_URL}${caminho}`, {
@@ -41,12 +41,30 @@ export interface RegistroAuditoria {
   acao: string;
   entidade: string;
   entidadeId: string | null;
+  enderecoIp: string | null;
   detalhes: unknown;
   usuario: { id: string; nome: string } | null;
 }
 
 export interface ListaAuditoria {
   itens: RegistroAuditoria[];
+  total: number;
+  pagina: number;
+  tamanho: number;
+}
+
+export interface LeituraBruta {
+  id: string;
+  vidEstacao: string;
+  recebidoEm: string;
+  unixtimeDispositivo: string;
+  latitude: number;
+  longitude: number;
+  payload: unknown;
+}
+
+export interface ListaLeiturasBrutas {
+  itens: LeituraBruta[];
   total: number;
   pagina: number;
   tamanho: number;
@@ -63,6 +81,15 @@ export interface EstacaoApi {
   sensores: { id: string; nome: string; unidade: string }[];
   criadoEm: string;
   atualizadoEm: string;
+}
+
+export interface SensorApi {
+  id: string;
+  nome: string;
+  unidade: string;
+  fator: number;
+  ganho: number;
+  estacoesAssociadas?: number;
 }
 
 export interface AtualizarEstacaoPayload {

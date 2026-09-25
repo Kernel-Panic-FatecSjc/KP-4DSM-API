@@ -1,16 +1,51 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Clock3, Database, FileSearch, Filter, Hash, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react';
+import { Activity, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Clock3, Database, Download, FileSearch, FileSpreadsheet, Filter, Hash, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { PageHeading } from '@/components/PageHeading';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { baixarPlanilha } from '@/lib/baixar-planilha';
 import { api, ErroApi, type ListaAuditoria, type RegistroAuditoria } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
 const TAMANHO_PAGINA = 25;
 const FILTROS_INICIAIS = { acao: '', entidade: '', entidadeId: '', usuarioId: '', de: '', ate: '', pagina: 1 };
+const TAMANHO_EXPORTACAO = 200;
+
+function parametrosConsulta(filtros: typeof FILTROS_INICIAIS, pagina: number, tamanho: number): URLSearchParams {
+  const parametros = new URLSearchParams({ tamanho: String(tamanho), pagina: String(pagina) });
+  if (filtros.acao.trim()) parametros.set('acao', filtros.acao.trim());
+  if (filtros.entidade.trim()) parametros.set('entidade', filtros.entidade.trim());
+  if (filtros.entidadeId.trim()) parametros.set('entidadeId', filtros.entidadeId.trim());
+  if (filtros.usuarioId.trim()) parametros.set('usuarioId', filtros.usuarioId.trim());
+  if (filtros.de) parametros.set('de', new Date(`${filtros.de}T00:00:00`).toISOString());
+  if (filtros.ate) parametros.set('ate', new Date(`${filtros.ate}T23:59:59.999`).toISOString());
+  return parametros;
+}
+
+function valorCsv(valor: unknown): string {
+  const texto = typeof valor === 'string' ? valor : JSON.stringify(valor ?? '');
+  const protegido = /^[=+@\-]/.test(texto) ? `'${texto}` : texto;
+  return `"${protegido.replaceAll('"', '""')}"`;
+}
+
+function detalhesCsv(valor: unknown, caminho = ''): string[] {
+  if (Array.isArray(valor)) {
+    return valor.flatMap((item, indice) => detalhesCsv(item, `${caminho ? `${caminho} / ` : ''}Item ${indice + 1}`));
+  }
+
+  if (valor && typeof valor === 'object') {
+    return Object.entries(valor).flatMap(([chave, conteudo]) => {
+      if (chave === 'IP de origem (mascarado)') return [];
+      const nome = caminho ? `${caminho} / ${nomeCampo(chave)}` : nomeCampo(chave);
+      return detalhesCsv(conteudo, nome);
+    });
+  }
+
+  return caminho ? [`${caminho}: ${valorLegivel(valor)}`] : [valorLegivel(valor)];
+}
 
 function formatarDataHora(valor: string): string {
   const data = new Date(valor);
@@ -18,10 +53,54 @@ function formatarDataHora(valor: string): string {
   return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'medium' }).format(data);
 }
 
-function formatarDetalhes(valor: unknown): string {
-  if (valor === null || valor === undefined) return 'Nenhum detalhe informado';
+function nomeCampo(chave: string): string {
+  if (chave === 'IP de origem (mascarado)') return chave;
+  return chave
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replaceAll('_', ' ')
+    .replace(/^\w/, (letra) => letra.toUpperCase());
+}
+
+function valorLegivel(valor: unknown): string {
+  if (valor === null || valor === undefined) return 'Não informado';
+  if (typeof valor === 'boolean') return valor ? 'Sim' : 'Não';
+  if (typeof valor === 'number') return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 4 }).format(valor);
   if (typeof valor === 'string') return valor;
-  return JSON.stringify(valor, null, 2);
+  return String(valor);
+}
+
+function tentarLerObjetoJson(valor: string): unknown {
+  try {
+    const convertido: unknown = JSON.parse(valor);
+    return convertido && typeof convertido === 'object' ? convertido : valor;
+  } catch {
+    return valor;
+  }
+}
+
+function DetalhesEstruturados({ valor }: { valor: unknown }) {
+  if (Array.isArray(valor)) {
+    if (valor.length === 0) return <span className="text-muted-foreground">Nenhum item</span>;
+    return <span className="block space-y-1">{valor.map((item, indice) => <span key={indice} className="block border-l border-border pl-3"><span className="text-muted-foreground">Item {indice + 1}: </span><DetalhesEstruturados valor={item} /></span>)}</span>;
+  }
+
+  if (typeof valor === 'string') {
+    const convertido = tentarLerObjetoJson(valor);
+    if (convertido !== valor) return <DetalhesEstruturados valor={convertido} />;
+  }
+
+  if (valor && typeof valor === 'object') {
+    const campos = Object.entries(valor);
+    if (campos.length === 0) return <span className="text-muted-foreground">Sem detalhes</span>;
+    return <span className="block space-y-1">{campos.map(([chave, conteudo]) => <span key={chave} className="block"><span className="font-semibold text-aqua">{nomeCampo(chave)}:</span>{conteudo !== null && typeof conteudo === 'object' ? <span className="mt-1 block pl-3"><DetalhesEstruturados valor={conteudo} /></span> : <span className="ml-2 break-all text-foreground">{valorLegivel(conteudo)}</span>}</span>)}</span>;
+  }
+
+  return <span className="break-all text-foreground">{valorLegivel(valor)}</span>;
+}
+
+function formatarDetalhes(valor: unknown): React.ReactNode {
+  if (valor === null || valor === undefined) return 'Nenhum detalhe informado';
+  return <DetalhesEstruturados valor={valor} />;
 }
 
 function nomeAcao(acao: string): string {
@@ -44,20 +123,15 @@ export default function AuditoriaPage() {
   const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
+  const [exportando, setExportando] = useState(false);
+  const [exportandoPlanilha, setExportandoPlanilha] = useState(false);
   const [filtros, setFiltros] = useState(FILTROS_INICIAIS);
 
   const carregar = useCallback(async (filtrosAtuais: typeof FILTROS_INICIAIS, pagina = filtrosAtuais.pagina) => {
     setCarregando(true);
     setErro(null);
-    const parametros = new URLSearchParams({ tamanho: String(TAMANHO_PAGINA), pagina: String(pagina) });
-    if (filtrosAtuais.acao.trim()) parametros.set('acao', filtrosAtuais.acao.trim());
-    if (filtrosAtuais.entidade.trim()) parametros.set('entidade', filtrosAtuais.entidade.trim());
-    if (filtrosAtuais.entidadeId.trim()) parametros.set('entidadeId', filtrosAtuais.entidadeId.trim());
-    if (filtrosAtuais.usuarioId.trim()) parametros.set('usuarioId', filtrosAtuais.usuarioId.trim());
-    if (filtrosAtuais.de) parametros.set('de', new Date(`${filtrosAtuais.de}T00:00:00`).toISOString());
-    if (filtrosAtuais.ate) parametros.set('ate', new Date(`${filtrosAtuais.ate}T23:59:59.999`).toISOString());
-
     try {
+      const parametros = parametrosConsulta(filtrosAtuais, pagina, TAMANHO_PAGINA);
       const dados = await api<ListaAuditoria>(`/auditoria?${parametros.toString()}`);
       setLista(dados);
       setSelecionadoId((atual) => dados.itens.some((item) => item.id === atual) ? atual : dados.itens[0]?.id ?? null);
@@ -91,13 +165,104 @@ export default function AuditoriaPage() {
     void carregar(FILTROS_INICIAIS, 1);
   }
 
+  async function buscarRegistrosFiltrados(): Promise<RegistroAuditoria[]> {
+    const primeiraPagina = await api<ListaAuditoria>(`/auditoria?${parametrosConsulta(filtros, 1, TAMANHO_EXPORTACAO)}`);
+    const registros = [...primeiraPagina.itens];
+    const totalPaginas = Math.ceil(primeiraPagina.total / primeiraPagina.tamanho);
+
+    for (let pagina = 2; pagina <= totalPaginas; pagina += 1) {
+      const proximaPagina = await api<ListaAuditoria>(`/auditoria?${parametrosConsulta(filtros, pagina, TAMANHO_EXPORTACAO)}`);
+      registros.push(...proximaPagina.itens);
+    }
+
+    return registros;
+  }
+
+  function resumoFiltros(): string {
+    const ativos = [
+      filtros.acao.trim() && `Ação: ${filtros.acao.trim()}`,
+      filtros.entidade.trim() && `Recurso: ${filtros.entidade.trim()}`,
+      filtros.entidadeId.trim() && `ID do recurso: ${filtros.entidadeId.trim()}`,
+      filtros.usuarioId.trim() && `ID do usuário: ${filtros.usuarioId.trim()}`,
+      filtros.de && `De: ${filtros.de}`,
+      filtros.ate && `Até: ${filtros.ate}`,
+    ].filter(Boolean);
+    return ativos.length ? `Filtros: ${ativos.join(' · ')}` : 'Filtros: nenhum';
+  }
+
+  async function exportarCsv() {
+    setExportando(true);
+    setErro(null);
+    try {
+      const registros = await buscarRegistrosFiltrados();
+      const cabecalho = ['ID do registro', 'Data e hora', 'Usuário', 'ID do usuário', 'Ação', 'Recurso afetado', 'ID do recurso', 'IP de origem (mascarado)', 'Detalhes do evento'];
+      const linhas = registros.map((registro) => [
+        registro.id,
+        formatarDataHora(registro.criadoEm),
+        registro.usuario?.nome ?? '',
+        registro.usuario?.id ?? '',
+        registro.acao,
+        registro.entidade,
+        registro.entidadeId ?? '',
+        registro.enderecoIp ?? '',
+        detalhesCsv(registro.detalhes).join(' | '),
+      ]);
+      const conteudo = `\uFEFF${[cabecalho, ...linhas].map((linha) => linha.map(valorCsv).join(';')).join('\r\n')}`;
+      const arquivo = URL.createObjectURL(new Blob([conteudo], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = arquivo;
+      link.download = 'auditoria.csv';
+      link.click();
+      URL.revokeObjectURL(arquivo);
+    } catch (erroCapturado) {
+      setErro(erroCapturado instanceof ErroApi ? erroCapturado.message : 'Não foi possível gerar o CSV da auditoria.');
+    } finally {
+      setExportando(false);
+    }
+  }
+
+  async function exportarPlanilha() {
+    setExportandoPlanilha(true);
+    setErro(null);
+    try {
+      const registros = await buscarRegistrosFiltrados();
+      const linhas = registros.map((registro) => [
+        registro.id,
+        new Date(registro.criadoEm),
+        registro.usuario?.nome ?? 'Não autenticado',
+        registro.usuario?.id ?? '',
+        registro.acao,
+        registro.entidade,
+        registro.entidadeId ?? '',
+        registro.enderecoIp ?? 'Não registrado',
+        detalhesCsv(registro.detalhes).join(' | '),
+      ]);
+
+      await baixarPlanilha({
+        nomeArquivo: 'auditoria.xlsx',
+        nomeAba: 'Auditoria',
+        titulo: 'Relatório de auditoria',
+        subtitulo: `${resumoFiltros()} · Gerado em ${formatarDataHora(new Date().toISOString())}`,
+        cabecalhos: ['ID do registro', 'Data e hora', 'Usuário', 'ID do usuário', 'Ação', 'Recurso afetado', 'ID do recurso', 'IP mascarado', 'Detalhes do evento'],
+        linhas,
+        larguras: [40, 22, 26, 40, 22, 30, 40, 24, 64],
+        colunasData: [2],
+        colunasComQuebra: [9],
+      });
+    } catch (erroCapturado) {
+      setErro(erroCapturado instanceof ErroApi ? erroCapturado.message : 'Não foi possível gerar a planilha da auditoria.');
+    } finally {
+      setExportandoPlanilha(false);
+    }
+  }
+
   const selecionado: RegistroAuditoria | null = lista?.itens.find((item) => item.id === selecionadoId) ?? null;
   const totalPaginas = lista ? Math.max(1, Math.ceil(lista.total / lista.tamanho)) : 1;
   const acoesNaPagina = useMemo(() => new Set(lista?.itens.map((item) => item.acao)).size, [lista]);
   const usuariosNaPagina = useMemo(() => new Set(lista?.itens.map((item) => item.usuario?.id).filter(Boolean)).size, [lista]);
 
   return <div className="space-y-5">
-    <PageHeading title="Auditoria" description="Rastreabilidade das ações realizadas no sistema, disponível somente para administradores." action={<span className="hidden items-center gap-2 rounded-md border border-lime/30 bg-lime/10 px-3 py-2 text-xs font-semibold text-lime sm:inline-flex"><ShieldCheck className="size-4" />Acesso restrito</span>} />
+    <PageHeading title="Auditoria" description="Rastreabilidade das ações realizadas no sistema, disponível somente para administradores." action={<div className="flex flex-wrap items-center gap-2"><span className="hidden items-center gap-2 rounded-md border border-lime/30 bg-lime/10 px-3 py-2 text-xs font-semibold text-lime sm:inline-flex"><ShieldCheck className="size-4" />Acesso restrito</span><Button type="button" variant="outline" onClick={() => void exportarCsv()} disabled={!lista?.total || exportando || exportandoPlanilha || carregando}><Download />{exportando ? 'Exportando...' : 'CSV'}</Button><Button type="button" onClick={() => void exportarPlanilha()} disabled={!lista?.total || exportando || exportandoPlanilha || carregando}><FileSpreadsheet />{exportandoPlanilha ? 'Gerando...' : 'Excel formatado'}</Button></div>} />
 
     <section className="rise delay-1 grid gap-3 sm:grid-cols-3">
       <Indicador icon={ClipboardList} label="Registros encontrados" value={lista ? String(lista.total) : '—'} tone="text-aqua" />
@@ -133,5 +298,58 @@ export default function AuditoriaPage() {
 }
 
 function DetalheAuditoria({ registro }: { registro: RegistroAuditoria | null }) {
-  return <aside className="h-fit rounded-lg border border-border bg-card"><div className="border-b border-border px-4 py-3"><div className="flex items-center gap-2"><FileSearch className="size-4 text-warning" /><div><h2 className="font-display text-sm font-semibold">Detalhes do registro</h2><p className="font-mono text-[10px] text-muted-foreground">Selecione uma linha para inspecionar</p></div></div></div>{!registro ? <div className="grid min-h-56 place-items-center px-6 text-center text-sm text-muted-foreground">Nenhum registro selecionado.</div> : <div className="space-y-4 p-4"><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1"><div><span className="font-mono text-[10px] uppercase text-muted-foreground">Data e hora</span><p className="mt-1 flex items-center gap-2 text-sm"><CalendarDays className="size-4 text-aqua" />{formatarDataHora(registro.criadoEm)}</p></div><div><span className="font-mono text-[10px] uppercase text-muted-foreground">Usuário responsável</span><p className="mt-1 flex items-center gap-2 text-sm"><UserRound className="size-4 text-aqua" />{registro.usuario?.nome ?? 'Sistema'}</p>{registro.usuario && <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">{registro.usuario.id}</p>}</div><div><span className="font-mono text-[10px] uppercase text-muted-foreground">Ação executada</span><p className="mt-1 font-mono text-sm text-aqua">{registro.acao}</p></div><div><span className="font-mono text-[10px] uppercase text-muted-foreground">Recurso afetado</span><p className="mt-1 text-sm">{registro.entidade}</p>{registro.entidadeId && <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">{registro.entidadeId}</p>}</div></div><div className="border-t border-border pt-4"><span className="font-mono text-[10px] uppercase text-muted-foreground">Detalhes relevantes</span><pre className="mt-2 max-h-72 overflow-auto rounded-md border border-border bg-muted p-3 font-mono text-[11px] leading-relaxed text-foreground">{formatarDetalhes(registro.detalhes)}</pre></div><div className="border-t border-border pt-3"><span className="font-mono text-[10px] text-muted-foreground">ID do registro</span><p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">{registro.id}</p></div></div>}</aside>;
+  const detalhes = registro?.detalhes && typeof registro.detalhes === 'object' && !Array.isArray(registro.detalhes)
+    ? Object.fromEntries(Object.entries(registro.detalhes).filter(([chave]) => chave !== 'IP de origem (mascarado)'))
+    : registro?.detalhes;
+
+  return <aside className="h-fit overflow-hidden rounded-lg border border-border bg-card">
+    <div className="border-b border-border px-4 py-3">
+      <div className="flex items-center gap-2">
+        <FileSearch className="size-4 text-warning" />
+        <div>
+          <h2 className="font-display text-sm font-semibold">Detalhes do registro</h2>
+          <p className="font-mono text-[10px] text-muted-foreground">Contexto da atividade selecionada</p>
+        </div>
+      </div>
+    </div>
+
+    {!registro ? <div className="grid min-h-56 place-items-center px-6 text-center text-sm text-muted-foreground">Nenhum registro selecionado.</div> : <div className="space-y-5 p-4">
+      <dl className="grid gap-x-4 gap-y-4 sm:grid-cols-2">
+        <div className="min-w-0 border-l-2 border-aqua/50 pl-3">
+          <dt className="font-mono text-[10px] uppercase text-muted-foreground">Data e hora</dt>
+          <dd className="mt-1 flex items-center gap-2 text-sm"><CalendarDays className="size-4 shrink-0 text-aqua" />{formatarDataHora(registro.criadoEm)}</dd>
+        </div>
+        <div className="min-w-0 border-l-2 border-aqua/50 pl-3">
+          <dt className="font-mono text-[10px] uppercase text-muted-foreground">Usuário</dt>
+          <dd className="mt-1 flex items-center gap-2 text-sm"><UserRound className="size-4 shrink-0 text-aqua" />{registro.usuario?.nome ?? 'Não autenticado'}</dd>
+          {registro.usuario && <dd className="mt-1 break-all font-mono text-[10px] text-muted-foreground">{registro.usuario.id}</dd>}
+        </div>
+        <div className="min-w-0 border-l-2 border-warning/60 pl-3">
+          <dt className="font-mono text-[10px] uppercase text-muted-foreground">IP de origem · mascarado</dt>
+          <dd className="mt-1 break-all font-mono text-sm font-semibold text-warning">{registro.enderecoIp ?? 'Não registrado'}</dd>
+        </div>
+        <div className="min-w-0 border-l-2 border-lime/60 pl-3">
+          <dt className="font-mono text-[10px] uppercase text-muted-foreground">Ação</dt>
+          <dd className="mt-1 break-words font-mono text-sm text-lime">{registro.acao}</dd>
+        </div>
+        <div className="min-w-0 border-l-2 border-border pl-3 sm:col-span-2">
+          <dt className="font-mono text-[10px] uppercase text-muted-foreground">Recurso afetado</dt>
+          <dd className="mt-1 break-words text-sm">{registro.entidade}</dd>
+          {registro.entidadeId && <dd className="mt-1 break-all font-mono text-[10px] text-muted-foreground">ID {registro.entidadeId}</dd>}
+        </div>
+      </dl>
+
+      <section className="border-t border-border pt-4">
+        <h3 className="font-mono text-[10px] uppercase text-muted-foreground">Dados do evento</h3>
+        <div className="mt-3 max-h-72 space-y-2 overflow-auto rounded-md border border-border bg-muted/40 p-3 text-sm leading-relaxed">
+          {formatarDetalhes(detalhes)}
+        </div>
+      </section>
+
+      <div className="border-t border-border pt-3">
+        <span className="font-mono text-[10px] text-muted-foreground">ID do registro</span>
+        <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">{registro.id}</p>
+      </div>
+    </div>}
+  </aside>;
 }

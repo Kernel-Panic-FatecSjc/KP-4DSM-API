@@ -10,6 +10,7 @@ import {
   type AtualizarEstacaoPayload,
   type CriarEstacaoPayload,
   type EstacaoApi,
+  type SensorApi,
 } from '@/lib/api';
 import { PageHeading } from '@/components/PageHeading';
 import { DataTable, type Column } from '@/components/DataTable';
@@ -36,47 +37,13 @@ type Estacao = {
 
 const ITEMS_PER_PAGE = 5;
 
-/*
- * IMPORTANTE:
- * Esses sensores são apenas um exemplo enquanto você não possui
- * um endpoint para listar os tipos de parâmetro.
- *
- * Os IDs precisam ser UUIDs que realmente existam no banco.
- *
- * Quando você tiver um GET /tipos-parametro, substituímos esta
- * constante por uma chamada à API.
- */
-const SENSORES_DISPONIVEIS: Sensor[] = [
-  {
-    id: '11111111-1111-4111-8111-111111111111',
-    nome: 'Temperatura',
-    tipo: 'Temperatura',
-    unidade: '°C',
-  },
-  {
-    id: '22222222-2222-4222-8222-222222222222',
-    nome: 'Umidade',
-    tipo: 'Umidade',
-    unidade: '%',
-  },
-  {
-    id: '33333333-3333-4333-8333-333333333333',
-    nome: 'Chuva',
-    tipo: 'Chuva',
-    unidade: 'mm',
-  },
-  {
-    id: '44444444-4444-4444-8444-444444444444',
-    nome: 'Vento',
-    tipo: 'Vento',
-    unidade: 'km/h',
-  },
-];
-
 export default function EstacoesPage() {
   const router = useRouter();
 
   const [estacoes, setEstacoes] = useState<Estacao[]>([]);
+  const [sensoresDisponiveis, setSensoresDisponiveis] = useState<Sensor[]>([]);
+  const [carregandoSensores, setCarregandoSensores] = useState(true);
+  const [erroSensores, setErroSensores] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
 
   const [busca, setBusca] = useState('');
@@ -157,6 +124,26 @@ export default function EstacoesPage() {
       .finally(() => {
         setCarregando(false);
       });
+  }, [router]);
+
+  useEffect(() => {
+    api<SensorApi[]>('/sensores')
+      .then((resposta) => {
+        setSensoresDisponiveis(resposta.map((sensor) => ({
+          id: sensor.id,
+          nome: sensor.nome,
+          tipo: sensor.nome,
+          unidade: sensor.unidade,
+        })));
+      })
+      .catch((erro: unknown) => {
+        if (erro instanceof ErroApi && erro.status === 401) {
+          router.push('/login?proximo=/estacoes');
+          return;
+        }
+        setErroSensores(erro instanceof ErroApi ? erro.message : 'Não foi possível carregar os tipos de sensores.');
+      })
+      .finally(() => setCarregandoSensores(false));
   }, [router]);
 
   const estacoesFiltradas = useMemo(() => {
@@ -998,7 +985,7 @@ export default function EstacoesPage() {
             </div>
 
             <div className="space-y-2">
-              {SENSORES_DISPONIVEIS.map(
+              {carregandoSensores ? <p className="py-4 text-center text-sm text-muted-foreground">Carregando sensores cadastrados...</p> : erroSensores ? <p role="alert" className="py-4 text-center text-sm text-destructive">{erroSensores}</p> : sensoresDisponiveis.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">Nenhum tipo de sensor cadastrado.</p> : sensoresDisponiveis.map(
                 (sensor) => {
                   const selecionado =
                     sensoresSelecionados.some(
