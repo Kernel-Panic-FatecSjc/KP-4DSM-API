@@ -28,7 +28,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="pt-BR"
       className={`${sora.variable} ${manrope.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-body">{children}</body>
+      {/* Extensões do navegador (ex.: ColorZilla) injetam atributos no <body>
+          antes da hidratação; sem isso o React acusa divergência de atributos. */}
+      <body className="min-h-full flex flex-col font-body" suppressHydrationWarning>
+        {children}
+      </body>
     </html>
   );
 }
