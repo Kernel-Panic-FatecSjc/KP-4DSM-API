@@ -116,4 +116,24 @@ describe('UsuariosService', () => {
       });
     });
   });
+
+  describe('ativar', () => {
+    it('lança NotFoundException quando o usuário não existe', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue(null);
+
+      await expect(service.ativar('inexistente')).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.usuario.update).not.toHaveBeenCalled();
+    });
+
+    it('marca o usuário como ativo novamente', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue({ id: '1', email: 'a@a.com', ativo: false });
+
+      await service.ativar('1');
+
+      expect(prismaMock.usuario.update).toHaveBeenCalledWith({
+        where: { id: '1' },
+        data: { ativo: true },
+      });
+    });
+  });
 });

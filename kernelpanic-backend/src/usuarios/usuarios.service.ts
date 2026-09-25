@@ -75,4 +75,9 @@ export class UsuariosService {
     await this.buscarPorId(id);
     await this.prisma.usuario.update({ where: { id }, data: { ativo: false } });
   }
+
+  async ativar(id: string): Promise<void> {
+    await this.buscarPorId(id);
+    await this.prisma.usuario.update({ where: { id }, data: { ativo: true } });
+  }
 }

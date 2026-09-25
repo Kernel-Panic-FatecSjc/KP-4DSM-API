@@ -10,6 +10,7 @@ describe('UsuariosController', () => {
     criar: jest.fn(),
     atualizar: jest.fn(),
     inativar: jest.fn(),
+    ativar: jest.fn(),
   };
   const auditoriaServiceMock = {
     registrar: jest.fn(),
@@ -52,6 +53,23 @@ describe('UsuariosController', () => {
         usuarioId: usuarioLogado.sub,
       });
       expect(resposta.mensagem).toMatch(/inativado/);
+    });
+  });
+
+  describe('ativar', () => {
+    it('reativa o usuário e registra a auditoria', async () => {
+      usuariosServiceMock.ativar.mockResolvedValue(undefined);
+
+      const resposta = await controller.ativar('outro-usuario', usuarioLogado);
+
+      expect(usuariosServiceMock.ativar).toHaveBeenCalledWith('outro-usuario');
+      expect(auditoriaServiceMock.registrar).toHaveBeenCalledWith({
+        acao: 'usuarios.ativar',
+        entidade: 'Usuario',
+        entidadeId: 'outro-usuario',
+        usuarioId: usuarioLogado.sub,
+      });
+      expect(resposta.mensagem).toMatch(/ativado/);
     });
   });
 

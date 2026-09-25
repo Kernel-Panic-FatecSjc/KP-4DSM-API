@@ -77,4 +77,17 @@ export class UsuariosController {
     });
     return { mensagem: 'Usuário inativado com sucesso' };
   }
+
+  @Patch(':id/ativar')
+  @UseGuards(GuardaAdministrador)
+  async ativar(@Param('id') id: string, @UsuarioAutenticado() usuarioLogado: PayloadJwt): Promise<{ mensagem: string }> {
+    await this.usuariosService.ativar(id);
+    await this.auditoriaService.registrar({
+      acao: 'usuarios.ativar',
+      entidade: 'Usuario',
+      entidadeId: id,
+      usuarioId: usuarioLogado.sub,
+    });
+    return { mensagem: 'Usuário ativado com sucesso' };
+  }
 }

@@ -26,6 +26,7 @@ export default function UsuariosPage() {
   const [novoEmail, setNovoEmail] = useState('');
   const [novaSenha, setNovaSenha] = useState('');
   const [criando, setCriando] = useState(false);
+  const [alterandoId, setAlterandoId] = useState<string | null>(null);
 
   const loadUsers = useCallback(async () => {
     setIsLoading(true);
@@ -106,14 +107,28 @@ export default function UsuariosPage() {
     }
   }
 
-  async function handleInativar(id: string) {
-    if (!confirm('Inativar este usuário? Ele deixa de conseguir logar.')) return;
+  async function handleAlterarStatus(usuario: Usuario) {
+    const inativando = usuario.ativo;
+    const pergunta = inativando
+      ? `Inativar ${usuario.nome}? Ele deixa de conseguir logar.`
+      : `Ativar ${usuario.nome}? Ele volta a conseguir logar.`;
+    if (!confirm(pergunta)) return;
+
+    setError(null);
+    setAlterandoId(usuario.id);
 
     try {
-      await api(`/usuarios/${id}`, { method: 'DELETE' });
-      setUsuarios((atual) => atual.map((u) => (u.id === id ? { ...u, ativo: false } : u)));
-    } catch {
-      setError('Erro ao inativar usuário');
+      if (inativando) {
+        await api(`/usuarios/${usuario.id}`, { method: 'DELETE' });
+      } else {
+        await api(`/usuarios/${usuario.id}/ativar`, { method: 'PATCH' });
+      }
+      setUsuarios((atual) => atual.map((u) => (u.id === usuario.id ? { ...u, ativo: !inativando } : u)));
+    } catch (erroCapturado) {
+      const padrao = inativando ? 'Erro ao inativar usuário' : 'Erro ao ativar usuário';
+      setError(erroCapturado instanceof ErroApi ? erroCapturado.message : padrao);
+    } finally {
+      setAlterandoId(null);
     }
   }
 
@@ -137,12 +152,21 @@ export default function UsuariosPage() {
           <Link href={`/usuarios/${id}/editar`} className="text-xs font-medium text-aqua hover:underline">
             Editar
           </Link>
-          {usuario.ativo && String(id) !== usuarioLogadoId && (
-            <button
-              onClick={() => handleInativar(String(id))}
-              className="text-xs font-medium text-destructive hover:underline"
+          {String(id) === usuarioLogadoId ? (
+            <span
+              className="text-xs text-muted-foreground"
+              title="Não é possível inativar o próprio usuário"
             >
-              Inativar
+              (você)
+            </span>
+          ) : (
+            <button
+              type="button"
+              onClick={() => void handleAlterarStatus(usuario)}
+              disabled={alterandoId === usuario.id}
+              className={`text-xs font-medium hover:underline disabled:cursor-not-allowed disabled:opacity-50 ${usuario.ativo ? 'text-destructive' : 'text-lime'}`}
+            >
+              {alterandoId === usuario.id ? 'Salvando...' : usuario.ativo ? 'Inativar' : 'Ativar'}
             </button>
           )}
         </div>
