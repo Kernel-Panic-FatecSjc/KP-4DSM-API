@@ -14,7 +14,7 @@ const ESTACAO = {
 describe('EstacoesService', () => {
   let service: EstacoesService;
   const prismaMock = {
-    estacao: { findUnique: jest.fn(), update: jest.fn() },
+    estacao: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
     tipoParametro: { findMany: jest.fn() },
     medida: { findFirst: jest.fn() },
   };
@@ -145,6 +145,45 @@ describe('EstacoesService', () => {
       prismaMock.estacao.findUnique.mockResolvedValue(null);
 
       await expect(service.inativar('sumida')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('criar', () => {
+    const NOVA = {
+      nome: 'Estação Sul',
+      endereco: 'Rua B',
+      vid: '11:22:33:44:55:66',
+      latitude: -23.2,
+      longitude: -45.9,
+    };
+
+    beforeEach(() => {
+      prismaMock.estacao.findUnique.mockResolvedValue(null);
+      prismaMock.estacao.create = jest.fn().mockImplementation(({ data }) => ({ id: 'nova', ...data }));
+      prismaMock.tipoParametro.findMany.mockResolvedValue([]);
+    });
+
+    it('cadastra sem sensor nenhum, para associá-los depois por PATCH', async () => {
+      await service.criar(NOVA, 'usuario-1');
+
+      const { data } = prismaMock.estacao.create.mock.calls[0][0];
+      expect(data.parametros).toEqual({ create: [] });
+    });
+
+    it('cadastra com lista de sensores vazia', async () => {
+      await service.criar({ ...NOVA, tipoParametroIds: [] }, 'usuario-1');
+
+      const { data } = prismaMock.estacao.create.mock.calls[0][0];
+      expect(data.parametros).toEqual({ create: [] });
+    });
+
+    it('continua recusando sensor inexistente quando algum é informado', async () => {
+      prismaMock.tipoParametro.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.criar({ ...NOVA, tipoParametroIds: [TIPO_CHUVA] }, 'usuario-1'),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.estacao.create).not.toHaveBeenCalled();
     });
   });
 });
