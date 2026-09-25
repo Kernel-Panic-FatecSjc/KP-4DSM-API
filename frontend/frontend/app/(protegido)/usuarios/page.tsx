@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DataTable, type Column } from '@/components/DataTable';
 import { api, ErroApi, type Usuario } from '@/lib/api';
-import { podeInativarUsuario } from '@/lib/permissoes-usuario';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -17,7 +16,6 @@ type FiltroStatus = 'TODOS' | 'ATIVOS' | 'INATIVOS';
 export default function UsuariosPage() {
   const router = useRouter();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
-  const [usuarioLogadoId, setUsuarioLogadoId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -33,11 +31,7 @@ export default function UsuariosPage() {
     setError(null);
 
     try {
-      const [perfil, lista] = await Promise.all([
-        api<Usuario>('/autenticacao/perfil'),
-        api<Usuario[]>('/usuarios'),
-      ]);
-      setUsuarioLogadoId(perfil.id);
+      const lista = await api<Usuario[]>('/usuarios');
       setUsuarios(lista);
     } catch (erroCapturado) {
       if (erroCapturado instanceof ErroApi && erroCapturado.status === 401) {
@@ -138,7 +132,7 @@ export default function UsuariosPage() {
           <Link href={`/usuarios/${id}/editar`} className="text-xs font-medium text-aqua hover:underline">
             Editar
           </Link>
-          {podeInativarUsuario(usuario, usuarioLogadoId) && (
+          {usuario.ativo && (
             <button
               onClick={() => handleInativar(String(id))}
               className="text-xs font-medium text-destructive hover:underline"
