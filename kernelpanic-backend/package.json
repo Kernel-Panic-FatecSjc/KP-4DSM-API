@@ -22,6 +22,7 @@
     "teste:carga": "ts-node teste-carga/teste-carga-esp32.ts",
     "teste:carga:taxa-fixa": "ts-node teste-carga/teste-carga-taxa-fixa.ts",
     "teste:carga:paralelo": "ts-node teste-carga/teste-carga-paralelo.ts",
+    "teste:carga:alertas": "ts-node teste-carga/teste-carga-alertas.ts",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest",
     "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "test:cov": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage",
