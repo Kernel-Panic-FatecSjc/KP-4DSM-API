@@ -52,8 +52,39 @@ describe('Cadastro de sensores (funcional)', () => {
       .expect(200);
 
     expect(resposta.body).toEqual([
-      { id: 'sensor-1', nome: 'Pluviômetro', unidade: 'mm', fator: 1, ganho: 0.2, estacoesAssociadas: 0 },
+      {
+        id: 'sensor-1',
+        nome: 'Pluviômetro',
+        unidade: 'mm',
+        fator: 1,
+        ganho: 0.2,
+        json: null,
+        estacoesAssociadas: 0,
+      },
     ]);
+  });
+
+  it('lista o catálogo de unidades aceitas', async () => {
+    const resposta = await request(app.getHttpServer())
+      .get('/sensores/unidades')
+      .set('Cookie', cookie)
+      .expect(200);
+
+    expect(resposta.body).toEqual(
+      expect.arrayContaining([{ valor: 'mm', nome: 'Milímetro', grandeza: 'Precipitação' }]),
+    );
+  });
+
+  it('salva o nome sem os espaços das pontas', async () => {
+    await request(app.getHttpServer())
+      .post('/sensores')
+      .set('Cookie', cookie)
+      .send({ ...NOVO_SENSOR, nome: '  Pluviômetro  ' })
+      .expect(201);
+
+    expect(tipoParametro.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ nome: 'Pluviômetro' }) }),
+    );
   });
 
   it('cadastra um sensor e registra na auditoria', async () => {
@@ -82,6 +113,11 @@ describe('Cadastro de sensores (funcional)', () => {
     await postar({ ...NOVO_SENSOR, nome: '' }).expect(400);
     await postar({ ...NOVO_SENSOR, fator: 'um' }).expect(400);
     await postar({ ...NOVO_SENSOR, ganho: undefined }).expect(400);
+    await postar({ ...NOVO_SENSOR, nome: '   ' }).expect(400);
+    await postar({ ...NOVO_SENSOR, fator: 0 }).expect(400);
+
+    const unidadeInvalida = await postar({ ...NOVO_SENSOR, unidade: 'polegadas' }).expect(400);
+    expect(unidadeInvalida.body.message).toEqual([expect.stringContaining('unidade deve ser uma de')]);
 
     expect(tipoParametro.create).not.toHaveBeenCalled();
     expect(logAuditoria.create).not.toHaveBeenCalled();
@@ -143,5 +179,6 @@ describe('Cadastro de sensores (funcional)', () => {
   it('recusa com 401 sem autenticação', async () => {
     await request(app.getHttpServer()).get('/sensores').expect(401);
     await request(app.getHttpServer()).post('/sensores').send(NOVO_SENSOR).expect(401);
+    await request(app.getHttpServer()).get('/sensores/unidades').expect(401);
   });
 });
