@@ -61,6 +61,42 @@ describe('UsuariosService', () => {
     });
   });
 
+  describe('atualizar', () => {
+    it('lança NotFoundException quando o usuário não existe', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue(null);
+
+      await expect(service.atualizar('inexistente', { nome: 'Novo' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(prismaMock.usuario.update).not.toHaveBeenCalled();
+    });
+
+    it('lança ConflictException quando o novo email já pertence a outro usuário', async () => {
+      prismaMock.usuario.findUnique
+        .mockResolvedValueOnce({ id: '1', email: 'antigo@a.com' }) // buscarPorId
+        .mockResolvedValueOnce({ id: '2', email: 'novo@a.com' }); // email já em uso
+
+      await expect(service.atualizar('1', { email: 'novo@a.com' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(prismaMock.usuario.update).not.toHaveBeenCalled();
+    });
+
+    it('permite manter o próprio email ao atualizar outros campos', async () => {
+      prismaMock.usuario.findUnique
+        .mockResolvedValueOnce({ id: '1', email: 'a@a.com' })
+        .mockResolvedValueOnce({ id: '1', email: 'a@a.com' });
+      prismaMock.usuario.update.mockResolvedValue({ id: '1', email: 'a@a.com', nome: 'Atualizado' });
+
+      await service.atualizar('1', { nome: 'Atualizado', email: 'a@a.com' });
+
+      expect(prismaMock.usuario.update).toHaveBeenCalledWith({
+        where: { id: '1' },
+        data: { nome: 'Atualizado', email: 'a@a.com', senhaHash: undefined },
+      });
+    });
+  });
+
   describe('inativar', () => {
     it('lança NotFoundException quando o usuário não existe', async () => {
       prismaMock.usuario.findUnique.mockResolvedValue(null);

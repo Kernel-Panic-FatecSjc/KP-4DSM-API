@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, ForbiddenException, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { GuardaAdministrador } from '../autenticacao/guarda-administrador.guard';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import type { PayloadJwt } from '../autenticacao/payload-jwt.interface';
@@ -65,6 +65,9 @@ export class UsuariosController {
 
   @Delete(':id')
   async inativar(@Param('id') id: string, @UsuarioAutenticado() usuarioLogado: PayloadJwt): Promise<{ mensagem: string }> {
+    if (id === usuarioLogado.sub) {
+      throw new ForbiddenException('Não é possível inativar o próprio usuário');
+    }
     await this.usuariosService.inativar(id);
     await this.auditoriaService.registrar({
       acao: 'usuarios.inativar',
