@@ -16,6 +16,7 @@ type FiltroStatus = 'TODOS' | 'ATIVOS' | 'INATIVOS';
 export default function UsuariosPage() {
   const router = useRouter();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
+  const [usuarioLogadoId, setUsuarioLogadoId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -31,7 +32,11 @@ export default function UsuariosPage() {
     setError(null);
 
     try {
-      const lista = await api<Usuario[]>('/usuarios');
+      const [perfil, lista] = await Promise.all([
+        api<Usuario>('/autenticacao/perfil'),
+        api<Usuario[]>('/usuarios'),
+      ]);
+      setUsuarioLogadoId(perfil.id);
       setUsuarios(lista);
     } catch (erroCapturado) {
       if (erroCapturado instanceof ErroApi && erroCapturado.status === 401) {
@@ -132,7 +137,7 @@ export default function UsuariosPage() {
           <Link href={`/usuarios/${id}/editar`} className="text-xs font-medium text-aqua hover:underline">
             Editar
           </Link>
-          {usuario.ativo && (
+          {usuario.ativo && String(id) !== usuarioLogadoId && (
             <button
               onClick={() => handleInativar(String(id))}
               className="text-xs font-medium text-destructive hover:underline"
