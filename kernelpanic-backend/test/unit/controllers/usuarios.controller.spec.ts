@@ -1,9 +1,8 @@
 import { ForbiddenException } from '@nestjs/common';
-import { Test, TestingModule } from '@nestjs/testing';
-import { AuditoriaService } from '../../../src/auditoria/auditoria.service';
+import type { AuditoriaService } from '../../../src/auditoria/auditoria.service';
 import type { PayloadJwt } from '../../../src/autenticacao/payload-jwt.interface';
 import { UsuariosController } from '../../../src/usuarios/usuarios.controller';
-import { UsuariosService } from '../../../src/usuarios/usuarios.service';
+import type { UsuariosService } from '../../../src/usuarios/usuarios.service';
 
 describe('UsuariosController', () => {
   let controller: UsuariosController;
@@ -18,18 +17,16 @@ describe('UsuariosController', () => {
 
   const usuarioLogado: PayloadJwt = { sub: 'usuario-1', email: 'admin@a.com' };
 
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.clearAllMocks();
 
-    const module: TestingModule = await Test.createTestingModule({
-      controllers: [UsuariosController],
-      providers: [
-        { provide: UsuariosService, useValue: usuariosServiceMock },
-        { provide: AuditoriaService, useValue: auditoriaServiceMock },
-      ],
-    }).compile();
-
-    controller = module.get(UsuariosController);
+    // Instancia direta, sem TestingModule: os @UseGuards() da controller
+    // exigiriam resolver as dependências reais do GuardaJwt (AuthModuleOptions),
+    // irrelevantes para testar os métodos isoladamente.
+    controller = new UsuariosController(
+      usuariosServiceMock as unknown as UsuariosService,
+      auditoriaServiceMock as unknown as AuditoriaService,
+    );
   });
 
   describe('inativar', () => {
