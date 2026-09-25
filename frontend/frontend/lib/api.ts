@@ -65,6 +65,17 @@ export interface EstacaoApi {
   atualizadoEm: string;
 }
 
+export interface AtualizarEstacaoPayload {
+  nome?: string;
+  endereco?: string;
+  vid?: string;
+  latitude?: number;
+  longitude?: number;
+  statusOperacional?: 'ATIVA' | 'INATIVA';
+  tipoParametroIds?: string[];
+}
+
+
 export interface CriarEstacaoPayload {
   nome: string;
   endereco: string;

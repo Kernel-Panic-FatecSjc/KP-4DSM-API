@@ -4,7 +4,13 @@ import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useState,} from 'react';
 import { MoreHorizontal, Plus, Search, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { api, ErroApi, type CriarEstacaoPayload, type EstacaoApi,} from '@/lib/api';
+import {
+  api,
+  ErroApi,
+  type AtualizarEstacaoPayload,
+  type CriarEstacaoPayload,
+  type EstacaoApi,
+} from '@/lib/api';
 import { PageHeading } from '@/components/PageHeading';
 import { DataTable, type Column } from '@/components/DataTable';
 import { Button } from '@/components/ui/button';
@@ -391,33 +397,72 @@ export default function EstacoesPage() {
     setModalExclusaoAberto(true);
   };
 
-  const excluirEstacao = () => {
+  const atualizarStatusEstacao = async (
+    estacao: Estacao,
+    statusOperacional: AtualizarEstacaoPayload['statusOperacional'],
+  ) => {
+    try {
+      await api<EstacaoApi | { mensagem: string }>(
+        `/estacoes/${estacao.id}`,
+        statusOperacional === 'ATIVA'
+          ? {
+              method: 'PATCH',
+              body: JSON.stringify({ statusOperacional }),
+            }
+          : { method: 'DELETE' },
+      );
+
+      setEstacoes((anteriores) =>
+        anteriores.map((item) =>
+          item.id === estacao.id
+            ? {
+                ...item,
+                status:
+                  statusOperacional === 'ATIVA'
+                    ? 'Ativo'
+                    : 'Não Ativo',
+              }
+            : item,
+        ),
+      );
+
+      setMenuAbertoCodigo(null);
+      alert(
+        statusOperacional === 'ATIVA'
+          ? 'Estação ativada com sucesso!'
+          : 'Estação inativada com sucesso!',
+      );
+    } catch (erro) {
+      if (erro instanceof ErroApi) {
+        if (erro.status === 401) {
+          router.push('/login?proximo=/estacoes');
+          return;
+        }
+
+        alert(erro.message);
+        return;
+      }
+
+      console.error(erro);
+      alert(
+        statusOperacional === 'ATIVA'
+          ? 'Não foi possível ativar a estação.'
+          : 'Não foi possível inativar a estação.',
+      );
+    }
+  };
+
+  const excluirEstacao = async () => {
     if (!estacaoSelecionada) {
       return;
     }
 
-    /*
-     * ATENÇÃO:
-     * Seu backend atual não possui DELETE /estacoes/:id.
-     *
-     * Portanto, por enquanto esta alteração é apenas local.
-     *
-     * Quando o endpoint DELETE existir, substituímos
-     * este código por uma chamada à API.
-     */
-
-    setEstacoes((anteriores) =>
-      anteriores.filter(
-        (estacao) =>
-          estacao.id !== estacaoSelecionada.id,
-      ),
-    );
-
     setModalExclusaoAberto(false);
+    await atualizarStatusEstacao(estacaoSelecionada, 'INATIVA');
     setEstacaoSelecionada(null);
   };
 
-  const salvarEdicao = () => {
+  const salvarEdicao = async () => {
     if (!estacaoSelecionada) {
       return;
     }
@@ -435,6 +480,11 @@ export default function EstacoesPage() {
       return;
     }
 
+    if (!vid.trim()) {
+      alert('Informe o UUID/MAC da estação.');
+      return;
+    }
+
     if (!Number.isFinite(latitudeNumero)) {
       alert('Informe uma latitude válida.');
       return;
@@ -445,28 +495,72 @@ export default function EstacoesPage() {
       return;
     }
 
-    setEstacoes((anteriores) =>
-      anteriores.map((estacao) => {
-        if (
-          estacao.id !== estacaoSelecionada.id
-        ) {
-          return estacao;
+    try {
+      const payload: AtualizarEstacaoPayload = {
+        nome: nome.trim(),
+        endereco: endereco.trim(),
+        vid: vid.trim(),
+        latitude: latitudeNumero,
+        longitude: longitudeNumero,
+        tipoParametroIds: sensoresSelecionados.map(
+          (sensor) => sensor.id,
+        ),
+      };
+
+      const estacaoAtualizada = await api<EstacaoApi>(
+        `/estacoes/${estacaoSelecionada.id}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        },
+      );
+
+      const estacaoConvertida: Estacao = {
+        id: estacaoAtualizada.id,
+        nome: estacaoAtualizada.nome,
+        codigo: estacaoAtualizada.vid,
+        latitude: estacaoAtualizada.latitude,
+        longitude: estacaoAtualizada.longitude,
+        status:
+          estacaoAtualizada.statusOperacional === 'ATIVA'
+            ? 'Ativo'
+            : 'Não Ativo',
+        endereco: estacaoAtualizada.endereco,
+        sensores: estacaoAtualizada.sensores.map(
+          (sensor) => ({
+            id: sensor.id,
+            nome: sensor.nome,
+            tipo: sensor.nome,
+            unidade: sensor.unidade,
+          }),
+        ),
+      };
+
+      setEstacoes((anteriores) =>
+        anteriores.map((estacao) =>
+          estacao.id === estacaoAtualizada.id
+            ? estacaoConvertida
+            : estacao,
+        ),
+      );
+
+      setModalEdicaoAberto(false);
+      limparFormulario();
+      alert('Estação atualizada com sucesso!');
+    } catch (erro) {
+      if (erro instanceof ErroApi) {
+        if (erro.status === 401) {
+          router.push('/login?proximo=/estacoes');
+          return;
         }
 
-        return {
-          ...estacao,
-          nome: nome.trim(),
-          endereco: endereco.trim(),
-          codigo: vid.trim(),
-          latitude: latitudeNumero,
-          longitude: longitudeNumero,
-          sensores: sensoresSelecionados,
-        };
-      }),
-    );
+        alert(erro.message);
+        return;
+      }
 
-    setModalEdicaoAberto(false);
-    limparFormulario();
+      console.error(erro);
+      alert('Não foi possível atualizar a estação.');
+    }
   };
 
   const alternarSensor = (sensor: Sensor) => {
@@ -609,14 +703,26 @@ export default function EstacoesPage() {
 
                 <button
                   type="button"
-                  className="w-full rounded-md px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                  onClick={() =>
-                    confirmarExclusao(
-                      estacao.codigo,
-                    )
-                  }
+                  className={`w-full rounded-md px-3 py-2 text-left text-sm ${
+                    estacao.status === 'Ativo'
+                      ? 'text-red-600 hover:bg-red-50'
+                      : 'text-green-700 hover:bg-green-50'
+                  }`}
+                  onClick={() => {
+                    if (estacao.status === 'Ativo') {
+                      confirmarExclusao(estacao.codigo);
+                      return;
+                    }
+
+                    void atualizarStatusEstacao(
+                      estacao,
+                      'ATIVA',
+                    );
+                  }}
                 >
-                  Deletar
+                  {estacao.status === 'Ativo'
+                    ? 'Desativar'
+                    : 'Ativar'}
                 </button>
               </div>,
               document.body,
@@ -1102,22 +1208,16 @@ export default function EstacoesPage() {
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
             <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl">
               <h2 className="text-lg font-semibold">
-                Excluir estação
+                Desativar estação
               </h2>
 
               <p className="mt-2 text-sm text-muted-foreground">
-                Tem certeza que deseja excluir a
+                Tem certeza que deseja desativar a
                 estação{' '}
                 <strong>
                   {estacaoSelecionada.nome}
                 </strong>
                 ?
-              </p>
-
-              <p className="mt-2 text-xs text-muted-foreground">
-                A exclusão ainda está sendo feita
-                somente no frontend, pois o backend
-                informado não possui um endpoint DELETE.
               </p>
 
               <div className="mt-6 flex justify-end gap-3">
@@ -1137,7 +1237,7 @@ export default function EstacoesPage() {
                   onClick={excluirEstacao}
                   className="bg-red-600 text-white hover:bg-red-700"
                 >
-                  Excluir
+                  Desativar
                 </Button>
               </div>
             </div>
