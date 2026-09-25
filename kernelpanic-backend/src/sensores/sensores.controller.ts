@@ -8,6 +8,7 @@ import { AtualizarSensorDto } from './dto/atualizar-sensor.dto';
 import { CriarSensorDto } from './dto/criar-sensor.dto';
 import { SensorRespostaDto } from './dto/sensor-resposta.dto';
 import { SensoresService } from './sensores.service';
+import { CATALOGO_UNIDADES, type DescricaoUnidade } from './unidade-sensor';
 
 @Controller('sensores')
 @UseGuards(GuardaJwt)
@@ -21,6 +22,13 @@ export class SensoresController {
   async listar(): Promise<SensorRespostaDto[]> {
     const sensores = await this.sensoresService.listar();
     return sensores.map((sensor) => new SensorRespostaDto(sensor));
+  }
+
+  // Fonte única das unidades aceitas: o front monta o seletor a partir daqui
+  // em vez de repetir a lista.
+  @Get('unidades')
+  listarUnidades(): DescricaoUnidade[] {
+    return CATALOGO_UNIDADES;
   }
 
   @Post()

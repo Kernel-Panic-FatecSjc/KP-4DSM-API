@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, ClipboardList, LayoutDashboard, LogOut, Menu, MapPin, PanelLeftClose, PanelLeftOpen, Users, X } from 'lucide-react';
+import { Bell, ClipboardList, Gauge, LayoutDashboard, LogOut, Menu, MapPin, PanelLeftClose, PanelLeftOpen, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { label: 'Gerenciamento de Alertas', href: '/gerenciamento-de-alertas', icon: Bell },
   { label: 'Alerta Log', href: '/alerta-log', icon: Bell },
   { label: 'Estações', href: '/estacoes', icon: MapPin },
+  { label: 'Sensores', href: '/sensores', icon: Gauge },
   { label: 'Usuários', href: '/usuarios', icon: Users },
   { label: 'Auditoria', href: '/auditoria', icon: ClipboardList },
 ];

@@ -85,7 +85,29 @@ export interface CriarEstacaoPayload {
   tipoParametroIds: string[];
 }
 
-export type SeveridadeAlerta = 'ATENCAO' | 'ALERTA' | 'EMERGENCIA';
+export interface SensorApi {
+  id: string;
+  nome: string;
+  unidade: string;
+  fator: number;
+  ganho: number;
+  estacoesAssociadas: number;
+}
+
+export interface UnidadeSensor {
+  valor: string;
+  nome: string;
+  grandeza: string;
+}
+
+export interface SensorPayload {
+  nome: string;
+  unidade: string;
+  fator: number;
+  ganho: number;
+}
+
+export type SeveridadeAlerta ='ATENCAO' | 'ALERTA' | 'EMERGENCIA';
 export type StatusAlarme = 'ABERTO' | 'RECONHECIDO' | 'RESOLVIDO';
 
 export interface AlarmeHistorico {
