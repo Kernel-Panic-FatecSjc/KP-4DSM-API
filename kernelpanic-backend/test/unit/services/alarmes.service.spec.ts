@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AlarmesService } from '../../../src/alarmes/alarmes.service';
 import { StatusAlarme } from '../../../src/generated/prisma/client';
 import { PrismaService } from '../../../src/prisma/prisma.service';
+import { EstacoesProximasService } from '../../../src/regiao/estacoes-proximas.service';
 import { ALARME_COM_RELACOES } from '../../fixtures';
 
 describe('AlarmesService', () => {
@@ -17,7 +18,7 @@ describe('AlarmesService', () => {
     }));
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AlarmesService, { provide: PrismaService, useValue: prismaMock }],
+      providers: [AlarmesService, EstacoesProximasService, { provide: PrismaService, useValue: prismaMock }],
     }).compile();
 
     service = module.get(AlarmesService);

@@ -11,9 +11,14 @@ export default function Home() {
         <h1 className="font-display text-2xl font-bold">KP-4DSM</h1>
         <p className="mt-1 text-sm text-muted-foreground">Painel de monitoramento e alertas de estações meteorológicas.</p>
       </div>
-      <Link href="/login">
-        <Button>Entrar</Button>
-      </Link>
+      <div className="flex flex-wrap justify-center gap-3">
+        <Link href="/alertas-globais">
+          <Button variant="outline">Ver alertas</Button>
+        </Link>
+        <Link href="/login">
+          <Button>Entrar</Button>
+        </Link>
+      </div>
     </main>
   );
 }

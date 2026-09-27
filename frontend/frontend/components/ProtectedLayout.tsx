@@ -1,38 +1,48 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { api, ErroApi } from '@/lib/api';
 
 /**
  * Rotas dentro da área protegida que não exigem autenticação.
  * Adicione aqui o caminho (ou prefixo) de qualquer página que deva
  * ficar acessível mesmo sem login, sem precisar tirá-la deste grupo.
+ * Os endpoints que a página consome também precisam de `@Publico()` na API.
  */
-const EXCECOES: string[] = [];
+export const ROTAS_PUBLICAS: string[] = ['/alertas-globais'];
 
+export function ehRotaPublica(pathname: string): boolean {
+  return ROTAS_PUBLICAS.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`));
+}
 
-function ehExcecao(pathname: string): boolean {
-  return EXCECOES.some((rota) => pathname === rota || pathname.startsWith(`${rota}/`));
+type EstadoSessao = 'verificando' | 'autenticado' | 'visitante';
+
+const SessaoContext = createContext<EstadoSessao>('verificando');
+
+export function useSessao(): EstadoSessao {
+  return useContext(SessaoContext);
 }
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const excecao = ehExcecao(pathname);
-  const [autenticado, setAutenticado] = useState(false);
+  const publica = ehRotaPublica(pathname);
+  const [sessao, setSessao] = useState<EstadoSessao>('verificando');
 
   useEffect(() => {
-    if (excecao) return;
-
     let ativo = true;
 
     api('/autenticacao/perfil')
       .then(() => {
-        if (ativo) setAutenticado(true);
+        if (ativo) setSessao('autenticado');
       })
       .catch((erro) => {
         if (!ativo) return;
+        if (publica) {
+          setSessao('visitante');
+          return;
+        }
         const proximo = encodeURIComponent(pathname);
         router.replace(erro instanceof ErroApi ? `/login?proximo=${proximo}` : '/login');
       });
@@ -40,13 +50,9 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
     return () => {
       ativo = false;
     };
-  }, [excecao, pathname, router]);
+  }, [publica, pathname, router]);
 
-  if (excecao) {
-    return <>{children}</>;
-  }
-
-  if (!autenticado) {
+  if (!publica && sessao !== 'autenticado') {
     return (
       <main className="flex flex-1 items-center justify-center p-8">
         <p className="text-sm text-zinc-500">Verificando autenticação...</p>
@@ -54,5 +60,5 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return <SessaoContext.Provider value={sessao}>{children}</SessaoContext.Provider>;
 }
