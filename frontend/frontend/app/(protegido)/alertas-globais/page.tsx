@@ -1,6 +1,19 @@
 'use client';
 
-import { ChevronLeft, ChevronRight, ShieldCheck } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Gauge,
+  Hash,
+  MapPin,
+  Radio,
+  ShieldCheck,
+  UserRound,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { PageHeading } from '@/components/PageHeading';
 import { Button } from '@/components/ui/button';
@@ -8,6 +21,7 @@ import { Select } from '@/components/ui/select';
 import {
   api,
   ErroApi,
+  type AlarmeHistorico,
   type FiltrosAlarmes,
   type FiltrosAlertas,
   type ListaAlarmes,
@@ -43,6 +57,35 @@ const COR_STATUS: Record<StatusAlarme, string> = {
   RECONHECIDO: 'bg-aqua',
   RESOLVIDO: 'bg-lime',
 };
+
+const COR_SELO_SEVERIDADE: Record<SeveridadeAlerta, string> = {
+  ATENCAO: 'bg-aqua/10 text-aqua',
+  ALERTA: 'bg-warning/10 text-warning',
+  EMERGENCIA: 'bg-critical/10 text-critical',
+};
+
+const COR_ICONE_STATUS: Record<StatusAlarme, string> = {
+  ABERTO: 'text-critical',
+  RECONHECIDO: 'text-aqua',
+  RESOLVIDO: 'text-lime',
+};
+
+const LABEL_OPERADOR_EXTENSO: Record<string, string> = {
+  MAIOR_QUE: 'Maior que',
+  MENOR_QUE: 'Menor que',
+  IGUAL_A: 'Igual a',
+  DIFERENTE_DE: 'Diferente de',
+  MAIOR_OU_IGUAL: 'Maior ou igual a',
+  MENOR_OU_IGUAL: 'Menor ou igual a',
+};
+
+function formatarData(data: string) {
+  return new Date(data).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'medium' });
+}
+
+function formatarNumero(valor: number) {
+  return new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 3 }).format(valor);
+}
 
 function montarQuery(filtros: FiltrosAlarmes): string {
   const parametros = new URLSearchParams();
@@ -81,6 +124,7 @@ export default function AlarmesPage() {
   const [resultado, setResultado] = useState<ListaAlarmes | null>(null);
   const [filtros, setFiltros] = useState<FiltrosAlarmes>({ pagina: 1 });
   const [erro, setErro] = useState<string | null>(null);
+  const [ocorrenciaSelecionada, setOcorrenciaSelecionada] = useState<AlarmeHistorico | null>(null);
 
   const [opcoesAlertas, setOpcoesAlertas] = useState<OpcoesFiltroAlertas | null>(null);
   const [resultadoAlertas, setResultadoAlertas] = useState<ListaAlertas | null>(null);
@@ -278,7 +322,15 @@ export default function AlarmesPage() {
         totalPaginas={totalPaginas}
         onPaginaAnterior={() => resultado && irParaPagina(resultado.pagina - 1)}
         onProximaPagina={() => resultado && irParaPagina(resultado.pagina + 1)}
+        onSelecionar={setOcorrenciaSelecionada}
       />
+
+      {ocorrenciaSelecionada && (
+        <DetalheOcorrenciaModal
+          ocorrencia={ocorrenciaSelecionada}
+          onFechar={() => setOcorrenciaSelecionada(null)}
+        />
+      )}
 
       <div>
         <h2 className="font-display text-lg font-semibold">Alertas Configurados</h2>
@@ -368,11 +420,13 @@ function AlarmesTabela({
   totalPaginas,
   onPaginaAnterior,
   onProximaPagina,
+  onSelecionar,
 }: {
   resultado: ListaAlarmes | null;
   totalPaginas: number;
   onPaginaAnterior: () => void;
   onProximaPagina: () => void;
+  onSelecionar: (ocorrencia: AlarmeHistorico) => void;
 }) {
   const itens = resultado?.itens ?? [];
   const abertos = itens.filter((item) => item.status === 'ABERTO').length;
@@ -383,7 +437,9 @@ function AlarmesTabela({
         <div className="min-w-0">
           <h2 className="font-display text-sm font-semibold">Ocorrências</h2>
           <p className="font-mono text-[10px] text-muted-foreground">
-            {resultado ? `${resultado.total} registro(s) · ${abertos} em aberto nesta página` : 'Carregando...'}
+            {resultado
+              ? `${resultado.total} registro(s) · ${abertos} em aberto nesta página · clique para ver os detalhes`
+              : 'Carregando...'}
           </p>
         </div>
       </div>
@@ -410,9 +466,12 @@ function AlarmesTabela({
         </div>
       ) : (
         itens.map((alarme) => (
-          <div
+          <button
             key={alarme.id}
-            className="grid grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-border px-4 py-3 last:border-0 sm:grid-cols-[1.1fr_1.2fr_1fr_.8fr_.8fr] sm:items-center"
+            type="button"
+            onClick={() => onSelecionar(alarme)}
+            aria-label={`Ver detalhes da ocorrência em ${alarme.estacao.nome}`}
+            className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 border-b border-border px-4 py-3 text-left transition-colors last:border-0 hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none sm:grid-cols-[1.1fr_1.2fr_1fr_.8fr_.8fr] sm:items-center"
           >
             <span className="font-mono text-[11px] text-muted-foreground">
               {new Date(alarme.disparadoEm).toLocaleString('pt-BR')}
@@ -430,7 +489,7 @@ function AlarmesTabela({
               <span className={cn('size-1.5 rounded-full', COR_STATUS[alarme.status])} />
               {LABEL_STATUS[alarme.status].toLowerCase()}
             </span>
-          </div>
+          </button>
         ))
       )}
 
@@ -464,6 +523,149 @@ function AlarmesTabela({
         </div>
       )}
     </article>
+  );
+}
+
+function InfoItem({
+  icon: Icon,
+  label,
+  value,
+  mono = false,
+}: {
+  icon: typeof MapPin;
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="flex gap-2.5 border-b border-border py-3 last:border-0">
+      <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0">
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className={cn('mt-0.5 break-words text-sm text-foreground', mono && 'font-mono text-[12px]')}>
+          {value}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetalheOcorrenciaModal({
+  ocorrencia,
+  onFechar,
+}: {
+  ocorrencia: AlarmeHistorico;
+  onFechar: () => void;
+}) {
+  useEffect(() => {
+    function fecharComEsc(evento: KeyboardEvent) {
+      if (evento.key === 'Escape') onFechar();
+    }
+
+    window.addEventListener('keydown', fecharComEsc);
+    return () => window.removeEventListener('keydown', fecharComEsc);
+  }, [onFechar]);
+
+  const operador = LABEL_OPERADOR_EXTENSO[ocorrencia.operador] ?? ocorrencia.operador;
+  const percentual =
+    ocorrencia.valorLimite === 0
+      ? 100
+      : Math.min(Math.max((ocorrencia.valorMedido / ocorrencia.valorLimite) * 100, 0), 100);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      onClick={onFechar}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ocorrencia-titulo"
+        onClick={(evento) => evento.stopPropagation()}
+        className="max-h-[90vh] w-full max-w-2xl space-y-6 overflow-y-auto rounded-xl bg-card p-5 shadow-xl sm:p-6"
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-border pb-5">
+          <div className="min-w-0">
+            <div className="break-all font-mono text-xs text-muted-foreground">{ocorrencia.id}</div>
+            <h2 id="ocorrencia-titulo" className="mt-1 text-xl font-semibold">
+              {ocorrencia.estacao.nome}
+            </h2>
+            <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Clock3 className="size-4" />
+              <span className="font-mono">{formatarData(ocorrencia.disparadoEm)}</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded px-3 py-1.5 text-xs font-medium',
+                  COR_SELO_SEVERIDADE[ocorrencia.severidade],
+                )}
+              >
+                <AlertTriangle className="size-4" />
+                {LABEL_SEVERIDADE[ocorrencia.severidade]}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded border border-border bg-muted px-3 py-1.5 text-xs font-medium">
+                <CheckCircle2 className={cn('size-4', COR_ICONE_STATUS[ocorrencia.status])} />
+                {LABEL_STATUS[ocorrencia.status]}
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={onFechar}
+            className="rounded-md p-2 hover:bg-muted"
+            aria-label="Fechar detalhes da ocorrência"
+          >
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <div className="rounded-lg border border-border bg-muted p-4">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Gauge className="size-4 text-aqua" />
+            Parâmetro que violou o limiar
+          </div>
+          <div className="mt-1 text-base font-semibold">{ocorrencia.parametro.nome}</div>
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <div className="text-xs text-muted-foreground">Valor registrado</div>
+              <div className="mt-1 font-mono text-2xl font-semibold text-critical">
+                {formatarNumero(ocorrencia.valorMedido)}{' '}
+                <span className="text-sm text-muted-foreground">{ocorrencia.parametro.unidade}</span>
+              </div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Limiar configurado</div>
+              <div className="mt-1 font-mono text-2xl font-semibold">
+                {formatarNumero(ocorrencia.valorLimite)}{' '}
+                <span className="text-sm text-muted-foreground">{ocorrencia.parametro.unidade}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-border">
+            <div className="h-full rounded-full bg-critical transition-all" style={{ width: `${percentual}%` }} />
+          </div>
+          <div className="mt-1.5 flex justify-between text-xs text-muted-foreground">
+            <span>0</span>
+            <span>Valor medido / limiar</span>
+          </div>
+        </div>
+
+        <div className="grid gap-x-6 sm:grid-cols-2">
+          <InfoItem icon={MapPin} label="Estação afetada" value={ocorrencia.estacao.nome} />
+          <InfoItem icon={Radio} label="Unidade do parâmetro" value={ocorrencia.parametro.unidade} mono />
+          <InfoItem icon={Hash} label="ID do parâmetro" value={ocorrencia.parametro.id} mono />
+          <InfoItem
+            icon={UserRound}
+            label="Regra aplicada"
+            value={`${operador} ${formatarNumero(ocorrencia.valorLimite)} ${ocorrencia.parametro.unidade}`}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 

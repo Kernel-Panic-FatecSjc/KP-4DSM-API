@@ -1,6 +1,7 @@
 import type { Prisma } from '../../generated/prisma/client';
+import { isIP } from 'node:net';
 
-type RegistroComUsuario = Pick<Prisma.LogAuditoriaModel, 'id' | 'criadoEm' | 'acao' | 'entidade' | 'entidadeId' | 'detalhes'> & {
+type RegistroComUsuario = Pick<Prisma.LogAuditoriaModel, 'id' | 'criadoEm' | 'acao' | 'entidade' | 'entidadeId' | 'detalhes' | 'enderecoIp'> & {
   usuario: { id: string; nome: string } | null;
 };
 
@@ -17,12 +18,26 @@ function removerDadosSensiveis(valor: unknown): unknown {
   );
 }
 
+function mascararIp(enderecoIp: string | null): string | null {
+  if (!enderecoIp) return null;
+
+  const endereco = enderecoIp.replace(/^::ffff:/i, '');
+  if (isIP(endereco) === 4) {
+    return `${endereco.split('.').slice(0, 2).join('.')}.*.*`;
+  }
+  if (isIP(endereco) === 6) {
+    return `${endereco.split(':').filter(Boolean).slice(0, 3).join(':')}:*`;
+  }
+  return '***';
+}
+
 export class AuditoriaRespostaDto {
   id: string;
   criadoEm: Date;
   acao: string;
   entidade: string;
   entidadeId: string | null;
+  enderecoIp: string | null;
   detalhes: unknown;
   usuario: { id: string; nome: string } | null;
 
@@ -32,7 +47,16 @@ export class AuditoriaRespostaDto {
     this.acao = registro.acao;
     this.entidade = registro.entidade;
     this.entidadeId = registro.entidadeId;
-    this.detalhes = removerDadosSensiveis(registro.detalhes);
+    this.enderecoIp = mascararIp(registro.enderecoIp);
+    const detalhes = removerDadosSensiveis(registro.detalhes);
+    this.detalhes = this.enderecoIp
+      ? {
+          ...(detalhes && typeof detalhes === 'object' && !Array.isArray(detalhes)
+            ? detalhes
+            : { dados: detalhes }),
+          'IP de origem (mascarado)': this.enderecoIp,
+        }
+      : detalhes;
     this.usuario = registro.usuario;
   }
 }

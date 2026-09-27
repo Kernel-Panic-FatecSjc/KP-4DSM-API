@@ -15,6 +15,9 @@ type FiltroSeveridade = 'TODOS' | SeveridadeAlerta;
 type OperadorAlerta = 'MAIOR_QUE' | 'MENOR_QUE' | 'IGUAL_A' | 'DIFERENTE_DE' | 'MAIOR_OU_IGUAL' | 'MENOR_OU_IGUAL';
 
 type FormularioAlerta = {
+  // Só existe na tela: no banco o alerta aponta para um Parametro, que já é
+  // o par (estação, tipo de sensor). A estação serve para filtrar os sensores.
+  estacaoId: string;
   parametroId: string;
   operador: OperadorAlerta;
   valorLimite: string;
@@ -23,6 +26,7 @@ type FormularioAlerta = {
 };
 
 const FORMULARIO_INICIAL: FormularioAlerta = {
+  estacaoId: '',
   parametroId: '',
   operador: 'MAIOR_QUE',
   valorLimite: '',
@@ -116,7 +120,25 @@ export default function AlertasPage() {
   const [modalAberto, setModalAberto] = useState(false);
   const [alertaEditando, setAlertaEditando] = useState<Alerta | null>(null);
   const [formulario, setFormulario] = useState<FormularioAlerta>(FORMULARIO_INICIAL);
+  const [erroFormulario, setErroFormulario] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+
+  const estacoesComSensores = useMemo(
+    () => new Set(opcoesFiltro?.parametros.map((parametro) => parametro.estacaoId)),
+    [opcoesFiltro],
+  );
+
+  const parametrosDaEstacao = useMemo(
+    () =>
+      opcoesFiltro?.parametros.filter(
+        (parametro) => parametro.estacaoId === formulario.estacaoId,
+      ) ?? [],
+    [opcoesFiltro, formulario.estacaoId],
+  );
+
+  const parametroSelecionado = parametrosDaEstacao.find(
+    (parametro) => parametro.id === formulario.parametroId,
+  );
 
   const carregarOpcoesFiltro = useCallback(async () => {
     try {
@@ -129,7 +151,7 @@ export default function AlertasPage() {
     } catch (erroApi) {
       if (erroApi instanceof ErroApi) {
         if (erroApi.status === 401) {
-          router.push('/login?proximo=/alertas');
+          router.push('/login?proximo=/gerenciamento-de-alertas');
           return;
         }
 
@@ -202,7 +224,7 @@ export default function AlertasPage() {
     } catch (erroApi) {
       if (erroApi instanceof ErroApi) {
         if (erroApi.status === 401) {
-          router.push('/login?proximo=/alertas');
+          router.push('/login?proximo=/gerenciamento-de-alertas');
           return;
         }
 
@@ -305,12 +327,15 @@ export default function AlertasPage() {
   const abrirCadastro = () => {
     setAlertaEditando(null);
     setFormulario(FORMULARIO_INICIAL);
+    setErroFormulario(null);
     setModalAberto(true);
   };
 
   const abrirEdicao = (alerta: Alerta) => {
     setAlertaEditando(alerta);
+    setErroFormulario(null);
     setFormulario({
+      estacaoId: alerta.estacao.id,
       parametroId: alerta.parametro.id,
       operador: alerta.operador as OperadorAlerta,
       valorLimite: String(alerta.valorLimite),
@@ -323,14 +348,24 @@ export default function AlertasPage() {
   const salvarAlerta = async () => {
     const valorLimite = Number(formulario.valorLimite);
 
-    if (!formulario.parametroId || !Number.isFinite(valorLimite)) {
-      setErro('Selecione um parâmetro e informe um limite válido.');
+    if (!formulario.estacaoId) {
+      setErroFormulario('Selecione a estação que o alerta vai monitorar.');
+      return;
+    }
+
+    if (!formulario.parametroId) {
+      setErroFormulario('Selecione o parâmetro monitorado da estação.');
+      return;
+    }
+
+    if (formulario.valorLimite.trim() === '' || !Number.isFinite(valorLimite)) {
+      setErroFormulario('Informe um limite válido.');
       return;
     }
 
     try {
       setSalvando(true);
-      setErro(null);
+      setErroFormulario(null);
 
       if (alertaEditando) {
         await api(`/alertas/${alertaEditando.id}`, {
@@ -363,11 +398,11 @@ export default function AlertasPage() {
           router.push('/login?proximo=/gerenciamento-de-alertas');
           return;
         }
-        setErro(erroApi.message);
+        setErroFormulario(erroApi.message);
         return;
       }
 
-      setErro('Não foi possível salvar o alerta.');
+      setErroFormulario('Não foi possível salvar o alerta.');
     } finally {
       setSalvando(false);
     }
@@ -764,7 +799,7 @@ export default function AlertasPage() {
                   {alertaEditando ? 'Editar alerta' : 'Cadastrar alerta'}
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  Configure o parâmetro e a condição monitorada.
+                  Escolha a estação, o parâmetro dela e a condição monitorada.
                 </p>
               </div>
 
@@ -780,6 +815,36 @@ export default function AlertasPage() {
 
             <div className="space-y-4">
               <div className="flex flex-col gap-1">
+                <label htmlFor="alerta-estacao" className="text-sm font-medium">
+                  Estação
+                </label>
+                <select
+                  id="alerta-estacao"
+                  value={formulario.estacaoId}
+                  onChange={(event) =>
+                    setFormulario((anterior) => ({
+                      ...anterior,
+                      estacaoId: event.target.value,
+                      parametroId: '',
+                    }))
+                  }
+                  className="rounded border border-border bg-card px-3 py-2 text-sm"
+                >
+                  <option value="">Selecione uma estação</option>
+                  {opcoesFiltro?.estacoes.map((estacao) => {
+                    const semSensores = !estacoesComSensores.has(estacao.id);
+
+                    return (
+                      <option key={estacao.id} value={estacao.id} disabled={semSensores}>
+                        {estacao.nome}
+                        {semSensores ? ' (sem sensores)' : ''}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1">
                 <label htmlFor="alerta-parametro" className="text-sm font-medium">
                   Parâmetro monitorado
                 </label>
@@ -792,12 +857,17 @@ export default function AlertasPage() {
                       parametroId: event.target.value,
                     }))
                   }
-                  className="rounded border border-border bg-card px-3 py-2 text-sm"
+                  disabled={!formulario.estacaoId}
+                  className="rounded border border-border bg-card px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <option value="">Selecione um parâmetro</option>
-                  {opcoesFiltro?.parametros.map((parametro) => (
+                  <option value="">
+                    {formulario.estacaoId
+                      ? 'Selecione um parâmetro'
+                      : 'Selecione uma estação primeiro'}
+                  </option>
+                  {parametrosDaEstacao.map((parametro) => (
                     <option key={parametro.id} value={parametro.id}>
-                      {parametro.estacaoNome} · {parametro.nome} ({parametro.unidade})
+                      {parametro.nome} ({parametro.unidade})
                     </option>
                   ))}
                 </select>
@@ -829,7 +899,7 @@ export default function AlertasPage() {
 
                 <div className="flex flex-col gap-1">
                   <label htmlFor="alerta-limite" className="text-sm font-medium">
-                    Limite
+                    Limite{parametroSelecionado ? ` (${parametroSelecionado.unidade})` : ''}
                   </label>
                   <Input
                     id="alerta-limite"
@@ -882,6 +952,12 @@ export default function AlertasPage() {
                   />
                   Alerta ativo
                 </label>
+              )}
+
+              {erroFormulario && (
+                <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-600">
+                  {erroFormulario}
+                </div>
               )}
             </div>
 
