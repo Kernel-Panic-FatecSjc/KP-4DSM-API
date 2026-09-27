@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../../src/prisma/prisma.service';
 import { SensoresService } from '../../../src/sensores/sensores.service';
+import { UnidadeSensor } from '../../../src/sensores/unidade-sensor';
 
 const SENSOR = {
   id: 'sensor-1',
@@ -41,7 +42,7 @@ describe('SensoresService', () => {
 
   describe('criar', () => {
     it('cadastra o sensor com unidade e calibração', async () => {
-      const sensor = await service.criar({ nome: 'Pluviômetro', unidade: 'mm', fator: 1, ganho: 0.2 });
+      const sensor = await service.criar({ nome: 'Pluviômetro', unidade: UnidadeSensor.MILIMETRO, fator: 1, ganho: 0.2 });
 
       expect(prismaMock.tipoParametro.create).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -55,7 +56,7 @@ describe('SensoresService', () => {
       prismaMock.tipoParametro.findFirst.mockResolvedValue({ id: 'sensor-1' });
 
       await expect(
-        service.criar({ nome: 'pluviômetro', unidade: 'mm', fator: 1, ganho: 0.2 }),
+        service.criar({ nome: 'pluviômetro', unidade: UnidadeSensor.MILIMETRO, fator: 1, ganho: 0.2 }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(prismaMock.tipoParametro.create).not.toHaveBeenCalled();
     });
@@ -79,6 +80,29 @@ describe('SensoresService', () => {
       await service.atualizar('sensor-1', { nome: SENSOR.nome });
 
       expect(prismaMock.tipoParametro.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('ignora o próprio sensor ao checar o nome, permitindo mudar só a caixa', async () => {
+      prismaMock.tipoParametro.findUnique.mockResolvedValue(SENSOR);
+
+      await service.atualizar('sensor-1', { nome: 'PLUVIÔMETRO' });
+
+      expect(prismaMock.tipoParametro.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: { not: 'sensor-1' } }),
+        }),
+      );
+      expect(prismaMock.tipoParametro.update).toHaveBeenCalled();
+    });
+
+    it('recusa renomear para o nome de outro sensor', async () => {
+      prismaMock.tipoParametro.findUnique.mockResolvedValue(SENSOR);
+      prismaMock.tipoParametro.findFirst.mockResolvedValue({ id: 'sensor-2' });
+
+      await expect(service.atualizar('sensor-1', { nome: 'Anemômetro' })).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(prismaMock.tipoParametro.update).not.toHaveBeenCalled();
     });
 
     it('lança NotFoundException quando o sensor não existe', async () => {

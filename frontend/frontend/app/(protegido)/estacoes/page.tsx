@@ -3,6 +3,7 @@
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useState,} from 'react';
 import { MoreHorizontal, Plus, Search, X } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   api,
@@ -985,7 +986,7 @@ export default function EstacoesPage() {
             </div>
 
             <div className="space-y-2">
-              {carregandoSensores ? <p className="py-4 text-center text-sm text-muted-foreground">Carregando sensores cadastrados...</p> : erroSensores ? <p role="alert" className="py-4 text-center text-sm text-destructive">{erroSensores}</p> : sensoresDisponiveis.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">Nenhum tipo de sensor cadastrado.</p> : sensoresDisponiveis.map(
+              {carregandoSensores ? <p className="py-4 text-center text-sm text-muted-foreground">Carregando sensores cadastrados...</p> : erroSensores ? <p role="alert" className="py-4 text-center text-sm text-destructive">{erroSensores}</p> : sensoresDisponiveis.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">Nenhum tipo de sensor cadastrado.{' '}<Link href="/sensores" className="font-medium text-primary hover:underline">Cadastrar sensores</Link></p> : sensoresDisponiveis.map(
                 (sensor) => {
                   const selecionado =
                     sensoresSelecionados.some(
