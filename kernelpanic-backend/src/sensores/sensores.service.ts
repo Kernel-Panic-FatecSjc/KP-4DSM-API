@@ -39,7 +39,7 @@ export class SensoresService {
     }
 
     if (dto.nome && dto.nome !== sensor.nome) {
-      await this.garantirNomeLivre(dto.nome);
+      await this.garantirNomeLivre(dto.nome, id);
     }
 
     return this.prisma.tipoParametro.update({
@@ -77,9 +77,14 @@ export class SensoresService {
     await this.prisma.tipoParametro.delete({ where: { id } });
   }
 
-  private async garantirNomeLivre(nome: string): Promise<void> {
+  // ignorarId deixa o próprio sensor fora da busca: sem ele, corrigir só a
+  // caixa do nome ("pluviômetro" -> "Pluviômetro") colidiria consigo mesmo.
+  private async garantirNomeLivre(nome: string, ignorarId?: string): Promise<void> {
     const existente = await this.prisma.tipoParametro.findFirst({
-      where: { nome: { equals: nome, mode: 'insensitive' } },
+      where: {
+        nome: { equals: nome, mode: 'insensitive' },
+        id: ignorarId ? { not: ignorarId } : undefined,
+      },
       select: { id: true },
     });
 
