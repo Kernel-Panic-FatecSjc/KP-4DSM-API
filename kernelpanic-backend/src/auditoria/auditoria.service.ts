@@ -14,6 +14,7 @@ export class AuditoriaService {
     entidade: string;
     entidadeId?: string;
     usuarioId?: string;
+    enderecoIp?: string;
     detalhes?: Prisma.InputJsonValue;
   }): Promise<void> {
     await this.prisma.logAuditoria.create({
@@ -22,6 +23,7 @@ export class AuditoriaService {
         entidade: evento.entidade,
         entidadeId: evento.entidadeId,
         usuarioId: evento.usuarioId,
+        enderecoIp: evento.enderecoIp,
         detalhes: evento.detalhes,
       },
     });
@@ -50,6 +52,7 @@ export class AuditoriaService {
           acao: true,
           entidade: true,
           entidadeId: true,
+          enderecoIp: true,
           detalhes: true,
           usuario: { select: { id: true, nome: true } },
         },

@@ -42,6 +42,9 @@ export default function EstacoesPage() {
   const router = useRouter();
 
   const [estacoes, setEstacoes] = useState<Estacao[]>([]);
+  const [sensoresDisponiveis, setSensoresDisponiveis] = useState<Sensor[]>([]);
+  const [carregandoSensores, setCarregandoSensores] = useState(true);
+  const [erroSensores, setErroSensores] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
 
   const [busca, setBusca] = useState('');
@@ -78,31 +81,6 @@ export default function EstacoesPage() {
 
   const [sensoresSelecionados, setSensoresSelecionados] =
     useState<Sensor[]>([]);
-
-  const [sensoresDisponiveis, setSensoresDisponiveis] =
-    useState<Sensor[]>([]);
-
-  useEffect(() => {
-    api<SensorApi[]>('/sensores')
-      .then((resposta) => {
-        setSensoresDisponiveis(
-          resposta.map((sensor) => ({
-            id: sensor.id,
-            nome: sensor.nome,
-            tipo: sensor.nome,
-            unidade: sensor.unidade,
-          })),
-        );
-      })
-      .catch((erro: unknown) => {
-        // O 401 já é tratado pela carga das estações.
-        if (erro instanceof ErroApi && erro.status === 401) {
-          return;
-        }
-
-        console.error(erro);
-      });
-  }, []);
 
   useEffect(() => {
     api<EstacaoApi[]>('/estacoes')
@@ -147,6 +125,26 @@ export default function EstacoesPage() {
       .finally(() => {
         setCarregando(false);
       });
+  }, [router]);
+
+  useEffect(() => {
+    api<SensorApi[]>('/sensores')
+      .then((resposta) => {
+        setSensoresDisponiveis(resposta.map((sensor) => ({
+          id: sensor.id,
+          nome: sensor.nome,
+          tipo: sensor.nome,
+          unidade: sensor.unidade,
+        })));
+      })
+      .catch((erro: unknown) => {
+        if (erro instanceof ErroApi && erro.status === 401) {
+          router.push('/login?proximo=/estacoes');
+          return;
+        }
+        setErroSensores(erro instanceof ErroApi ? erro.message : 'Não foi possível carregar os tipos de sensores.');
+      })
+      .finally(() => setCarregandoSensores(false));
   }, [router]);
 
   const estacoesFiltradas = useMemo(() => {
@@ -988,21 +986,7 @@ export default function EstacoesPage() {
             </div>
 
             <div className="space-y-2">
-              {sensoresDisponiveis.length === 0 && (
-                <div className="rounded-lg border border-dashed p-4 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    Nenhum sensor cadastrado.{' '}
-                    <Link
-                      href="/sensores"
-                      className="font-medium text-primary hover:underline"
-                    >
-                      Cadastrar sensores
-                    </Link>
-                  </p>
-                </div>
-              )}
-
-              {sensoresDisponiveis.map(
+              {carregandoSensores ? <p className="py-4 text-center text-sm text-muted-foreground">Carregando sensores cadastrados...</p> : erroSensores ? <p role="alert" className="py-4 text-center text-sm text-destructive">{erroSensores}</p> : sensoresDisponiveis.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">Nenhum tipo de sensor cadastrado.{' '}<Link href="/sensores" className="font-medium text-primary hover:underline">Cadastrar sensores</Link></p> : sensoresDisponiveis.map(
                 (sensor) => {
                   const selecionado =
                     sensoresSelecionados.some(
