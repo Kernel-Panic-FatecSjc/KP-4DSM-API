@@ -15,7 +15,9 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
+import { EVENTO_JANELA_NOVOS_ALARMES } from '@/components/AlertaTempoReal';
 import { PageHeading } from '@/components/PageHeading';
+import { FaixaRegiao, SeletorRegiao, useRegiao } from '@/components/RegiaoVisitante';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import {
@@ -32,6 +34,7 @@ import {
   type StatusAlarme,
 } from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { queryRegiao } from '@/lib/regiao';
 import { cn } from '@/lib/utils';
 
 const LABEL_SEVERIDADE: Record<SeveridadeAlerta, string> = {
@@ -131,11 +134,26 @@ export default function AlarmesPage() {
   const [filtrosAlertas, setFiltrosAlertas] = useState<FiltrosAlertas>({ pagina: 1 });
   const [erroAlertas, setErroAlertas] = useState<string | null>(null);
 
+  // Visitante só consulta com a região informada; logado não manda região.
+  const { exigida, pronta, regiao } = useRegiao();
+  const filtroRegiao = queryRegiao(regiao);
+  const comRegiao = useCallback(
+    (caminho: string) => (filtroRegiao ? `${caminho}${caminho.includes('?') ? '&' : '?'}${filtroRegiao}` : caminho),
+    [filtroRegiao],
+  );
+
+  useEffect(() => {
+    // Ao trocar de região, a estação escolhida pode ter ficado fora do raio.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- zera os filtros quando a região muda
+    setFiltros({ pagina: 1 });
+    setFiltrosAlertas({ pagina: 1 });
+  }, [filtroRegiao]);
+
   const carregarHistorico = useCallback(
     async (filtrosAtuais: FiltrosAlarmes) => {
       setErro(null);
       try {
-        const dados = await api<ListaAlarmes>(`/alarmes?${montarQuery(filtrosAtuais)}`);
+        const dados = await api<ListaAlarmes>(comRegiao(`/alarmes?${montarQuery(filtrosAtuais)}`));
         setResultado(dados);
       } catch (erroCapturado) {
         if (erroCapturado instanceof ErroApi && erroCapturado.status === 401) {
@@ -145,29 +163,38 @@ export default function AlarmesPage() {
         setErro('Erro ao carregar histórico de alarmes');
       }
     },
-    [router],
+    [router, comRegiao],
   );
 
   useEffect(() => {
-    api<OpcoesFiltroAlarmes>('/alarmes/filtros')
+    if (!pronta) return;
+    api<OpcoesFiltroAlarmes>(comRegiao('/alarmes/filtros'))
       .then(setOpcoes)
       .catch((erroCapturado) => {
         if (erroCapturado instanceof ErroApi && erroCapturado.status === 401) {
           router.push('/login');
         }
       });
-  }, [router]);
+  }, [router, pronta, comRegiao]);
 
   useEffect(() => {
+    if (!pronta) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- recarrega o histórico sempre que os filtros mudam
     carregarHistorico(filtros);
+  }, [pronta, filtros, carregarHistorico]);
+
+  useEffect(() => {
+    // Alarme novo chegou pelo websocket: atualiza a tabela sem esperar o usuário.
+    const recarregar = () => carregarHistorico(filtros);
+    window.addEventListener(EVENTO_JANELA_NOVOS_ALARMES, recarregar);
+    return () => window.removeEventListener(EVENTO_JANELA_NOVOS_ALARMES, recarregar);
   }, [filtros, carregarHistorico]);
 
   const carregarAlertas = useCallback(
     async (filtrosAtuais: FiltrosAlertas) => {
       setErroAlertas(null);
       try {
-        const dados = await api<ListaAlertas>(`/alertas?${montarQueryAlertas(filtrosAtuais)}`);
+        const dados = await api<ListaAlertas>(comRegiao(`/alertas?${montarQueryAlertas(filtrosAtuais)}`));
         setResultadoAlertas(dados);
       } catch (erroCapturado) {
         if (erroCapturado instanceof ErroApi && erroCapturado.status === 401) {
@@ -177,23 +204,25 @@ export default function AlarmesPage() {
         setErroAlertas('Erro ao carregar alertas configurados');
       }
     },
-    [router],
+    [router, comRegiao],
   );
 
   useEffect(() => {
-    api<OpcoesFiltroAlertas>('/alertas/filtros')
+    if (!pronta) return;
+    api<OpcoesFiltroAlertas>(comRegiao('/alertas/filtros'))
       .then(setOpcoesAlertas)
       .catch((erroCapturado) => {
         if (erroCapturado instanceof ErroApi && erroCapturado.status === 401) {
           router.push('/login');
         }
       });
-  }, [router]);
+  }, [router, pronta, comRegiao]);
 
   useEffect(() => {
+    if (!pronta) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- recarrega os alertas configurados sempre que os filtros mudam
     carregarAlertas(filtrosAlertas);
-  }, [filtrosAlertas, carregarAlertas]);
+  }, [pronta, filtrosAlertas, carregarAlertas]);
 
   function atualizarFiltro<K extends keyof FiltrosAlarmes>(campo: K, valor: FiltrosAlarmes[K]) {
     setFiltros((atual) => ({ ...atual, [campo]: valor || undefined, pagina: 1 }));
@@ -227,190 +256,198 @@ export default function AlarmesPage() {
         description="Consulta global de ocorrências disparadas, com filtros por estação, parâmetro, severidade, status e período."
       />
 
-      <section
-        className="rise delay-1 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
-        aria-label="Filtros"
-      >
-        <FiltroCampo label="Estação">
-          <Select
-            value={filtros.estacaoId ?? ''}
-            onChange={(e) => atualizarFiltro('estacaoId', e.target.value)}
-            className="font-mono text-[11px]"
-          >
-            <option value="">Todas</option>
-            {opcoes?.estacoes.map((estacao) => (
-              <option key={estacao.id} value={estacao.id}>
-                {estacao.nome}
-              </option>
-            ))}
-          </Select>
-        </FiltroCampo>
+      {exigida && !regiao ? (
+        <SeletorRegiao />
+      ) : (
+        <>
+          <FaixaRegiao />
 
-        <FiltroCampo label="Parâmetro">
-          <Select
-            value={filtros.tipoParametroId ?? ''}
-            onChange={(e) => atualizarFiltro('tipoParametroId', e.target.value)}
-            className="font-mono text-[11px]"
+          <section
+            className="rise delay-1 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+            aria-label="Filtros"
           >
-            <option value="">Todos</option>
-            {opcoes?.tiposParametro.map((tipo) => (
-              <option key={tipo.id} value={tipo.id}>
-                {tipo.nome}
-              </option>
-            ))}
-          </Select>
-        </FiltroCampo>
+            <FiltroCampo label="Estação">
+              <Select
+                value={filtros.estacaoId ?? ''}
+                onChange={(e) => atualizarFiltro('estacaoId', e.target.value)}
+                className="font-mono text-[11px]"
+              >
+                <option value="">Todas</option>
+                {opcoes?.estacoes.map((estacao) => (
+                  <option key={estacao.id} value={estacao.id}>
+                    {estacao.nome}
+                  </option>
+                ))}
+              </Select>
+            </FiltroCampo>
 
-        <FiltroCampo label="Severidade">
-          <Select
-            value={filtros.severidade ?? ''}
-            onChange={(e) => atualizarFiltro('severidade', e.target.value as SeveridadeAlerta)}
-            className="font-mono text-[11px]"
-          >
-            <option value="">Todas</option>
-            {opcoes?.severidades.map((severidade) => (
-              <option key={severidade} value={severidade}>
-                {LABEL_SEVERIDADE[severidade]}
-              </option>
-            ))}
-          </Select>
-        </FiltroCampo>
+            <FiltroCampo label="Parâmetro">
+              <Select
+                value={filtros.tipoParametroId ?? ''}
+                onChange={(e) => atualizarFiltro('tipoParametroId', e.target.value)}
+                className="font-mono text-[11px]"
+              >
+                <option value="">Todos</option>
+                {opcoes?.tiposParametro.map((tipo) => (
+                  <option key={tipo.id} value={tipo.id}>
+                    {tipo.nome}
+                  </option>
+                ))}
+              </Select>
+            </FiltroCampo>
 
-        <FiltroCampo label="Status">
-          <Select
-            value={filtros.status ?? ''}
-            onChange={(e) => atualizarFiltro('status', e.target.value as StatusAlarme)}
-            className="font-mono text-[11px]"
-          >
-            <option value="">Todos</option>
-            {opcoes?.status.map((status) => (
-              <option key={status} value={status}>
-                {LABEL_STATUS[status]}
-              </option>
-            ))}
-          </Select>
-        </FiltroCampo>
+            <FiltroCampo label="Severidade">
+              <Select
+                value={filtros.severidade ?? ''}
+                onChange={(e) => atualizarFiltro('severidade', e.target.value as SeveridadeAlerta)}
+                className="font-mono text-[11px]"
+              >
+                <option value="">Todas</option>
+                {opcoes?.severidades.map((severidade) => (
+                  <option key={severidade} value={severidade}>
+                    {LABEL_SEVERIDADE[severidade]}
+                  </option>
+                ))}
+              </Select>
+            </FiltroCampo>
 
-        <FiltroCampo label="De">
-          <input
-            type="datetime-local"
-            value={filtros.de ?? ''}
-            onChange={(e) => atualizarFiltro('de', e.target.value)}
-            className="h-9 w-full rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            <FiltroCampo label="Status">
+              <Select
+                value={filtros.status ?? ''}
+                onChange={(e) => atualizarFiltro('status', e.target.value as StatusAlarme)}
+                className="font-mono text-[11px]"
+              >
+                <option value="">Todos</option>
+                {opcoes?.status.map((status) => (
+                  <option key={status} value={status}>
+                    {LABEL_STATUS[status]}
+                  </option>
+                ))}
+              </Select>
+            </FiltroCampo>
+
+            <FiltroCampo label="De">
+              <input
+                type="datetime-local"
+                value={filtros.de ?? ''}
+                onChange={(e) => atualizarFiltro('de', e.target.value)}
+                className="h-9 w-full rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </FiltroCampo>
+
+            <FiltroCampo label="Até">
+              <div className="flex gap-2">
+                <input
+                  type="datetime-local"
+                  value={filtros.ate ?? ''}
+                  onChange={(e) => atualizarFiltro('ate', e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                />
+                <Button type="button" variant="outline" size="sm" onClick={() => setFiltros({ pagina: 1 })}>
+                  Limpar
+                </Button>
+              </div>
+            </FiltroCampo>
+          </section>
+
+          {erro && <p className="text-sm text-destructive">{erro}</p>}
+
+          <AlarmesTabela
+            resultado={resultado}
+            totalPaginas={totalPaginas}
+            onPaginaAnterior={() => resultado && irParaPagina(resultado.pagina - 1)}
+            onProximaPagina={() => resultado && irParaPagina(resultado.pagina + 1)}
+            onSelecionar={setOcorrenciaSelecionada}
           />
-        </FiltroCampo>
 
-        <FiltroCampo label="Até">
-          <div className="flex gap-2">
-            <input
-              type="datetime-local"
-              value={filtros.ate ?? ''}
-              onChange={(e) => atualizarFiltro('ate', e.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          {ocorrenciaSelecionada && (
+            <DetalheOcorrenciaModal
+              ocorrencia={ocorrenciaSelecionada}
+              onFechar={() => setOcorrenciaSelecionada(null)}
             />
-            <Button type="button" variant="outline" size="sm" onClick={() => setFiltros({ pagina: 1 })}>
-              Limpar
-            </Button>
+          )}
+
+          <div>
+            <h2 className="font-display text-lg font-semibold">Alertas Configurados</h2>
+            <p className="text-sm text-muted-foreground">
+              Regras de alerta cadastradas: parâmetro monitorado, limiar, severidade e status.
+            </p>
           </div>
-        </FiltroCampo>
-      </section>
 
-      {erro && <p className="text-sm text-destructive">{erro}</p>}
+          <section
+            className="rise grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4"
+            aria-label="Filtros de alertas configurados"
+          >
+            <FiltroCampo label="Estação">
+              <Select
+                value={filtrosAlertas.estacaoId ?? ''}
+                onChange={(e) => atualizarFiltroAlertas('estacaoId', e.target.value)}
+                className="font-mono text-[11px]"
+              >
+                <option value="">Todas</option>
+                {opcoesAlertas?.estacoes.map((estacao) => (
+                  <option key={estacao.id} value={estacao.id}>
+                    {estacao.nome}
+                  </option>
+                ))}
+              </Select>
+            </FiltroCampo>
 
-      <AlarmesTabela
-        resultado={resultado}
-        totalPaginas={totalPaginas}
-        onPaginaAnterior={() => resultado && irParaPagina(resultado.pagina - 1)}
-        onProximaPagina={() => resultado && irParaPagina(resultado.pagina + 1)}
-        onSelecionar={setOcorrenciaSelecionada}
-      />
+            <FiltroCampo label="Parâmetro">
+              <Select
+                value={filtrosAlertas.tipoParametroId ?? ''}
+                onChange={(e) => atualizarFiltroAlertas('tipoParametroId', e.target.value)}
+                className="font-mono text-[11px]"
+              >
+                <option value="">Todos</option>
+                {opcoesAlertas?.tiposParametro.map((tipo) => (
+                  <option key={tipo.id} value={tipo.id}>
+                    {tipo.nome}
+                  </option>
+                ))}
+              </Select>
+            </FiltroCampo>
 
-      {ocorrenciaSelecionada && (
-        <DetalheOcorrenciaModal
-          ocorrencia={ocorrenciaSelecionada}
-          onFechar={() => setOcorrenciaSelecionada(null)}
-        />
+            <FiltroCampo label="Severidade">
+              <Select
+                value={filtrosAlertas.severidade ?? ''}
+                onChange={(e) => atualizarFiltroAlertas('severidade', e.target.value as SeveridadeAlerta)}
+                className="font-mono text-[11px]"
+              >
+                <option value="">Todas</option>
+                {opcoesAlertas?.severidades.map((severidade) => (
+                  <option key={severidade} value={severidade}>
+                    {LABEL_SEVERIDADE[severidade]}
+                  </option>
+                ))}
+              </Select>
+            </FiltroCampo>
+
+            <FiltroCampo label="Status">
+              <Select
+                value={filtrosAlertas.ativo === undefined ? '' : String(filtrosAlertas.ativo)}
+                onChange={(e) =>
+                  atualizarFiltroAlertas('ativo', e.target.value === '' ? undefined : e.target.value === 'true')
+                }
+                className="font-mono text-[11px]"
+              >
+                <option value="">Todos</option>
+                <option value="true">Ativo</option>
+                <option value="false">Inativo</option>
+              </Select>
+            </FiltroCampo>
+          </section>
+
+          {erroAlertas && <p className="text-sm text-destructive">{erroAlertas}</p>}
+
+          <AlertasTabela
+            resultado={resultadoAlertas}
+            totalPaginas={totalPaginasAlertas}
+            onPaginaAnterior={() => resultadoAlertas && irParaPaginaAlertas(resultadoAlertas.pagina - 1)}
+            onProximaPagina={() => resultadoAlertas && irParaPaginaAlertas(resultadoAlertas.pagina + 1)}
+          />
+        </>
       )}
-
-      <div>
-        <h2 className="font-display text-lg font-semibold">Alertas Configurados</h2>
-        <p className="text-sm text-muted-foreground">
-          Regras de alerta cadastradas: parâmetro monitorado, limiar, severidade e status.
-        </p>
-      </div>
-
-      <section
-        className="rise grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4"
-        aria-label="Filtros de alertas configurados"
-      >
-        <FiltroCampo label="Estação">
-          <Select
-            value={filtrosAlertas.estacaoId ?? ''}
-            onChange={(e) => atualizarFiltroAlertas('estacaoId', e.target.value)}
-            className="font-mono text-[11px]"
-          >
-            <option value="">Todas</option>
-            {opcoesAlertas?.estacoes.map((estacao) => (
-              <option key={estacao.id} value={estacao.id}>
-                {estacao.nome}
-              </option>
-            ))}
-          </Select>
-        </FiltroCampo>
-
-        <FiltroCampo label="Parâmetro">
-          <Select
-            value={filtrosAlertas.tipoParametroId ?? ''}
-            onChange={(e) => atualizarFiltroAlertas('tipoParametroId', e.target.value)}
-            className="font-mono text-[11px]"
-          >
-            <option value="">Todos</option>
-            {opcoesAlertas?.tiposParametro.map((tipo) => (
-              <option key={tipo.id} value={tipo.id}>
-                {tipo.nome}
-              </option>
-            ))}
-          </Select>
-        </FiltroCampo>
-
-        <FiltroCampo label="Severidade">
-          <Select
-            value={filtrosAlertas.severidade ?? ''}
-            onChange={(e) => atualizarFiltroAlertas('severidade', e.target.value as SeveridadeAlerta)}
-            className="font-mono text-[11px]"
-          >
-            <option value="">Todas</option>
-            {opcoesAlertas?.severidades.map((severidade) => (
-              <option key={severidade} value={severidade}>
-                {LABEL_SEVERIDADE[severidade]}
-              </option>
-            ))}
-          </Select>
-        </FiltroCampo>
-
-        <FiltroCampo label="Status">
-          <Select
-            value={filtrosAlertas.ativo === undefined ? '' : String(filtrosAlertas.ativo)}
-            onChange={(e) =>
-              atualizarFiltroAlertas('ativo', e.target.value === '' ? undefined : e.target.value === 'true')
-            }
-            className="font-mono text-[11px]"
-          >
-            <option value="">Todos</option>
-            <option value="true">Ativo</option>
-            <option value="false">Inativo</option>
-          </Select>
-        </FiltroCampo>
-      </section>
-
-      {erroAlertas && <p className="text-sm text-destructive">{erroAlertas}</p>}
-
-      <AlertasTabela
-        resultado={resultadoAlertas}
-        totalPaginas={totalPaginasAlertas}
-        onPaginaAnterior={() => resultadoAlertas && irParaPaginaAlertas(resultadoAlertas.pagina - 1)}
-        onProximaPagina={() => resultadoAlertas && irParaPaginaAlertas(resultadoAlertas.pagina + 1)}
-      />
     </div>
   );
 }

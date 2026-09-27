@@ -2,6 +2,8 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { StatusAlarme } from '../generated/prisma/client';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EstacoesProximasService } from '../regiao/estacoes-proximas.service';
+import type { Coordenadas } from '../regiao/regiao';
 import { AlarmeHistoricoRespostaDto } from './dto/alarme-historico-resposta.dto';
 import { AtualizarStatusAlarmeDto } from './dto/atualizar-status-alarme.dto';
 import { ListaAlarmesRespostaDto } from './dto/lista-alarmes-resposta.dto';
@@ -32,9 +34,12 @@ const ORDEM_STATUS: Record<StatusAlarme, number> = {
 
 @Injectable()
 export class AlarmesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly estacoesProximas: EstacoesProximasService,
+  ) {}
 
-  async listarHistorico(query: ListarAlarmesQueryDto): Promise<ListaAlarmesRespostaDto> {
+  async listarHistorico(query: ListarAlarmesQueryDto, regiao?: Coordenadas): Promise<ListaAlarmesRespostaDto> {
     const pagina = query.pagina ?? 1;
     const tamanho = query.tamanho ?? 50;
 
@@ -47,7 +52,7 @@ export class AlarmesService {
       alerta: {
         severidade: query.severidade,
         parametro: {
-          estacaoId: query.estacaoId,
+          estacaoId: await this.estacoesProximas.filtroEstacao(query.estacaoId, regiao),
           tipoParametroId: query.tipoParametroId,
         },
       },
@@ -72,9 +77,21 @@ export class AlarmesService {
     );
   }
 
-  async buscarOpcoesFiltro(): Promise<OpcoesFiltroRespostaDto> {
+  /** Alarmes disparados a partir de `desde`, mais recentes primeiro (usado pelo tempo real). */
+  async buscarRecentes(desde: Date, limite = 200): Promise<AlarmeHistoricoRespostaDto[]> {
+    const registros = await this.prisma.alarme.findMany({
+      where: { disparadoEm: { gte: desde } },
+      include: INCLUDE_HISTORICO,
+      orderBy: { disparadoEm: 'desc' },
+      take: limite,
+    });
+    return registros.map((registro) => new AlarmeHistoricoRespostaDto(registro));
+  }
+
+  async buscarOpcoesFiltro(regiao?: Coordenadas): Promise<OpcoesFiltroRespostaDto> {
+    const id = await this.estacoesProximas.filtroEstacao(undefined, regiao);
     const [estacoes, tiposParametro] = await Promise.all([
-      this.prisma.estacao.findMany({ select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
+      this.prisma.estacao.findMany({ where: { id }, select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
       this.prisma.tipoParametro.findMany({ select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
     ]);
 

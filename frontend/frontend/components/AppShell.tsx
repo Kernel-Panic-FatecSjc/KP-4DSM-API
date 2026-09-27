@@ -1,11 +1,14 @@
 'use client';
 
-import { Bell, ClipboardList, Database, Gauge, LayoutDashboard, LogOut, Menu, MapPin, PanelLeftClose, PanelLeftOpen, Users, X } from 'lucide-react';
+import { Bell, ClipboardList, Database, Gauge, LayoutDashboard, LogIn, LogOut, Menu, MapPin, PanelLeftClose, PanelLeftOpen, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { AlertaTempoReal } from './AlertaTempoReal';
+import { ehRotaPublica, useSessao } from './ProtectedLayout';
+import { RegiaoProvider } from './RegiaoVisitante';
 import { Button } from './ui/button';
 
 const NAV_ITEMS = [
@@ -24,6 +27,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const autenticado = useSessao() === 'autenticado';
+  // Visitantes (sem login) só enxergam as abas públicas.
+  const itensVisiveis = autenticado ? NAV_ITEMS : NAV_ITEMS.filter((item) => ehRotaPublica(item.href));
 
   const tituloAtual = NAV_ITEMS.find((item) => pathname.startsWith(item.href))?.label ?? 'Painel';
 
@@ -64,7 +70,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {(!collapsed || mobileOpen) && (
             <p className="px-2 py-1.5 font-mono text-[10px] uppercase text-sidebar-muted">Operação</p>
           )}
-          {NAV_ITEMS.map((item) => {
+          {itensVisiveis.map((item) => {
             const Icon = item.icon;
             const ativo = pathname.startsWith(item.href);
             return (
@@ -87,18 +93,34 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="border-t border-sidebar-border p-2">
-          <Button
-            variant="ghost"
-            onClick={handleLogout}
-            className={cn(
-              'h-9 w-full justify-start px-3 text-[13px] text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-              collapsed && !mobileOpen && 'justify-center px-0',
-            )}
-            title={collapsed && !mobileOpen ? 'Sair' : undefined}
-          >
-            <LogOut className="shrink-0" />
-            {(!collapsed || mobileOpen) && <span>Sair</span>}
-          </Button>
+          {autenticado ? (
+            <Button
+              variant="ghost"
+              onClick={handleLogout}
+              className={cn(
+                'h-9 w-full justify-start px-3 text-[13px] text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                collapsed && !mobileOpen && 'justify-center px-0',
+              )}
+              title={collapsed && !mobileOpen ? 'Sair' : undefined}
+            >
+              <LogOut className="shrink-0" />
+              {(!collapsed || mobileOpen) && <span>Sair</span>}
+            </Button>
+          ) : (
+            <Link href={`/login?proximo=${encodeURIComponent(pathname)}`}>
+              <Button
+                variant="ghost"
+                className={cn(
+                  'h-9 w-full justify-start px-3 text-[13px] text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                  collapsed && !mobileOpen && 'justify-center px-0',
+                )}
+                title={collapsed && !mobileOpen ? 'Entrar como administrador' : undefined}
+              >
+                <LogIn className="shrink-0" />
+                {(!collapsed || mobileOpen) && <span>Entrar</span>}
+              </Button>
+            </Link>
+          )}
         </div>
       </aside>
 
@@ -139,7 +161,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <p className="truncate font-display text-[15px] font-semibold">{tituloAtual}</p>
         </header>
 
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <RegiaoProvider>
+          <main className="flex-1 p-4 md:p-6">{children}</main>
+          <AlertaTempoReal />
+        </RegiaoProvider>
       </div>
     </div>
   );

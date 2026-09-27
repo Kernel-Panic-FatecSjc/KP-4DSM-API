@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import { IsBoolean, IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 import { SeveridadeAlerta } from '../../generated/prisma/client';
+import { RegiaoQueryDto } from '../../regiao/regiao';
 
 function paraBooleano({ value }: { value: unknown }): unknown {
   if (value === 'true') return true;
@@ -8,7 +9,7 @@ function paraBooleano({ value }: { value: unknown }): unknown {
   return value;
 }
 
-export class ListarAlertasQueryDto {
+export class ListarAlertasQueryDto extends RegiaoQueryDto {
   @IsOptional()
   @IsUUID()
   estacaoId?: string;
