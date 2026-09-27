@@ -1,9 +1,11 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { UsuariosService } from '../usuarios/usuarios.service';
 import { UsuarioRespostaDto } from '../usuarios/dto/usuario-resposta.dto';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { LIMITE_LOGIN } from '../limite-requisicoes/limite-requisicoes.module';
 import { AutenticacaoService } from './autenticacao.service';
 import { obterOpcoesCookie } from './cookie.config';
 import { LoginDto } from './dto/login.dto';
@@ -23,6 +25,7 @@ export class AutenticacaoController {
   ) {}
 
   @HttpCode(HttpStatus.OK)
+  @Throttle(LIMITE_LOGIN)
   @Post('login')
   async login(
     @Body() dto: LoginDto,

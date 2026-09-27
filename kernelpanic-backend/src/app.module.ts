@@ -11,14 +11,18 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { EstacoesModule } from './estacoes/estacoes.module';
 import { IngestaoModule } from './ingestao/ingestao.module';
 import { LeiturasBrutasModule } from './leituras-brutas/leituras-brutas.module';
+import { LimiteRequisicoesModule } from './limite-requisicoes/limite-requisicoes.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { RegiaoModule } from './regiao/regiao.module';
 import { SensoresModule } from './sensores/sensores.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    LimiteRequisicoesModule,
     PrismaModule,
+    RegiaoModule,
     UsuariosModule,
     AutenticacaoModule,
     AlarmesModule,

@@ -2,7 +2,9 @@ import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/c
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import type { PayloadJwt } from '../autenticacao/payload-jwt.interface';
+import { Publico } from '../autenticacao/publico.decorator';
 import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
+import { RegiaoQueryDto, resolverRegiao } from '../regiao/regiao';
 import { AlarmesService } from './alarmes.service';
 import { AlarmeHistoricoRespostaDto } from './dto/alarme-historico-resposta.dto';
 import { AtualizarStatusAlarmeDto } from './dto/atualizar-status-alarme.dto';
@@ -19,13 +21,21 @@ export class AlarmesController {
   ) {}
 
   @Get()
-  async listarHistorico(@Query() query: ListarAlarmesQueryDto): Promise<ListaAlarmesRespostaDto> {
-    return this.alarmesService.listarHistorico(query);
+  @Publico()
+  async listarHistorico(
+    @Query() query: ListarAlarmesQueryDto,
+    @UsuarioAutenticado() usuario: PayloadJwt | null,
+  ): Promise<ListaAlarmesRespostaDto> {
+    return this.alarmesService.listarHistorico(query, resolverRegiao(query, Boolean(usuario)));
   }
 
   @Get('filtros')
-  async buscarOpcoesFiltro(): Promise<OpcoesFiltroRespostaDto> {
-    return this.alarmesService.buscarOpcoesFiltro();
+  @Publico()
+  async buscarOpcoesFiltro(
+    @Query() query: RegiaoQueryDto,
+    @UsuarioAutenticado() usuario: PayloadJwt | null,
+  ): Promise<OpcoesFiltroRespostaDto> {
+    return this.alarmesService.buscarOpcoesFiltro(resolverRegiao(query, Boolean(usuario)));
   }
 
   @Patch(':id')

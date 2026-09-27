@@ -25,5 +25,7 @@ import { EstrategiaJwt } from './estrategia-jwt.strategy';
   ],
   controllers: [AutenticacaoController],
   providers: [AutenticacaoService, EstrategiaJwt],
+  // JwtModule exportado para o websocket de alarmes validar o cookie no handshake.
+  exports: [JwtModule],
 })
 export class AutenticacaoModule {}

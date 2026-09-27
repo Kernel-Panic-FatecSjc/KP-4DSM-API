@@ -1,8 +1,9 @@
 import { Type } from 'class-transformer';
 import { IsDateString, IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class-validator';
 import { SeveridadeAlerta, StatusAlarme } from '../../generated/prisma/client';
+import { RegiaoQueryDto } from '../../regiao/regiao';
 
-export class ListarAlarmesQueryDto {
+export class ListarAlarmesQueryDto extends RegiaoQueryDto {
   @IsOptional()
   @IsUUID()
   estacaoId?: string;

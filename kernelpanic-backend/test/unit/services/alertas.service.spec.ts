@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AlertasService } from '../../../src/alertas/alertas.service';
 import { CriarAlertaDto } from '../../../src/alertas/dto/criar-alerta.dto';
 import { PrismaService } from '../../../src/prisma/prisma.service';
+import { EstacoesProximasService } from '../../../src/regiao/estacoes-proximas.service';
 import { ALERTA_COM_RELACOES, NOVO_ALERTA, PARAMETRO_CHUVA } from '../../fixtures';
 
 describe('AlertasService', () => {
@@ -16,7 +17,7 @@ describe('AlertasService', () => {
     jest.clearAllMocks();
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AlertasService, { provide: PrismaService, useValue: prismaMock }],
+      providers: [AlertasService, EstacoesProximasService, { provide: PrismaService, useValue: prismaMock }],
     }).compile();
 
     service = module.get(AlertasService);

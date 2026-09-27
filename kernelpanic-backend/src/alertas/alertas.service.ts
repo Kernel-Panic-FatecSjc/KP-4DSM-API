@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { EstacoesProximasService } from '../regiao/estacoes-proximas.service';
+import type { Coordenadas } from '../regiao/regiao';
 import { AlertaRespostaDto } from './dto/alerta-resposta.dto';
 import { AtualizarAlertaDto } from './dto/atualizar-alerta.dto';
 import { CriarAlertaDto } from './dto/criar-alerta.dto';
@@ -19,7 +21,10 @@ const INCLUDE_RELACOES = {
 
 @Injectable()
 export class AlertasService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly estacoesProximas: EstacoesProximasService,
+  ) {}
 
   async criar(dto: CriarAlertaDto) {
     await this.garantirParametroExistente(dto.parametroId);
@@ -61,7 +66,7 @@ export class AlertasService {
     });
   }
 
-  async listar(query: ListarAlertasQueryDto): Promise<ListaAlertasRespostaDto> {
+  async listar(query: ListarAlertasQueryDto, regiao?: Coordenadas): Promise<ListaAlertasRespostaDto> {
     const pagina = query.pagina ?? 1;
     const tamanho = query.tamanho ?? 50;
 
@@ -69,7 +74,7 @@ export class AlertasService {
       severidade: query.severidade,
       ativo: query.ativo,
       parametro: {
-        estacaoId: query.estacaoId,
+        estacaoId: await this.estacoesProximas.filtroEstacao(query.estacaoId, regiao),
         tipoParametroId: query.tipoParametroId,
       },
     };
@@ -93,11 +98,13 @@ export class AlertasService {
     );
   }
 
-  async buscarOpcoesFiltro(): Promise<OpcoesFiltroAlertasRespostaDto> {
+  async buscarOpcoesFiltro(regiao?: Coordenadas): Promise<OpcoesFiltroAlertasRespostaDto> {
+    const estacaoId = await this.estacoesProximas.filtroEstacao(undefined, regiao);
     const [estacoes, tiposParametro, parametros] = await Promise.all([
-      this.prisma.estacao.findMany({ select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
+      this.prisma.estacao.findMany({ where: { id: estacaoId }, select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
       this.prisma.tipoParametro.findMany({ select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
       this.prisma.parametro.findMany({
+        where: { estacaoId },
         include: {
           estacao: { select: { id: true, nome: true } },
           tipoParametro: { select: { nome: true, unidade: true } },

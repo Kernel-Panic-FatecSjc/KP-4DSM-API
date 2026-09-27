@@ -2,9 +2,11 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } f
 import { GuardaAdministrador } from '../autenticacao/guarda-administrador.guard';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import type { PayloadJwt } from '../autenticacao/payload-jwt.interface';
+import { Publico } from '../autenticacao/publico.decorator';
 import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { camposInformados } from '../auditoria/campos-informados';
+import { RegiaoQueryDto, resolverRegiao } from '../regiao/regiao';
 import { AlertasService } from './alertas.service';
 import { AlertaRespostaDto } from './dto/alerta-resposta.dto';
 import { AtualizarAlertaDto } from './dto/atualizar-alerta.dto';
@@ -22,16 +24,20 @@ export class AlertasController {
   ) {}
 
   @Get()
+  @Publico()
   async listar(
     @Query() query: ListarAlertasQueryDto,
-    @UsuarioAutenticado() usuario: PayloadJwt,
+    @UsuarioAutenticado() usuario: PayloadJwt | null,
   ): Promise<ListaAlertasRespostaDto> {
-    const resultado = await this.alertasService.listar(query);
+    const regiao = resolverRegiao(query, Boolean(usuario));
+    const resultado = await this.alertasService.listar(query, regiao);
+    // A localização do visitante é dado pessoal: fica fora da auditoria.
+    const { latitude: _latitude, longitude: _longitude, ...filtros } = query;
     await this.auditoriaService.registrar({
       acao: 'alertas.consultar',
       entidade: 'Alerta',
-      usuarioId: usuario.sub,
-      detalhes: { ...query },
+      usuarioId: usuario?.sub,
+      detalhes: { ...filtros, porRegiao: Boolean(regiao) },
     });
     return resultado;
   }
@@ -93,7 +99,11 @@ export class AlertasController {
   }
 
   @Get('filtros')
-  async buscarOpcoesFiltro(): Promise<OpcoesFiltroAlertasRespostaDto> {
-    return this.alertasService.buscarOpcoesFiltro();
+  @Publico()
+  async buscarOpcoesFiltro(
+    @Query() query: RegiaoQueryDto,
+    @UsuarioAutenticado() usuario: PayloadJwt | null,
+  ): Promise<OpcoesFiltroAlertasRespostaDto> {
+    return this.alertasService.buscarOpcoesFiltro(resolverRegiao(query, Boolean(usuario)));
   }
 }
