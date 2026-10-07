@@ -153,6 +153,19 @@ A solução combina:
 
 ---
 
+<a id="itens-tecnicos"></a>
+## 📝 Itens Técnicos
+
+- Arquitetura do projeto ✅
+- Modelagem de banco de dados ✅
+- Modelagem de protótipo do produto ✅
+- Definição de padrão de documentação ✅
+- Montagem da Pipeline de CI ✅
+- Elaboração de Deploy Automatizado / CD ✅
+- Mapeamento de Requisitos ✅
+
+---
+
 <a id="backlog-da-spint"></a>
 ## 📋 Backlog da Sprint 1
 | ID | User Story | Épico | Prioridade | Sprint | Pontos | Status | Meta da Sprint |
