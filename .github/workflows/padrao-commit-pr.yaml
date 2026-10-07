@@ -25,8 +25,7 @@ jobs:
           TITULO_PR: ${{ github.event.pull_request.title }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          ESCOPO='US[0-9]{2}-[0-9]{2}|#[0-9]+|[Nn]ot-[Uu][Ss]'
-          PADRAO="^((feat|fix|style|refactor|test)\((${ESCOPO})\)|(docs|chore)(\((${ESCOPO})\))?): .+"
+          PADRAO='^(feat|fix|docs|style|refactor|test|chore|ci)\(SCRUM-[0-9]+\): .+'
 
           falhas=0
 
@@ -51,23 +50,20 @@ jobs:
           if [ "$falhas" -gt 0 ]; then
           cat <<'AJUDA'
 
-          Formato esperado:  tipo(escopo): resumo
+          Formato esperado:  tipo(SCRUM-{ID}): descrição
 
-            tipo     feat, fix, docs, style, chore, refactor, test
-            escopo   US02-04   tarefa de User Story (história-tarefa)
-                     #39       tarefa de item técnico (número da issue)
-                     not-US    sem vínculo com história ou issue
-                     omitido   somente para docs e chore
+            tipo         feat, fix, docs, style, refactor, test, chore, ci
+            SCRUM-{ID}   ID da tarefa no Jira, obrigatório em todos os tipos
 
-          Um espaço depois dos dois-pontos, e o resumo não pode ser vazio.
+          Um espaço depois dos dois-pontos, e a descrição não pode ser vazia.
 
           Exemplos:
-            feat(US01-02): implementar login JWT em cookie e CRUD de usuários
-            feat(#39): Trigger de disparo automático de alertas
-            docs: Atualização do README
+            feat(SCRUM-12): Criação da tela de login
+            fix(SCRUM-34): Correção da validação de e-mail
+            docs(SCRUM-14): Atualização da documentação dos requisitos
 
           Padrão completo:
-          https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Dev-Padrao-de-commit
+          https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/blob/main/docs/padraocommit.md
 
           Para corrigir um commit já enviado: `git commit --amend` no último,
           `git rebase -i` nos anteriores, e push forçado na sua branch.

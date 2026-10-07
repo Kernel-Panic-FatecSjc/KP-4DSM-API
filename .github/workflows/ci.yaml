@@ -28,7 +28,43 @@ jobs:
       - id: filtro
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          TITULO_PR: ${{ github.event.pull_request.title }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
+          # Tarefa de docs (docs/padraocommit.md) não roda as verificações. No
+          # PR ela é identificada pelo tipo no título; no push direto na main
+          # (exceção de docs/estrategiabranch.md), por todos os commits
+          # enviados serem docs. Se a tarefa mexer em qualquer arquivo fora de
+          # docs/ ou .md, segue o fluxo normal, como a exceção exige.
+          DOCS='^docs\(SCRUM-[0-9]+\): '
+          tarefa_docs=false
+
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            base="$BASE_SHA"
+            if printf '%s' "$TITULO_PR" | grep -qE "$DOCS"; then tarefa_docs=true; fi
+          else
+            base="$BEFORE_SHA"
+            # Branch nova (before zerado) ou push forçado com o before fora do
+            # histórico baixado: sem intervalo confiável, a tarefa não é
+            # tratada como docs.
+            if git cat-file -e "$base^{commit}" 2>/dev/null; then
+              assuntos=$(git log --no-merges --format=%s "$base..HEAD")
+              if [ -n "$assuntos" ] && ! printf '%s\n' "$assuntos" | grep -qvE "$DOCS"; then
+                tarefa_docs=true
+              fi
+            fi
+          fi
+
+          if [ "$tarefa_docs" = true ] && ! git diff --name-only "$base" HEAD | grep -qvE '^docs/|\.md$'; then
+            echo "Tarefa de docs só com documentação: nenhuma verificação roda."
+            {
+              echo "backend=false"
+              echo "frontend=false"
+              echo "banco=false"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
           # Em push numa branch integradora (main, develop, release) nada é
           # filtrado: elas são a referência de integração e o status delas
           # precisa cobrir o projeto inteiro, não só o que o commit tocou.
