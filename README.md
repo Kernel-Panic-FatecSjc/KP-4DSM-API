@@ -277,21 +277,37 @@ npm install   # ferramentas de commit da raiz; também ativa o hook de validaç�
 
 ### 📝 Fazendo commits
 
-Os commits seguem o formato `tipo(escopo): resumo`, que a CI valida em todo PR
-(ver [padrão de commit](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Dev-Padrao-de-commit)).
-Para montar a mensagem no padrão, adicione as mudanças ao stage e rode, na raiz, no
-`kernelpanic-backend/` ou no `frontend/frontend/`:
+Os commits seguem o formato `tipo(SCRUM-{ID}): descrição`, que é validado pela CI em todos os PRs. O `SCRUM-{ID}` corresponde ao ID da tarefa no Jira e deve ser o mesmo utilizado no nome da branch e no título do PR, mantendo o vínculo entre o código e a tarefa. Consulte o [padrão de commit](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/blob/main/docs/padraocommit.md) para mais detalhes.
+
+Para criar um commit seguindo o padrão, adicione primeiro as alterações ao stage e, na raiz do projeto, em `kernelpanic-backend/` ou `frontend/frontend/`, execute:
 
 ```bash
 git add <arquivos>
 npm run commit
 ```
 
-O comando pergunta o tipo, o id da task (`US06-02` para tarefa de User Story, `#39` para
-issue ou `not-US` quando não há vínculo), que é obrigatório e vira o escopo do commit, e o resumo. Commits
-feitos direto com `git commit` também são validados pelo hook `commit-msg`, que recusa
-mensagens fora do padrão antes de o commit ser criado. Se a mensagem for recusada,
-`npx cz --retry` na raiz refaz o commit com as respostas anteriores.
+O comando `npm run commit` utiliza o Commitizen para auxiliar na criação da mensagem. Durante o processo, serão solicitados:
+
+* **tipo**: categoria da alteração, como `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore` ou `ci`;
+* **ID da tarefa**: ID da tarefa no Jira, que será utilizado como escopo do commit no formato `SCRUM-{ID}`;
+* **descrição**: breve descrição da alteração realizada.
+
+Por exemplo, para uma tarefa de ID `123`, um commit de implementação de uma nova funcionalidade será:
+
+```text
+feat(SCRUM-123): Implementação do novo componente de autenticação
+```
+
+Também é possível utilizar `git commit` diretamente. Nesse caso, o hook `commit-msg` valida a mensagem antes de criar o commit e recusa aquelas que não estiverem de acordo com o padrão definido.
+
+Caso a mensagem seja recusada, utilize:
+
+```bash
+npx cz --retry
+```
+
+Esse comando permite refazer o processo de criação do commit utilizando as respostas informadas anteriormente.
+
 
 ---
 
