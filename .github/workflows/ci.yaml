@@ -1,10 +1,13 @@
 name: CI
 
+# Só a main: pela estratégia de branches (docs/estrategiabranch.md) todo PR de
+# tarefa vai para ela. A staging é atualizada pelo workflow de validação em
+# staging, a partir do PR que já passou por este CI.
 on:
   push:
-    branches: [main, develop, release]
+    branches: [main]
   pull_request:
-    branches: [main, develop, release]
+    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -307,3 +310,20 @@ jobs:
 
       - name: Seed
         run: npm run db:seed
+
+  # Check único exigido na main: os jobs acima são pulados conforme o que o PR
+  # altera, e um job pulado conta como aprovado. Assim o ruleset não precisa
+  # listar cada job, e um job novo entra no portão só por estar no needs.
+  ci-ok:
+    name: CI ok
+    if: always()
+    needs: [alteracoes, backend, testes, frontend, migrations]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Algum job falhou ou foi cancelado
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+
+      - run: echo "Todos os jobs passaram ou foram pulados pelo filtro de alterações."

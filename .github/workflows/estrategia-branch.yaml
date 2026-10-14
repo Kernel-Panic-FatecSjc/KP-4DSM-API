@@ -1,0 +1,209 @@
+name: Estratégia de branch
+
+# Garante o que docs/estrategiabranch.md define:
+#   - PR de tarefa: destino main, branch tipo/SCRUM-{ID}-descricao-curta,
+#     título e commits no padrão de commit e o mesmo SCRUM-{ID} na branch e no
+#     título (job "Estratégia de branch"), e o checklist da DoD marcado antes
+#     do merge (job "Definition of Done").
+#   - Push direto na main: só a exceção de documentação, sem push forçado
+#     (job "Push direto na main").
+# A regex do padrão de commit também está em .commitlintrc.cjs. Se mudar aqui,
+# mude lá.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  estrategia:
+    name: Estratégia de branch
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Destino, branch, título, commits e ID da tarefa
+        env:
+          DESTINO: ${{ github.base_ref }}
+          BRANCH: ${{ github.head_ref }}
+          TITULO_PR: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          TIPOS='feat|fix|docs|style|refactor|test|chore|ci'
+          PADRAO_COMMIT="^($TIPOS)\(SCRUM-[0-9]+\): .+"
+          PADRAO_BRANCH="^($TIPOS)/SCRUM-[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$"
+
+          falhas=0
+          erro() { echo "::error::$1"; falhas=$((falhas + 1)); }
+          ok() { echo "  ok   $1"; }
+
+          # Toda tarefa vai para a main. A staging não recebe PR: o workflow de
+          # validação em staging publica nela o PR aprovado no code review.
+          if [ "$DESTINO" = "main" ]; then
+            ok "Destino: main"
+          else
+            erro "PR de tarefa vai para a main, não para $DESTINO."
+          fi
+
+          if printf '%s' "$BRANCH" | grep -qE "$PADRAO_BRANCH"; then
+            ok "Branch: $BRANCH"
+          else
+            erro "Branch fora do padrão tipo/SCRUM-{ID}-descricao-curta (minúsculas, sem acento): $BRANCH"
+          fi
+
+          if printf '%s' "$TITULO_PR" | grep -qE "$PADRAO_COMMIT"; then
+            ok "Título do PR: $TITULO_PR"
+          else
+            erro "Título do PR fora do padrão tipo(SCRUM-{ID}): descrição: $TITULO_PR"
+          fi
+
+          id_branch=$(printf '%s' "$BRANCH" | grep -oE 'SCRUM-[0-9]+' | head -n 1 || true)
+          id_titulo=$(printf '%s' "$TITULO_PR" | grep -oE 'SCRUM-[0-9]+' | head -n 1 || true)
+          if [ -n "$id_branch" ] && [ "$id_branch" = "$id_titulo" ]; then
+            ok "Mesmo ID na branch e no título: $id_branch"
+          else
+            erro "A branch (${id_branch:-sem ID}) e o título (${id_titulo:-sem ID}) devem ter o mesmo SCRUM-{ID}."
+          fi
+
+          # Commits de merge ficam de fora: a mensagem é gerada pelo Git/GitHub.
+          # Commit de outra tarefa é aviso, não erro: a rastreabilidade pede o ID
+          # da tarefa, mas um ajuste pontual de outra tarefa pode acontecer.
+          while IFS= read -r assunto; do
+            [ -z "$assunto" ] && continue
+            if ! printf '%s' "$assunto" | grep -qE "$PADRAO_COMMIT"; then
+              erro "Commit fora do padrão: $assunto"
+            elif [ -n "$id_branch" ] && ! printf '%s' "$assunto" | grep -qF "($id_branch)"; then
+              echo "::warning::Commit com ID diferente da tarefa $id_branch: $assunto"
+            else
+              ok "Commit: $assunto"
+            fi
+          done < <(git log --no-merges --format=%s "$BASE_SHA..HEAD")
+
+          if [ "$falhas" -gt 0 ]; then
+          cat <<'AJUDA'
+
+          Estratégia de branch (docs/estrategiabranch.md):
+
+            Branch   tipo/SCRUM-{ID}-descricao-curta    ex.: feat/SCRUM-12-tela-de-login
+            Título   tipo(SCRUM-{ID}): descrição         ex.: feat(SCRUM-12): Criação da tela de login
+            Commits  mesmo formato do título
+            Destino  main
+
+            tipo: feat, fix, docs, style, refactor, test, chore, ci
+            O SCRUM-{ID} da branch e do título é o mesmo: o ID da tarefa no Jira.
+
+          Para renomear a branch: git branch -m <novo-nome>, push dela e abra
+          um PR novo (o GitHub não troca a branch de um PR aberto).
+          Para corrigir commits: git commit --amend no último, git rebase -i
+          nos anteriores, e push forçado na sua branch.
+          AJUDA
+            exit 1
+          fi
+
+          echo "PR dentro da estratégia de branch."
+
+  dod:
+    name: Definition of Done
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      # A DoD é verificada antes do merge na main (docs/dod.md). O checklist
+      # vem do template de PR; marcar um item edita o PR e roda este job de
+      # novo. Ele fica vermelho até tudo estar marcado, e o ruleset da main o
+      # exige para o merge.
+      - name: Checklist da DoD marcado
+        env:
+          CORPO_PR: ${{ github.event.pull_request.body }}
+        run: |
+          if ! printf '%s\n' "$CORPO_PR" | grep -qiE '^[[:space:]]*- \[( |x)\]'; then
+            echo "::error::PR sem o checklist da DoD. Copie o template de .github/pull_request_template.md para a descrição."
+            exit 1
+          fi
+
+          pendentes=$(printf '%s\n' "$CORPO_PR" | grep -E '^[[:space:]]*- \[ \]' || true)
+          if [ -n "$pendentes" ]; then
+            echo "::error::Itens da DoD ainda não marcados:"
+            printf '%s\n' "$pendentes"
+            exit 1
+          fi
+
+          echo "DoD completa."
+
+  push-direto:
+    name: Push direto na main
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A exceção da estratégia de branches permite commit direto na main só
+      # com documentação e no tipo docs. O GitHub não consegue barrar isso por
+      # caminho de arquivo em repositório público, então a verificação é feita
+      # depois do push: o job fica vermelho e aponta o commit que violou.
+      - name: Só a exceção de documentação, sem push forçado
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCADO: ${{ github.event.forced }}
+          ANTES: ${{ github.event.before }}
+          DEPOIS: ${{ github.event.after }}
+        run: |
+          DOCS='^docs\(SCRUM-[0-9]+\): .+'
+          falhas=0
+          erro() { echo "::error::$1"; falhas=$((falhas + 1)); }
+
+          if [ "$FORCADO" = "true" ]; then
+            erro "Push forçado na main: o histórico da main não pode ser reescrito."
+          fi
+
+          if ! git cat-file -e "$ANTES^{commit}" 2>/dev/null; then
+            echo "::warning::O commit anterior ao push ($ANTES) não está no histórico; não dá para listar os commits enviados."
+            [ "$falhas" -eq 0 ] || exit 1
+            exit 0
+          fi
+
+          for sha in $(git rev-list --no-merges "$ANTES..$DEPOIS"); do
+            assunto=$(git log -1 --format=%s "$sha")
+
+            # Commit que chegou por PR já passou pelos jobs de PR.
+            via_pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" \
+              --jq '[.[] | select(.merged_at != null)] | length')
+            if [ "$via_pr" -gt 0 ]; then
+              echo "  ok   via PR: $assunto"
+              continue
+            fi
+
+            fora_de_docs=$(git diff-tree --no-commit-id --name-only -r "$sha" | grep -vE '^docs/|\.md$' || true)
+            if [ -n "$fora_de_docs" ]; then
+              erro "Commit direto na main com arquivo que não é documentação (${sha:0:7} $assunto):"
+              printf '%s\n' "$fora_de_docs" | sed 's/^/         /'
+            elif ! printf '%s' "$assunto" | grep -qE "$DOCS"; then
+              erro "Commit direto na main fora do tipo docs(SCRUM-{ID}): (${sha:0:7} $assunto)"
+            else
+              echo "  ok   docs direto: $assunto"
+            fi
+          done
+
+          if [ "$falhas" -gt 0 ]; then
+            echo
+            echo "Código e configuração entram na main só por PR (docs/estrategiabranch.md)."
+            echo "Corrija com um PR que reverta ou ajuste o commit; não reescreva a main."
+            exit 1
+          fi
+
+          echo "Push direto dentro da exceção de documentação."
