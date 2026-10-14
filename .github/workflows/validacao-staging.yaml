@@ -1,0 +1,113 @@
+name: Validação em staging
+
+# Etapa 4 de docs/estrategiabranch.md: com o code review aprovado, e antes do
+# merge na main, a branch da tarefa é publicada em staging para os testes de
+# sistema e o aceite do PO.
+#
+#   review aprovado → CI ok? → staging recebe o PR → aceite do PO (environment
+#   "aceite-staging") → status "staging/aceite-po" verde no commit do PR
+#
+# O ruleset da main exige o status "staging/aceite-po". Ele é gravado no
+# commit, então qualquer commit novo no PR volta a precisar de review e de
+# aceite. Usamos um status em vez do nome do job porque, num review que não é
+# aprovação, os jobs são pulados, e um job pulado contaria como aprovado.
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+# Staging é um ambiente só: uma tarefa por vez. Enquanto o aceite de uma
+# tarefa não sai, a próxima espera (o GitHub mantém uma na fila; se chegar uma
+# terceira, a que esperava é cancelada e precisa de nova aprovação).
+concurrency:
+  group: staging
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  statuses: write
+  checks: read
+
+env:
+  CONTEXTO: staging/aceite-po
+  SHA_PR: ${{ github.event.pull_request.head.sha }}
+  URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+jobs:
+  publicar:
+    name: Publicar em staging
+    if: >-
+      github.event.review.state == 'approved' &&
+      github.event.pull_request.base.ref == 'main' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: CI verde no commit aprovado
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          conclusao=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA_PR/check-runs?check_name=CI%20ok" \
+            --jq '[.check_runs[]] | sort_by(.started_at) | last | .conclusion // "ausente"')
+          if [ "$conclusao" != "success" ]; then
+            echo "::error::O CI não está verde no commit aprovado (CI ok: $conclusao). Quando ele passar, peça a aprovação de novo."
+            exit 1
+          fi
+
+      # Sem ref: o checkout pega o merge do PR com a main atual. Staging testa
+      # a tarefa junto com o que já foi integrado, que é o que vai para a main.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Atualizar a branch staging
+        run: git push --force origin HEAD:refs/heads/staging
+
+      # Deploy em staging é do CD. O push acima, feito com o GITHUB_TOKEN, não
+      # dispara outros workflows, então o deploy deve ser chamado daqui, ex.:
+      #   gh workflow run cd-staging.yaml --ref staging
+      # Testes de sistema automatizados entram como um job entre este e o
+      # aceite, com needs: publicar.
+
+      - name: Marcar o PR como em validação
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA_PR" \
+            -f state=pending -f context="$CONTEXTO" -f target_url="$URL_RUN" \
+            -f description="Em staging: aguardando testes de sistema e aceite do PO"
+
+  aceite:
+    name: Aceite do PO
+    needs: publicar
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # O environment exige a aprovação do PO (Settings → Environments). O job
+    # fica parado até ele aprovar ou rejeitar depois de testar em staging.
+    environment: aceite-staging
+
+    steps:
+      - name: Liberar o merge na main
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA_PR" \
+            -f state=success -f context="$CONTEXTO" -f target_url="$URL_RUN" \
+            -f description="Aprovado em staging pelo PO"
+
+  reprovado:
+    name: Reprovado em staging
+    needs: [publicar, aceite]
+    if: always() && needs.publicar.result == 'success' && needs.aceite.result != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Devolver a tarefa para a implementação
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA_PR" \
+            -f state=failure -f context="$CONTEXTO" -f target_url="$URL_RUN" \
+            -f description="Reprovado em staging: volta para a implementação"
