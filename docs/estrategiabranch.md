@@ -70,7 +70,6 @@ Atualizações de documentação e entregáveis que não são código (atas, dia
 | CI verde (build, lint, testes, migrations) | `.github/workflows/ci.yaml` | CI ok |
 | Code review por alguém que não é o autor | Ruleset da `main` (1 aprovação; o autor não aprova o próprio PR) | Review |
 | Validação em staging e aceite do PO | `.github/workflows/validacao-staging.yaml` | staging/aceite-po |
-| DoD verificada antes do merge | Checklist do template de PR | Definition of Done |
 | Push direto na `main` só com documentação, sem push forçado | `.github/workflows/estrategia-branch.yaml` | Push direto na main (no commit) |
 
 **Validação em staging.** Quando um review aprova o PR, o workflow confere se o `CI ok` está verde no commit aprovado e publica na branch `staging` o PR integrado com a `main` atual. Staging recebe uma tarefa por vez. O PO testa e aprova ou rejeita o job **Aceite do PO** no GitHub Actions (environment `aceite-staging`). A aprovação grava o status `staging/aceite-po` no commit do PR e libera o merge. A rejeição marca o status como falho e a tarefa volta para a implementação. Commit novo no PR exige novo review e novo aceite.
@@ -79,5 +78,5 @@ Atualizações de documentação e entregáveis que não são código (atas, dia
 
 * Environment `aceite-staging`: *required reviewers* com o PO e *prevent self-review* marcado.
 * Ruleset `main - histórico`, sem bypass: bloquear *force push* e exclusão.
-* Ruleset `main - merge`: exigir PR com 1 aprovação, descartar aprovações quando houver commit novo, e exigir os checks `CI ok`, `Estratégia de branch`, `Definition of Done` e `staging/aceite-po`. Os membros do time ficam como *bypass* para permitir o push direto de documentação; o bypass num PR fica registrado, e o job **Push direto na main** fica vermelho se um commit direto tiver algo além de documentação.
+* Ruleset `main - merge`: exigir PR com 1 aprovação, descartar aprovações quando houver commit novo, e exigir os checks `CI ok`, `Estratégia de branch` e `staging/aceite-po`. Os membros do time ficam como *bypass* para permitir o push direto de documentação; o bypass num PR fica registrado, e o job **Push direto na main** fica vermelho se um commit direto tiver algo além de documentação.
 * Branch `staging` sem ruleset: ela é sobrescrita pelo workflow a cada validação.

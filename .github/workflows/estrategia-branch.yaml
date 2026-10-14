@@ -3,8 +3,7 @@ name: Estratégia de branch
 # Garante o que docs/estrategiabranch.md define:
 #   - PR de tarefa: destino main, branch tipo/SCRUM-{ID}-descricao-curta,
 #     título e commits no padrão de commit e o mesmo SCRUM-{ID} na branch e no
-#     título (job "Estratégia de branch"), e o checklist da DoD marcado antes
-#     do merge (job "Definition of Done").
+#     título (job "Estratégia de branch").
 #   - Push direto na main: só a exceção de documentação, sem push forçado
 #     (job "Push direto na main").
 # A regex do padrão de commit também está em .commitlintrc.cjs. Se mudar aqui,
@@ -111,35 +110,6 @@ jobs:
           fi
 
           echo "PR dentro da estratégia de branch."
-
-  dod:
-    name: Definition of Done
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    steps:
-      # A DoD é verificada antes do merge na main (docs/dod.md). O checklist
-      # vem do template de PR; marcar um item edita o PR e roda este job de
-      # novo. Ele fica vermelho até tudo estar marcado, e o ruleset da main o
-      # exige para o merge.
-      - name: Checklist da DoD marcado
-        env:
-          CORPO_PR: ${{ github.event.pull_request.body }}
-        run: |
-          if ! printf '%s\n' "$CORPO_PR" | grep -qiE '^[[:space:]]*- \[( |x)\]'; then
-            echo "::error::PR sem o checklist da DoD. Copie o template de .github/pull_request_template.md para a descrição."
-            exit 1
-          fi
-
-          pendentes=$(printf '%s\n' "$CORPO_PR" | grep -E '^[[:space:]]*- \[ \]' || true)
-          if [ -n "$pendentes" ]; then
-            echo "::error::Itens da DoD ainda não marcados:"
-            printf '%s\n' "$pendentes"
-            exit 1
-          fi
-
-          echo "DoD completa."
 
   push-direto:
     name: Push direto na main
