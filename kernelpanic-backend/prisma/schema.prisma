@@ -128,7 +128,7 @@ model Medida {
 
   alarmes Alarme[]
 
-  @@index([parametroId, unixtime])
+  @@unique([parametroId, unixtime])
   @@index([estacaoId, unixtime])
   @@map("medidas")
 }

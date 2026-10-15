@@ -31,12 +31,19 @@ export class TelemetriaService {
    * Grava um lote de medidas num único INSERT multi-linha (createMany), para
    * que o trigger de avaliação de alertas — que roda por statement, não por
    * linha — seja disparado uma única vez para o lote inteiro.
+   *
+   * `skipDuplicates: true` traduz-se em ON CONFLICT DO NOTHING no Postgres:
+   * se o ESP32 não receber a confirmação e reenviar o mesmo buffer, a segunda
+   * tentativa é descartada silenciosamente pelo índice único
+   * (parametroId, unixtime) — sem erro, sem medida duplicada e, por
+   * consequência, sem alarme duplicado.
    */
   async registrarMedidas(medidas: MedidaParaGravar[]): Promise<number> {
     if (medidas.length === 0) return 0;
 
     const { count } = await this.prisma.medida.createMany({
       data: medidas.map((medida) => ({ ...medida, unixtime: BigInt(medida.unixtime) })),
+      skipDuplicates: true,
     });
 
     return count;
