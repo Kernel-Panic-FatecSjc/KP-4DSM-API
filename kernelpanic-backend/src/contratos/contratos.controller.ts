@@ -30,6 +30,10 @@ import { camposInformados } from '../auditoria/campos-informados';
 import { ContratosService } from './contratos.service';
 import { AtualizarContratoDto } from './dto/atualizar-contrato.dto';
 import { ContratoRespostaDto } from './dto/contrato-resposta.dto';
+import {
+  ContratoListagemRespostaDto,
+  ContratosPaginadosRespostaDto,
+} from './dto/contrato-listagem-resposta.dto';
 import { CriarContratoDto } from './dto/criar-contrato.dto';
 import { ListarContratosQueryDto } from './dto/listar-contratos-query.dto';
 
@@ -47,20 +51,36 @@ export class ContratosController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Listar contratos e licitacoes cadastrados' })
-  @ApiOkResponse({ type: ContratoRespostaDto, isArray: true })
+  @ApiOperation({
+    summary: 'Listar contratos e licitacoes cadastrados',
+    description:
+      'Listagem paginada (pagina/tamanho) com filtros por status do contrato e orgao e busca por numero (tambem considera objeto e nome do orgao). Cada item traz os dados do orgao e a quantidade de estacoes vinculadas (0 ate a US13 ser entregue).',
+  })
+  @ApiOkResponse({ type: ContratosPaginadosRespostaDto })
+  @ApiBadRequestResponse({
+    description: 'Filtros ou parametros de paginacao invalidos',
+  })
   async listar(
     @Query() query: ListarContratosQueryDto,
     @UsuarioAutenticado() usuario: PayloadJwt,
-  ): Promise<ContratoRespostaDto[]> {
-    const contratos = await this.contratosService.listar(query);
+  ): Promise<ContratosPaginadosRespostaDto> {
+    const { contratos, total, pagina, tamanho } =
+      await this.contratosService.listar(query);
     await this.auditoriaService.registrar({
       acao: 'contratos.consultar',
       entidade: 'Contrato',
       usuarioId: usuario.sub,
       detalhes: { ...query },
     });
-    return contratos.map((contrato) => new ContratoRespostaDto(contrato));
+    return new ContratosPaginadosRespostaDto(
+      contratos.map(
+        (contrato) =>
+          new ContratoListagemRespostaDto(contrato, contrato.quantidadeEstacoes),
+      ),
+      total,
+      pagina,
+      tamanho,
+    );
   }
 
   @Get(':id')
