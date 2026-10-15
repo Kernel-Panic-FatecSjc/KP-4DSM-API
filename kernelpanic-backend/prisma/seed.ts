@@ -5,6 +5,7 @@ import { Client } from 'pg';
 const NOME_PADRAO = process.env.SEED_USUARIO_NOME ?? 'Administrador';
 const EMAIL_PADRAO = process.env.SEED_USUARIO_EMAIL ?? 'admin@kernelpanic.dev';
 const SENHA_PADRAO = process.env.SEED_USUARIO_SENHA ?? 'admin12345';
+const ORGAO_PADRAO = process.env.SEED_ORGAO_NOME ?? 'Órgão Público ';
 
 async function main() {
   const client = new Client({ connectionString: process.env.DATABASE_URL });
@@ -19,7 +20,15 @@ async function main() {
     [NOME_PADRAO, EMAIL_PADRAO, senhaHash],
   );
 
+  await client.query(
+    `INSERT INTO orgaos (id, nome, ativo, "criadoEm", "atualizadoEm")
+     SELECT gen_random_uuid(), $1, true, now(), now()
+     WHERE NOT EXISTS (SELECT 1 FROM orgaos WHERE nome = $1)`,
+    [ORGAO_PADRAO],
+  );
+
   console.log(`Usuário inicial disponível: ${EMAIL_PADRAO} / ${SENHA_PADRAO}`);
+  console.log(`Órgão inicial disponível: ${ORGAO_PADRAO}`);
   await client.end();
 }
 

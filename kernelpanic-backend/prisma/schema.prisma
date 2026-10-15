@@ -45,6 +45,13 @@ enum StatusOperacionalEstacao {
   INATIVA
 }
 
+enum StatusContrato {
+  RASCUNHO
+  ATIVO
+  SUSPENSO
+  ENCERRADO
+}
+
 model Usuario {
   id           String      @id @default(uuid())
   nome         String
@@ -59,6 +66,42 @@ model Usuario {
   logsAuditoria LogAuditoria[]
 
   @@map("usuarios")
+}
+
+/// Orgao publico contratante. O cadastro fica separado do contrato para permitir
+/// validar se o orgao existe e esta ativo antes de vincular uma licitacao.
+model Orgao {
+  id           String   @id @default(uuid())
+  nome         String
+  cnpj         String?  @unique
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  contratos Contrato[]
+
+  @@map("orgaos")
+}
+
+/// Contratos oriundos de processos licitatorios. Nao ha exclusao fisica: o
+/// encerramento preserva historico e trilha de auditoria.
+model Contrato {
+  id             String         @id @default(uuid())
+  numero         String         @unique
+  objeto         String
+  inicioVigencia DateTime
+  fimVigencia    DateTime
+  status         StatusContrato @default(RASCUNHO)
+  criadoEm       DateTime       @default(now())
+  atualizadoEm   DateTime       @updatedAt
+  encerradoEm    DateTime?
+
+  orgaoId String
+  orgao   Orgao  @relation(fields: [orgaoId], references: [id])
+
+  @@index([orgaoId])
+  @@index([status])
+  @@map("contratos")
 }
 
 /// Estações físicas de coleta.
