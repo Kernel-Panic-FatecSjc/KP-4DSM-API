@@ -1,7 +1,8 @@
 name: Rastreabilidade de requisito
 
 # Garante o que docs/rastreabilidade.md define: toda Task (ou sub-task) citada
-# na branch ou nos commits do PR está ligada a um Requisito no Jira.
+# na branch ou nos commits do PR está ligada a um Requisito no Jira, e publica
+# no PR um comentário com o mapa tarefa -> pai -> Requisitos, com links pro Jira.
 # Secrets: JIRA_BASE_URL (https://empresa.atlassian.net), JIRA_EMAIL, JIRA_API_TOKEN.
 # Se o nome do tipo de issue ou do link for outro no Jira, ajuste as env abaixo.
 
@@ -18,6 +19,9 @@ jobs:
     name: Requisito vinculado
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
       - uses: actions/checkout@v4
@@ -43,6 +47,14 @@ jobs:
             exit 1
           fi
 
+          # Arquivos do comentário do PR, publicado no passo seguinte.
+          linhas="$RUNNER_TEMP/linhas.md"
+          extras="$RUNNER_TEMP/extras.md"
+          mapa="$RUNNER_TEMP/mapa.md"
+          : > "$linhas"
+          : > "$extras"
+          rm -f "$mapa"
+
           # ID da branch e o do escopo tipo(SCRUM-{ID}) de cada commit: SCRUM-{ID}
           # citado só na descrição não é tarefa. Commits de merge ficam de fora
           # (--no-merges), como em estrategia-branch.yaml.
@@ -56,8 +68,10 @@ jobs:
           # Sem o escopo tipo(SCRUM-{ID}) o ID do commit não seria checado no Jira.
           while IFS= read -r assunto; do
             [ -z "$assunto" ] && continue
-            printf '%s' "$assunto" | grep -qE '^[a-z]+\(SCRUM-[0-9]+\)' \
-              || erro "Commit sem o escopo tipo(SCRUM-{ID}): $assunto"
+            if ! printf '%s' "$assunto" | grep -qE '^[a-z]+\(SCRUM-[0-9]+\)'; then
+              erro "Commit sem o escopo tipo(SCRUM-{ID}): $assunto"
+              echo "- ❌ Commit sem o escopo \`tipo(SCRUM-{ID})\`: $assunto" >> "$extras"
+            fi
           done < <(git log --no-merges --format=%s "$BASE_SHA..HEAD")
 
           if [ -z "$ids" ]; then
@@ -67,48 +81,97 @@ jobs:
 
           buscar() {
             curl -sS -f -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
-              "$JIRA_BASE_URL/rest/api/3/issue/$1?fields=issuetype,parent,issuelinks"
+              "$JIRA_BASE_URL/rest/api/3/issue/$1?fields=summary,issuetype,parent,issuelinks"
           }
 
-          # Chaves dos Requisitos ligados à issue, uma por linha.
+          link() { echo "[$1]($JIRA_BASE_URL/browse/$1)"; }
+
+          # Requisitos ligados à issue, como "chave<TAB>título", um por linha.
           requisitos() {
             jq -r --arg tipo "$TIPO_REQUISITO" --arg link "$TIPO_LINK" '
               .fields.issuelinks[]
               | select(.type.name == $link or .type.inward == $link or .type.outward == $link)
               | (.inwardIssue // .outwardIssue)
               | select(.fields.issuetype.name == $tipo)
-              | .key' <<<"$1" | tr -d '\r' | sort -u
+              | "\(.key)\t\(.fields.summary | gsub("\\|"; "/"))"' <<<"$1" | tr -d '\r' | sort -u
           }
 
           for id in $ids; do
-            json=$(buscar "$id") || { erro "$id: não consegui ler no Jira (não existe ou sem acesso)."; continue; }
+            json=$(buscar "$id") || {
+              erro "$id: não consegui ler no Jira (não existe ou sem acesso)."
+              echo "| $(link "$id") | — | — | — | ❌ não existe ou sem acesso |" >> "$linhas"
+              continue
+            }
+            tipo=$(jq -r '.fields.issuetype.name' <<<"$json" | tr -d '\r')
+            titulo=$(jq -r '.fields.summary | gsub("\\|"; "/")' <<<"$json" | tr -d '\r')
+            pai=$(jq -r '.fields.parent.key // empty' <<<"$json" | tr -d '\r')
+            lista=$(requisitos "$json")
+            proprios=$(cut -f1 <<<"$lista")
+            reqs_md=$(while IFS=$'\t' read -r k t; do if [ -n "$k" ]; then echo "$(link "$k") $t"; fi; done <<<"$lista" | paste -sd'~' | sed 's/~/<br>/g')
+            pai_md=${pai:+$(link "$pai")}
+            pai_md=${pai_md:-—}
+            resultado="✅"
 
-            # A própria issue precisa ter Requisito, sem herdar do pai.
-            proprios=$(requisitos "$json")
             if [ -z "$proprios" ]; then
+              # A própria issue precisa ter Requisito, sem herdar do pai.
               erro "$id: sem link '$TIPO_LINK' para uma issue do tipo $TIPO_REQUISITO (docs/rastreabilidade.md)."
-              continue
-            fi
-
-            # Os Requisitos da issue precisam estar entre os do pai. Épico não
-            # carrega Requisito, então só vale quando o pai é Task/História.
-            pai=$(jq -r '.fields.parent.key // empty' <<<"$json")
-            if [ -z "$pai" ]; then
+              resultado="❌ sem Requisito"
+              reqs_md="—"
+            elif [ -z "$pai" ]; then
               ok "$id -> $(paste -sd, <<<"$proprios") (sem pai)"
-              continue
-            fi
-            json_pai=$(buscar "$pai") || { erro "$id: não consegui ler o pai $pai."; continue; }
-            if [ "$(jq -r '.fields.issuetype.hierarchyLevel' <<<"$json_pai")" -ge 1 ]; then
-              ok "$id -> $(paste -sd, <<<"$proprios") (pai $pai é épico)"
-              continue
-            fi
-            fora=$(comm -23 <(echo "$proprios") <(requisitos "$json_pai"))
-            if [ -n "$fora" ]; then
-              erro "$id: Requisito(s) $(paste -sd, <<<"$fora") não estão entre os do pai $pai."
             else
-              ok "$id -> $(paste -sd, <<<"$proprios") (todos no pai $pai)"
+              # Os Requisitos da issue precisam estar entre os do pai. Épico não
+              # carrega Requisito, então só vale quando o pai é Task/História.
+              if ! json_pai=$(buscar "$pai"); then
+                erro "$id: não consegui ler o pai $pai."
+                resultado="❌ não consegui ler o pai"
+              elif [ "$(jq -r '.fields.issuetype.hierarchyLevel' <<<"$json_pai")" -ge 1 ]; then
+                ok "$id -> $(paste -sd, <<<"$proprios") (pai $pai é épico)"
+              else
+                fora=$(comm -23 <(echo "$proprios") <(requisitos "$json_pai" | cut -f1))
+                if [ -n "$fora" ]; then
+                  erro "$id: Requisito(s) $(paste -sd, <<<"$fora") não estão entre os do pai $pai."
+                  resultado="❌ fora do pai: $(paste -sd, <<<"$fora")"
+                else
+                  ok "$id -> $(paste -sd, <<<"$proprios") (todos no pai $pai)"
+                fi
+              fi
             fi
+            echo "| $(link "$id") $titulo | $tipo | $pai_md | $reqs_md | $resultado |" >> "$linhas"
           done
+
+          {
+            echo "<!-- rastreabilidade-requisito -->"
+            echo "### Rastreabilidade: tarefas e Requisitos"
+            echo
+            echo "| Item | Tipo | Pai | Requisitos | Resultado |"
+            echo "| --- | --- | --- | --- | --- |"
+            cat "$linhas"
+            [ -s "$extras" ] && { echo; cat "$extras"; }
+            echo
+            echo "_Atualizado a cada push pelo check **Requisito vinculado**._"
+          } > "$mapa"
 
           [ "$falhas" -eq 0 ] || exit 1
           echo "Todas as tarefas têm Requisito vinculado."
+
+      # Fora do check de propósito: falha ao comentar (fork, sem permissão) não
+      # muda o resultado da rastreabilidade.
+      - name: Mapa de Requisitos no PR
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          mapa="$RUNNER_TEMP/mapa.md"
+          [ -f "$mapa" ] || exit 0
+          # Atualiza o comentário deste check (marcado no início) em vez de criar outro.
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.body | startswith("<!-- rastreabilidade-requisito -->")) | .id' | sed -n 1p)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@"$mapa" > /dev/null
+          else
+            gh pr comment "$PR" --body-file "$mapa"
+          fi
