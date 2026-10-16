@@ -20,6 +20,7 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   private timer?: NodeJS.Timeout;
   private readonly tamanhoLoteMaximo: number;
   private readonly intervaloFlushMs: number;
+  private estadoFlush: 'ok' | 'falha' = 'ok';
 
   constructor(
     private readonly prisma: PrismaService,
@@ -103,6 +104,10 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  obterEstadoFlush(): 'ok' | 'falha' {
+    return this.estadoFlush;
+  }
+
   /** Grava os dois lotes acumulados. Público para permitir flush manual (testes, shutdown). */
   async flush(): Promise<void> {
     if (this.loteBrutas.length === 0 && this.loteMedidas.length === 0) return;
@@ -117,7 +122,11 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
         this.telemetria.registrarLeiturasBrutas(brutas),
         this.telemetria.registrarMedidas(medidas),
       ]);
+
+      this.estadoFlush = 'ok';
     } catch (erro) {
+      this.estadoFlush = 'falha';
+
       this.logger.error(
         `Falha ao gravar lote (${brutas.length} leitura(s) bruta(s), ${medidas.length} medida(s))`,
         erro as Error,
