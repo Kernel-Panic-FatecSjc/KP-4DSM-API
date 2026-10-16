@@ -9,11 +9,7 @@ import { StatusContrato } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtualizarContratoDto } from './dto/atualizar-contrato.dto';
 import { CriarContratoDto } from './dto/criar-contrato.dto';
-import {
-  ListarContratosQueryDto,
-  PAGINA_PADRAO,
-  TAMANHO_PADRAO,
-} from './dto/listar-contratos-query.dto';
+import { ListarContratosQueryDto } from './dto/listar-contratos-query.dto';
 
 const INCLUIR_ORGAO = { orgao: true } satisfies Prisma.ContratoInclude;
 const TRANSICOES_PERMITIDAS: Record<StatusContrato, StatusContrato[]> = {
@@ -27,17 +23,6 @@ const MENSAGEM_NUMERO_DUPLICADO = 'Ja existe um contrato com este numero';
 type ContratoComOrgao = Prisma.ContratoGetPayload<{
   include: typeof INCLUIR_ORGAO;
 }>;
-
-export type ContratoListado = ContratoComOrgao & {
-  quantidadeEstacoes: number;
-};
-
-export interface ContratosPaginados {
-  contratos: ContratoListado[];
-  total: number;
-  pagina: number;
-  tamanho: number;
-}
 
 // P2002 = violação de unicidade. A checagem prévia de número não cobre duas
 // requisições simultâneas; a constraint do banco é quem garante, e aqui o erro
@@ -54,49 +39,24 @@ function violouUnicidade(erro: unknown): boolean {
 export class ContratosService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async listar(query: ListarContratosQueryDto): Promise<ContratosPaginados> {
+  async listar(query: ListarContratosQueryDto): Promise<ContratoComOrgao[]> {
     const busca = query.busca?.trim();
-    const pagina = query.pagina ?? PAGINA_PADRAO;
-    const tamanho = query.tamanho ?? TAMANHO_PADRAO;
 
-    const where: Prisma.ContratoWhereInput = {
-      status: query.status,
-      orgaoId: query.orgaoId,
-      OR: busca
-        ? [
-            { numero: { contains: busca, mode: 'insensitive' } },
-            { objeto: { contains: busca, mode: 'insensitive' } },
-            { orgao: { nome: { contains: busca, mode: 'insensitive' } } },
-          ]
-        : undefined,
-    };
-
-    // Mesmo where na listagem e na contagem para o total refletir os filtros.
-    // O desempate por id mantem a ordem estavel entre paginas.
-    const [contratos, total] = await this.prisma.$transaction([
-      this.prisma.contrato.findMany({
-        where,
-        include: INCLUIR_ORGAO,
-        orderBy: [{ criadoEm: 'desc' }, { id: 'asc' }],
-        skip: (pagina - 1) * tamanho,
-        take: tamanho,
-      }),
-      this.prisma.contrato.count({ where }),
-    ]);
-
-    const estacoesPorContrato = await this.contarEstacoesVinculadas(
-      contratos.map((contrato) => contrato.id),
-    );
-
-    return {
-      contratos: contratos.map((contrato) => ({
-        ...contrato,
-        quantidadeEstacoes: estacoesPorContrato.get(contrato.id) ?? 0,
-      })),
-      total,
-      pagina,
-      tamanho,
-    };
+    return this.prisma.contrato.findMany({
+      where: {
+        status: query.status,
+        orgaoId: query.orgaoId,
+        OR: busca
+          ? [
+              { numero: { contains: busca, mode: 'insensitive' } },
+              { objeto: { contains: busca, mode: 'insensitive' } },
+              { orgao: { nome: { contains: busca, mode: 'insensitive' } } },
+            ]
+          : undefined,
+      },
+      include: INCLUIR_ORGAO,
+      orderBy: { criadoEm: 'desc' },
+    });
   }
 
   async buscarPorId(id: string): Promise<ContratoComOrgao> {
@@ -214,16 +174,6 @@ export class ContratosService {
       },
       include: INCLUIR_ORGAO,
     });
-  }
-
-  // TODO(US13): ainda nao existe vinculo contrato-estacao no schema. Quando a
-  // US13 entregar a relacao, substituir o corpo por uma contagem agrupada por
-  // contratoId (ex.: prisma.estacao.groupBy) — o restante da listagem ja consome
-  // este mapa e nao precisa mudar.
-  private contarEstacoesVinculadas(
-    contratoIds: string[],
-  ): Promise<Map<string, number>> {
-    return Promise.resolve(new Map(contratoIds.map((id) => [id, 0])));
   }
 
   private validarVigencia(inicio: string, fim: string): void {

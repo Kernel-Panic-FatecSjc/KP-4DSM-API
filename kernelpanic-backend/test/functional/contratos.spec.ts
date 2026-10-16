@@ -51,7 +51,6 @@ describe('Contratos (funcional)', () => {
   const contrato = {
     findMany: jest.fn(),
     findUnique: jest.fn(),
-    count: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
   };
@@ -70,9 +69,6 @@ describe('Contratos (funcional)', () => {
         contrato,
         orgao,
         logAuditoria,
-        $transaction: jest.fn(
-          (operacoes: Promise<unknown>[]) => Promise.all(operacoes),
-        ),
         $connect: jest.fn(),
         $disconnect: jest.fn(),
       },
@@ -89,7 +85,6 @@ describe('Contratos (funcional)', () => {
       ({ where }) => [ADMIN, MONITOR].find((u) => u.id === where.id) ?? null,
     );
     contrato.findMany.mockResolvedValue([CONTRATO]);
-    contrato.count.mockResolvedValue(1);
     contrato.findUnique.mockImplementation(({ where }) =>
       where.id === CONTRATO.id ? CONTRATO : null,
     );
@@ -114,12 +109,12 @@ describe('Contratos (funcional)', () => {
     await app.close();
   });
 
-  describe('autenticaÃƒÂ§ÃƒÂ£o e permissÃƒÂ£o', () => {
+  describe('autenticação e permissão', () => {
     it('exige login para consultar', async () => {
       await request(app.getHttpServer()).get('/contratos').expect(401);
     });
 
-    it('permite que qualquer usuÃƒÂ¡rio autenticado consulte', async () => {
+    it('permite que qualquer usuário autenticado consulte', async () => {
       await request(app.getHttpServer())
         .get('/contratos')
         .set('Cookie', cookieMonitor)
@@ -134,7 +129,7 @@ describe('Contratos (funcional)', () => {
       ['POST', '/contratos'],
       ['PATCH', '/contratos/contrato-1'],
       ['PATCH', '/contratos/contrato-1/encerrar'],
-    ])('nega %s %s a quem nÃƒÂ£o ÃƒÂ© administrador', async (metodo, rota) => {
+    ])('nega %s %s a quem não é administrador', async (metodo, rota) => {
       await request(app.getHttpServer())
         [metodo.toLowerCase() as 'post' | 'patch'](rota)
         .set('Cookie', cookieMonitor)
@@ -145,7 +140,7 @@ describe('Contratos (funcional)', () => {
       expect(contrato.update).not.toHaveBeenCalled();
     });
 
-    it('nÃƒÂ£o expÃƒÂµe exclusÃƒÂ£o fÃƒÂ­sica', async () => {
+    it('não expõe exclusão física', async () => {
       await request(app.getHttpServer())
         .delete(`/contratos/${CONTRATO.id}`)
         .set('Cookie', cookieAdmin)
@@ -175,7 +170,7 @@ describe('Contratos (funcional)', () => {
       ]);
     });
 
-    it('remove espaÃƒÂ§os nas pontas do nÃƒÂºmero antes de validar a unicidade', async () => {
+    it('remove espaços nas pontas do número antes de validar a unicidade', async () => {
       await request(app.getHttpServer())
         .post('/contratos')
         .set('Cookie', cookieAdmin)
@@ -187,7 +182,7 @@ describe('Contratos (funcional)', () => {
       });
     });
 
-    it('responde 409 para nÃƒÂºmero repetido e nÃƒÂ£o audita a criaÃƒÂ§ÃƒÂ£o', async () => {
+    it('responde 409 para número repetido e não audita a criação', async () => {
       contrato.findUnique.mockResolvedValue(CONTRATO);
 
       await request(app.getHttpServer())
@@ -198,7 +193,7 @@ describe('Contratos (funcional)', () => {
       expect(auditoriasDe('contratos.criar')).toHaveLength(0);
     });
 
-    it('responde 400 para vigÃƒÂªncia invertida', async () => {
+    it('responde 400 para vigência invertida', async () => {
       await request(app.getHttpServer())
         .post('/contratos')
         .set('Cookie', cookieAdmin)
@@ -210,7 +205,7 @@ describe('Contratos (funcional)', () => {
         .expect(400);
     });
 
-    it('responde 400 para ÃƒÂ³rgÃƒÂ£o inexistente ou inativo', async () => {
+    it('responde 400 para órgão inexistente ou inativo', async () => {
       orgao.findUnique.mockResolvedValueOnce(null);
       await request(app.getHttpServer())
         .post('/contratos')
@@ -226,7 +221,7 @@ describe('Contratos (funcional)', () => {
         .expect(400);
     });
 
-    it('responde 400 para corpo invÃƒÂ¡lido', async () => {
+    it('responde 400 para corpo inválido', async () => {
       await request(app.getHttpServer())
         .post('/contratos')
         .set('Cookie', cookieAdmin)
@@ -257,7 +252,7 @@ describe('Contratos (funcional)', () => {
       ]);
     });
 
-    it('responde 400 para transiÃƒÂ§ÃƒÂ£o de status nÃƒÂ£o permitida', async () => {
+    it('responde 400 para transição de status não permitida', async () => {
       await request(app.getHttpServer())
         .patch(`/contratos/${CONTRATO.id}`)
         .set('Cookie', cookieAdmin)
