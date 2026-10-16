@@ -16,6 +16,12 @@ import {
 } from './dto/listar-contratos-query.dto';
 
 const INCLUIR_ORGAO = { orgao: true } satisfies Prisma.ContratoInclude;
+const INCLUIR_ESTACOES_SENSORES = {
+  parametros: { include: { tipoParametro: true } },
+} satisfies Prisma.EstacaoInclude;
+type EstacaoDoContrato = Prisma.EstacaoGetPayload<{
+  include: typeof INCLUIR_ESTACOES_SENSORES;
+}>;
 const TRANSICOES_PERMITIDAS: Record<StatusContrato, StatusContrato[]> = {
   RASCUNHO: [StatusContrato.ATIVO, StatusContrato.ENCERRADO],
   ATIVO: [StatusContrato.SUSPENSO, StatusContrato.ENCERRADO],
@@ -97,6 +103,16 @@ export class ContratosService {
       pagina,
       tamanho,
     };
+  }
+
+  async listarEstacoes(id: string): Promise<EstacaoDoContrato[]> {
+    await this.buscarPorId(id);
+
+    return this.prisma.estacao.findMany({
+      where: { contratoId: id },
+      include: INCLUIR_ESTACOES_SENSORES,
+      orderBy: [{ nome: 'asc' }, { id: 'asc' }],
+    });
   }
 
   async buscarPorId(id: string): Promise<ContratoComOrgao> {
@@ -216,14 +232,24 @@ export class ContratosService {
     });
   }
 
-  // TODO(US13): ainda nao existe vinculo contrato-estacao no schema. Quando a
-  // US13 entregar a relacao, substituir o corpo por uma contagem agrupada por
-  // contratoId (ex.: prisma.estacao.groupBy) — o restante da listagem ja consome
-  // este mapa e nao precisa mudar.
-  private contarEstacoesVinculadas(
+  private async contarEstacoesVinculadas(
     contratoIds: string[],
   ): Promise<Map<string, number>> {
-    return Promise.resolve(new Map(contratoIds.map((id) => [id, 0])));
+    if (contratoIds.length === 0) {
+      return new Map();
+    }
+
+    const grupos = await this.prisma.estacao.groupBy({
+      by: ['contratoId'],
+      where: { contratoId: { in: contratoIds } },
+      _count: { _all: true },
+    });
+
+    return new Map(
+      grupos
+        .filter((grupo) => grupo.contratoId !== null)
+        .map((grupo) => [grupo.contratoId as string, grupo._count._all]),
+    );
   }
 
   private validarVigencia(inicio: string, fim: string): void {

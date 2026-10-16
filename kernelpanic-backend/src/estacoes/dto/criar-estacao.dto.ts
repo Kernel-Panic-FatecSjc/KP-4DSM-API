@@ -1,3 +1,4 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsArray, IsLatitude, IsLongitude, IsNotEmpty, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 
 export const IDENTIFICADOR_UUID_OU_MAC = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2})$/i;
@@ -20,6 +21,12 @@ export class CriarEstacaoDto {
 
   @IsLongitude()
   longitude!: number;
+
+  @ApiPropertyOptional({ description: 'ID do contrato ao qual a estação ficará vinculada', format: 'uuid', nullable: true })
+  // Contrato é opcional para permitir cadastrar estações legadas/independentes.
+  @IsOptional()
+  @IsUUID('4')
+  contratoId?: string | null;
 
   // Opcional: a estação pode ser cadastrada antes de os sensores existirem e
   // recebê-los depois por PATCH.

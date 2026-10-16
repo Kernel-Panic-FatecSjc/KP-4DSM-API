@@ -21,6 +21,7 @@ export class EstacoesService {
     return this.prisma.estacao.findMany({
       where: {
         statusOperacional: query.status,
+        contratoId: query.contratoId,
         endereco: regiao ? { contains: regiao, mode: 'insensitive' } : undefined,
         parametros: query.tipoParametroId
           ? { some: { tipoParametroId: query.tipoParametroId } }
@@ -43,6 +44,10 @@ export class EstacoesService {
       this.prisma.tipoParametro.findMany({ where: { id: { in: tipoParametroIds } } }),
     ]);
 
+    if (dto.contratoId) {
+      await this.validarContrato(dto.contratoId);
+    }
+
     if (estacaoExistente) {
       throw new ConflictException('Já existe uma estação com este identificador');
     }
@@ -59,6 +64,7 @@ export class EstacoesService {
         latitude: dto.latitude,
         longitude: dto.longitude,
         usuarioId,
+        contratoId: dto.contratoId ?? undefined,
         parametros: {
           create: tipoParametroIds.map((tipoParametroId) => ({ tipoParametroId })),
         },
@@ -88,6 +94,10 @@ export class EstacoesService {
       ? await this.planejarMudancaDeSensores(estacao.parametros, dto.tipoParametroIds)
       : undefined;
 
+    if (dto.contratoId) {
+      await this.validarContrato(dto.contratoId);
+    }
+
     return this.prisma.estacao.update({
       where: { id },
       data: {
@@ -97,6 +107,7 @@ export class EstacoesService {
         latitude: dto.latitude,
         longitude: dto.longitude,
         statusOperacional: dto.statusOperacional,
+        contratoId: dto.contratoId,
         parametros: sensores,
       },
       include: INCLUIR_SENSORES,
@@ -114,6 +125,17 @@ export class EstacoesService {
       data: { statusOperacional: 'INATIVA' },
       include: INCLUIR_SENSORES,
     });
+  }
+
+
+  private async validarContrato(contratoId: string): Promise<void> {
+    const contrato = await this.prisma.contrato.findUnique({
+      where: { id: contratoId },
+      select: { id: true },
+    });
+    if (!contrato) {
+      throw new BadRequestException('Contrato informado não existe');
+    }
   }
 
   private async planejarMudancaDeSensores(

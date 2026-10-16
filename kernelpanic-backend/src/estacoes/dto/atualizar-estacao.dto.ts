@@ -1,3 +1,4 @@
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsArray, IsEnum, IsLatitude, IsLongitude, IsNotEmpty, IsOptional, IsString, IsUUID, Matches } from 'class-validator';
 import { StatusOperacionalEstacao } from '../../generated/prisma/client';
 import { IDENTIFICADOR_UUID_OU_MAC } from './criar-estacao.dto';
@@ -29,6 +30,11 @@ export class AtualizarEstacaoDto {
   @IsOptional()
   @IsEnum(StatusOperacionalEstacao)
   statusOperacional?: StatusOperacionalEstacao;
+
+  @ApiPropertyOptional({ description: 'ID do contrato; envie null para desvincular a estação', format: 'uuid', nullable: true })
+  @IsOptional()
+  @IsUUID('4')
+  contratoId?: string | null;
 
   @IsOptional()
   @IsArray()

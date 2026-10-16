@@ -36,6 +36,7 @@ import {
 } from './dto/contrato-listagem-resposta.dto';
 import { CriarContratoDto } from './dto/criar-contrato.dto';
 import { ListarContratosQueryDto } from './dto/listar-contratos-query.dto';
+import { EstacaoRespostaDto } from '../estacoes/dto/estacao-resposta.dto';
 
 const PARAMETRO_ID = { name: 'id', description: 'Id (UUID) do contrato' };
 
@@ -54,7 +55,7 @@ export class ContratosController {
   @ApiOperation({
     summary: 'Listar contratos e licitacoes cadastrados',
     description:
-      'Listagem paginada (pagina/tamanho) com filtros por status do contrato e orgao e busca por numero (tambem considera objeto e nome do orgao). Cada item traz os dados do orgao e a quantidade de estacoes vinculadas (0 ate a US13 ser entregue).',
+      'Listagem paginada (pagina/tamanho) com filtros por status do contrato e orgao e busca por numero (tambem considera objeto e nome do orgao). Cada item traz os dados do orgao e a quantidade real de estacoes vinculadas.',
   })
   @ApiOkResponse({ type: ContratosPaginadosRespostaDto })
   @ApiBadRequestResponse({
@@ -81,6 +82,29 @@ export class ContratosController {
       pagina,
       tamanho,
     );
+  }
+
+  @Get(':id/estacoes')
+  @ApiOperation({
+    summary: 'Listar estações e sensores vinculados a um contrato',
+    description:
+      'Retorna a hierarquia Contrato → Estações → Sensores. Cada estação inclui os sensores/parâmetros configurados, com nome e unidade de medida. Retorna lista vazia quando o contrato existe mas ainda não possui estações vinculadas.',
+  })
+  @ApiParam(PARAMETRO_ID)
+  @ApiOkResponse({ type: EstacaoRespostaDto, isArray: true })
+  @ApiNotFoundResponse({ description: 'Contrato não encontrado' })
+  async listarEstacoes(
+    @Param('id') id: string,
+    @UsuarioAutenticado() usuario: PayloadJwt,
+  ): Promise<EstacaoRespostaDto[]> {
+    const estacoes = await this.contratosService.listarEstacoes(id);
+    await this.auditoriaService.registrar({
+      acao: 'contratos.estacoes.consultar',
+      entidade: 'Contrato',
+      entidadeId: id,
+      usuarioId: usuario.sub,
+    });
+    return estacoes.map((estacao) => new EstacaoRespostaDto(estacao));
   }
 
   @Get(':id')

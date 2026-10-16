@@ -99,6 +99,8 @@ model Contrato {
   orgaoId String
   orgao   Orgao  @relation(fields: [orgaoId], references: [id])
 
+  estacoes Estacao[]
+
   @@index([orgaoId])
   @@index([status])
   @@map("contratos")
@@ -119,9 +121,13 @@ model Estacao {
   usuarioId String
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
 
+  contratoId String?
+  contrato   Contrato? @relation(fields: [contratoId], references: [id], onDelete: SetNull)
+
   parametros Parametro[]
   medidas    Medida[]
 
+  @@index([contratoId])
   @@map("estacoes")
 }
 

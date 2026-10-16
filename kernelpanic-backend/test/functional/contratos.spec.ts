@@ -48,6 +48,7 @@ describe('Contratos (funcional)', () => {
   let cookieAdmin: string;
   let cookieMonitor: string;
   const usuario = { findUnique: jest.fn() };
+  const estacao = { findMany: jest.fn(), groupBy: jest.fn() };
   const contrato = {
     findMany: jest.fn(),
     findUnique: jest.fn(),
@@ -67,6 +68,7 @@ describe('Contratos (funcional)', () => {
       prismaMock: {
         usuario,
         contrato,
+        estacao,
         orgao,
         logAuditoria,
         $connect: jest.fn(),
@@ -85,6 +87,8 @@ describe('Contratos (funcional)', () => {
       ({ where }) => [ADMIN, MONITOR].find((u) => u.id === where.id) ?? null,
     );
     contrato.findMany.mockResolvedValue([CONTRATO]);
+    estacao.groupBy.mockResolvedValue([]);
+    estacao.findMany.mockResolvedValue([]);
     contrato.findUnique.mockImplementation(({ where }) =>
       where.id === CONTRATO.id ? CONTRATO : null,
     );
@@ -235,6 +239,53 @@ describe('Contratos (funcional)', () => {
     });
   });
 
+  describe('GET /contratos/:id/estacoes', () => {
+    it('retorna a hierarquia de estações e sensores vinculados ao contrato', async () => {
+      estacao.findMany.mockResolvedValueOnce([
+        {
+          id: 'estacao-1',
+          nome: 'Estação Norte',
+          endereco: 'Região Norte',
+          vid: '11:22:33:44:55:66',
+          latitude: -23.2,
+          longitude: -45.9,
+          statusOperacional: 'ATIVA',
+          contratoId: CONTRATO.id,
+          criadoEm: new Date('2026-01-01T00:00:00.000Z'),
+          atualizadoEm: new Date('2026-01-01T00:00:00.000Z'),
+          parametros: [{
+            id: 'parametro-1',
+            tipoParametro: { id: 'sensor-1', nome: 'Pluviômetro', unidade: 'mm' },
+          }],
+        },
+      ]);
+
+      const resposta = await request(app.getHttpServer())
+        .get(`/contratos/${CONTRATO.id}/estacoes`)
+        .set('Cookie', cookieMonitor)
+        .expect(200);
+
+      expect(resposta.body).toMatchObject([{
+        id: 'estacao-1',
+        contratoId: CONTRATO.id,
+        sensores: [{ id: 'sensor-1', nome: 'Pluviômetro', unidade: 'mm' }],
+      }]);
+      expect(estacao.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { contratoId: CONTRATO.id },
+      }));
+      expect(auditoriasDe('contratos.estacoes.consultar')).toHaveLength(1);
+    });
+
+    it('responde 404 quando o contrato não existe', async () => {
+      contrato.findUnique.mockResolvedValueOnce(null);
+      await request(app.getHttpServer())
+        .get('/contratos/contrato-inexistente/estacoes')
+        .set('Cookie', cookieMonitor)
+        .expect(404);
+      expect(estacao.findMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('PATCH /contratos/:id', () => {
     it('edita e registra os campos alterados na auditoria', async () => {
       await request(app.getHttpServer())
@@ -328,7 +379,7 @@ describe('Contratos (funcional)', () => {
         Object.keys(documento.paths)
           .filter((rota) => rota.startsWith('/contratos'))
           .sort(),
-      ).toEqual(['/contratos', '/contratos/{id}', '/contratos/{id}/encerrar']);
+      ).toEqual(['/contratos', '/contratos/{id}', '/contratos/{id}/encerrar', '/contratos/{id}/estacoes'].sort());
       expect(Object.keys(documento.paths['/contratos'])).toEqual(
         expect.arrayContaining(['get', 'post']),
       );
