@@ -45,7 +45,6 @@ export interface ContratosPaginados {
   tamanho: number;
 }
 
-
 // P2002 = violação de unicidade. A checagem prévia de número não cobre duas
 // requisições simultâneas; a constraint do banco é quem garante, e aqui o erro
 // dela vira 409 em vez de estourar como 500.
