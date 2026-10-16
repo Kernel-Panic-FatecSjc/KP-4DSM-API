@@ -44,12 +44,12 @@ jobs:
           fi
 
           # ID da branch e o do escopo tipo(SCRUM-{ID}) de cada commit: SCRUM-{ID}
-          # citado só na descrição não é tarefa. Commits com "merge" no assunto
-          # ficam de fora: costumam ser merge de conflito.
+          # citado só na descrição não é tarefa. Commits de merge ficam de fora
+          # (--no-merges), como em estrategia-branch.yaml.
           ids=$(
             {
               printf '%s\n' "$BRANCH" | grep -oE 'SCRUM-[0-9]+' | head -n 1 || true
-              git log --no-merges --format=%s "$BASE_SHA..HEAD" | grep -vi 'merge' \
+              git log --no-merges --format=%s "$BASE_SHA..HEAD" \
                 | grep -oE '^[a-z]+\(SCRUM-[0-9]+\)' | grep -oE 'SCRUM-[0-9]+' || true
             } | sort -u
           )
@@ -58,7 +58,7 @@ jobs:
             [ -z "$assunto" ] && continue
             printf '%s' "$assunto" | grep -qE '^[a-z]+\(SCRUM-[0-9]+\)' \
               || erro "Commit sem o escopo tipo(SCRUM-{ID}): $assunto"
-          done < <(git log --no-merges --format=%s "$BASE_SHA..HEAD" | grep -vi 'merge' || true)
+          done < <(git log --no-merges --format=%s "$BASE_SHA..HEAD")
 
           if [ -z "$ids" ]; then
             echo "::error::Nenhum SCRUM-{ID} na branch nem nos commits."
