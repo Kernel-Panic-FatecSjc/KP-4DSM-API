@@ -43,13 +43,23 @@ jobs:
             exit 1
           fi
 
-          # Commits com "merge" no assunto ficam de fora: costumam ser merge de conflito.
+          # ID da branch e o do escopo tipo(SCRUM-{ID}) de cada commit: SCRUM-{ID}
+          # citado só na descrição não é tarefa. Commits com "merge" no assunto
+          # ficam de fora: costumam ser merge de conflito.
           ids=$(
             {
-              printf '%s\n' "$BRANCH"
-              git log --no-merges --format=%s "$BASE_SHA..HEAD" | grep -vi 'merge' || true
-            } | grep -oE 'SCRUM-[0-9]+' | sort -u || true
+              printf '%s\n' "$BRANCH" | grep -oE 'SCRUM-[0-9]+' | head -n 1 || true
+              git log --no-merges --format=%s "$BASE_SHA..HEAD" | grep -vi 'merge' \
+                | grep -oE '^[a-z]+\(SCRUM-[0-9]+\)' | grep -oE 'SCRUM-[0-9]+' || true
+            } | sort -u
           )
+          # Sem o escopo tipo(SCRUM-{ID}) o ID do commit não seria checado no Jira.
+          while IFS= read -r assunto; do
+            [ -z "$assunto" ] && continue
+            printf '%s' "$assunto" | grep -qE '^[a-z]+\(SCRUM-[0-9]+\)' \
+              || erro "Commit sem o escopo tipo(SCRUM-{ID}): $assunto"
+          done < <(git log --no-merges --format=%s "$BASE_SHA..HEAD" | grep -vi 'merge' || true)
+
           if [ -z "$ids" ]; then
             echo "::error::Nenhum SCRUM-{ID} na branch nem nos commits."
             exit 1
