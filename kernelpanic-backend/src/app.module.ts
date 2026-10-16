@@ -7,7 +7,6 @@ import { AuditoriaAcessoMiddleware } from './auditoria/auditoria-acesso.middlewa
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { AutenticacaoModule } from './autenticacao/autenticacao.module';
-import { ContratosModule } from './contratos/contratos.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { EstacoesModule } from './estacoes/estacoes.module';
 import { IngestaoModule } from './ingestao/ingestao.module';
@@ -26,7 +25,6 @@ import { UsuariosModule } from './usuarios/usuarios.module';
     RegiaoModule,
     UsuariosModule,
     AutenticacaoModule,
-    ContratosModule,
     AlarmesModule,
     AlertasModule,
     AuditoriaModule,
