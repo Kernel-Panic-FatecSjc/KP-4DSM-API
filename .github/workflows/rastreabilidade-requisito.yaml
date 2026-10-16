@@ -1,0 +1,104 @@
+name: Rastreabilidade de requisito
+
+# Garante o que docs/rastreabilidade.md define: toda Task (ou sub-task) citada
+# na branch ou nos commits do PR está ligada a um Requisito no Jira.
+# Secrets: JIRA_BASE_URL (https://empresa.atlassian.net), JIRA_EMAIL, JIRA_API_TOKEN.
+# Se o nome do tipo de issue ou do link for outro no Jira, ajuste as env abaixo.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  requisito:
+    name: Requisito vinculado
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Task da branch e dos commits ligada a um Requisito
+        env:
+          BRANCH: ${{ github.head_ref }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          TIPO_REQUISITO: Requisito
+          TIPO_LINK: Relates
+        run: |
+          falhas=0
+          erro() { echo "::error::$1"; falhas=$((falhas + 1)); }
+          ok() { echo "  ok   $1"; }
+
+          if [ -z "$JIRA_BASE_URL" ] || [ -z "$JIRA_EMAIL" ] || [ -z "$JIRA_API_TOKEN" ]; then
+            echo "::error::Secrets do Jira ausentes (PR de fork não recebe secrets)."
+            exit 1
+          fi
+
+          # Commits com "merge" no assunto ficam de fora: costumam ser merge de conflito.
+          ids=$(
+            {
+              printf '%s\n' "$BRANCH"
+              git log --no-merges --format=%s "$BASE_SHA..HEAD" | grep -vi 'merge' || true
+            } | grep -oE 'SCRUM-[0-9]+' | sort -u || true
+          )
+          if [ -z "$ids" ]; then
+            echo "::error::Nenhum SCRUM-{ID} na branch nem nos commits."
+            exit 1
+          fi
+
+          buscar() {
+            curl -sS -f -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+              "$JIRA_BASE_URL/rest/api/3/issue/$1?fields=issuetype,parent,issuelinks"
+          }
+
+          # Chaves dos Requisitos ligados à issue, uma por linha.
+          requisitos() {
+            jq -r --arg tipo "$TIPO_REQUISITO" --arg link "$TIPO_LINK" '
+              .fields.issuelinks[]
+              | select(.type.name == $link or .type.inward == $link or .type.outward == $link)
+              | (.inwardIssue // .outwardIssue)
+              | select(.fields.issuetype.name == $tipo)
+              | .key' <<<"$1" | tr -d '\r' | sort -u
+          }
+
+          for id in $ids; do
+            json=$(buscar "$id") || { erro "$id: não consegui ler no Jira (não existe ou sem acesso)."; continue; }
+
+            # A própria issue precisa ter Requisito, sem herdar do pai.
+            proprios=$(requisitos "$json")
+            if [ -z "$proprios" ]; then
+              erro "$id: sem link '$TIPO_LINK' para uma issue do tipo $TIPO_REQUISITO (docs/rastreabilidade.md)."
+              continue
+            fi
+
+            # Os Requisitos da issue precisam estar entre os do pai. Épico não
+            # carrega Requisito, então só vale quando o pai é Task/História.
+            pai=$(jq -r '.fields.parent.key // empty' <<<"$json")
+            if [ -z "$pai" ]; then
+              ok "$id -> $(paste -sd, <<<"$proprios") (sem pai)"
+              continue
+            fi
+            json_pai=$(buscar "$pai") || { erro "$id: não consegui ler o pai $pai."; continue; }
+            if [ "$(jq -r '.fields.issuetype.hierarchyLevel' <<<"$json_pai")" -ge 1 ]; then
+              ok "$id -> $(paste -sd, <<<"$proprios") (pai $pai é épico)"
+              continue
+            fi
+            fora=$(comm -23 <(echo "$proprios") <(requisitos "$json_pai"))
+            if [ -n "$fora" ]; then
+              erro "$id: Requisito(s) $(paste -sd, <<<"$fora") não estão entre os do pai $pai."
+            else
+              ok "$id -> $(paste -sd, <<<"$proprios") (todos no pai $pai)"
+            fi
+          done
+
+          [ "$falhas" -eq 0 ] || exit 1
+          echo "Todas as tarefas têm Requisito vinculado."
