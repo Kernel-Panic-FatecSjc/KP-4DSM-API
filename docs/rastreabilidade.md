@@ -103,19 +103,28 @@ Requisito ←(é relacionado com)— User Story
 * Branch: `tipo/SCRUM-{ID}-descricao-curta` (ver [estratégia de branches](estrategiabranch.md)).
 * Commit: `tipo(SCRUM-{ID}): descrição` (ver [padrão de commit](padraocommit.md)).
 * Título do PR: mesmo formato do commit.
+* Todo commit do PR leva o escopo `tipo(SCRUM-{ID})`. A pipeline consulta o Jira para cada ID citado (ver [Garantia da regra](#garantia-da-regra)).
 * A branch é aberta a partir da Task no Jira, para que branches, commits e PRs apareçam no card.
 
 ---
 
 ## Garantia da regra
 
-O Jira não obriga o link entre User Story/Task e Requisito, então a regra é cobrada em dois pontos:
+O Jira não obriga o link entre User Story/Task e Requisito, então a regra é cobrada em três pontos:
 
-1. **Automação do Jira** (avisa na hora):
+1. **Pipeline do PR** (barra o merge): o workflow `.github/workflows/rastreabilidade-requisito.yaml`, check **Requisito vinculado**, consulta o Jira a cada push no PR.
+   * **O que ele lê:** o `SCRUM-{ID}` do nome da branch e o do escopo `tipo(SCRUM-{ID})` de cada commit do PR. ID citado só na descrição do commit não conta. Commits de merge de verdade (dois pais) ficam de fora.
+   * **Todo commit** precisa ter o escopo `tipo(SCRUM-{ID})`. Sem ele, o ID do commit não seria checado e o check falha.
+   * **Para cada ID**, a Task ou sub-task precisa ter pelo menos um link `é relacionado com` para uma issue do tipo Requisito. Sub-task não herda os Requisitos do pai.
+   * **Os Requisitos** da issue precisam estar todos entre os do pai (Task ou User Story). Pai que é Épico não conta, já que Épico não carrega Requisito.
+   * **Se falhar:** ID inexistente ou sem acesso no Jira, Requisito ausente ou Requisito fora do pai.
+   * **Configuração:** secrets `JIRA_BASE_URL`, `JIRA_EMAIL` e `JIRA_API_TOKEN` no GitHub, e o check marcado como obrigatório na ruleset da `main` (ver [estratégia de branches](estrategiabranch.md)).
+   * **Limite:** vale só para PRs. O commit direto de documentação na `main` não passa por ele, então a regra desses fica a cargo da planning.
+2. **Automação do Jira** (avisa na hora):
    * **Gatilho:** issue criada.
    * **Condição:** tipo de issue = História, Tarefa ou Bug **e** nenhuma issue vinculada pelo link `é relacionado com` é do tipo Requisito.
    * **Ação:** adiciona a etiqueta `sem-requisito` e comenta na issue pedindo o vínculo.
-2. **Planning** (barra a entrada na sprint): a DoR exige o vínculo, e o filtro de itens sem Requisito deve voltar vazio antes da sprint começar. Na mesma revisão, a equipe confere se os Requisitos de cada Task estão entre os da sua User Story e se alguma Task tem mais de um Requisito funcional, já que o Jira não valida isso sozinho.
+3. **Planning** (barra a entrada na sprint): a DoR exige o vínculo, e o filtro de itens sem Requisito deve voltar vazio antes da sprint começar. Na mesma revisão, a equipe confere se os Requisitos de cada Task estão entre os da sua User Story e se alguma Task tem mais de um Requisito funcional, já que o Jira não valida isso sozinho.
 
 ## Consultas (JQL)
 

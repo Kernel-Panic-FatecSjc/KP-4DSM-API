@@ -67,6 +67,7 @@ Atualizações de documentação e entregáveis que não são código (atas, dia
 | PR de tarefa vai para a `main` | `.github/workflows/estrategia-branch.yaml` | Estratégia de branch |
 | Branch `tipo/SCRUM-{ID}-descricao-curta` | `.github/workflows/estrategia-branch.yaml` | Estratégia de branch |
 | Título e commits `tipo(SCRUM-{ID}): descrição`, mesmo ID na branch e no título | `.github/workflows/estrategia-branch.yaml` e hook `commit-msg` | Estratégia de branch |
+| Tarefa da branch e dos commits ligada a Requisito no Jira, dentro dos Requisitos do pai (ver [rastreabilidade](rastreabilidade.md)) | `.github/workflows/rastreabilidade-requisito.yaml` | Requisito vinculado |
 | CI verde (build, lint, testes, migrations) | `.github/workflows/ci.yaml` | CI ok |
 | Code review por alguém que não é o autor | Ruleset da `main` (1 aprovação; o autor não aprova o próprio PR) | Review |
 | Validação em staging e aceite do PO | `.github/workflows/validacao-staging.yaml` | staging/aceite-po |
@@ -78,5 +79,6 @@ Atualizações de documentação e entregáveis que não são código (atas, dia
 
 * Environment `aceite-staging`: *required reviewers* com o PO e *prevent self-review* marcado.
 * Ruleset `main - histórico`, sem bypass: bloquear *force push* e exclusão.
-* Ruleset `main - merge`: exigir PR com 1 aprovação, descartar aprovações quando houver commit novo, e exigir os checks `CI ok`, `Estratégia de branch` e `staging/aceite-po`. Os membros do time ficam como *bypass* para permitir o push direto de documentação; o bypass num PR fica registrado, e o job **Push direto na main** fica vermelho se um commit direto tiver algo além de documentação.
+* Ruleset `main - merge`: exigir PR com 1 aprovação, descartar aprovações quando houver commit novo, e exigir os checks `CI ok`, `Estratégia de branch`, `Requisito vinculado` e `staging/aceite-po`. Os membros do time ficam como *bypass* para permitir o push direto de documentação; o bypass num PR fica registrado, e o job **Push direto na main** fica vermelho se um commit direto tiver algo além de documentação.
+* Secrets do repositório `JIRA_BASE_URL`, `JIRA_EMAIL` e `JIRA_API_TOKEN`, usados pelo check `Requisito vinculado` (o token só precisa de leitura no Jira). PR de fork não recebe secrets, e o check falha nele.
 * Branch `staging` sem ruleset: ela é sobrescrita pelo workflow a cada validação.
