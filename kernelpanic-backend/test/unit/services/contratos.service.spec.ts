@@ -8,7 +8,12 @@ import { StatusContrato } from '../../../src/generated/prisma/client';
 import { ContratosService } from '../../../src/contratos/contratos.service';
 import { PrismaService } from '../../../src/prisma/prisma.service';
 
-const ORGAO = { id: 'orgao-1', nome: 'Prefeitura', cnpj: null, ativo: true };
+const ORGAO = {
+  id: 'orgao-1',
+  nome: 'Prefeitura',
+  cnpj: null,
+  ativo: true,
+};
 
 interface ContratoDeTeste {
   id: string;
@@ -23,6 +28,7 @@ interface ContratoDeTeste {
   orgaoId: string;
   orgao: typeof ORGAO;
 }
+
 const CONTRATO: ContratoDeTeste = {
   id: 'contrato-1',
   numero: 'CTR-2026-001',
@@ -36,6 +42,7 @@ const CONTRATO: ContratoDeTeste = {
   orgaoId: ORGAO.id,
   orgao: ORGAO,
 };
+
 const DTO_CRIAR = {
   numero: 'CTR-2026-001',
   objeto: 'Monitoramento',
@@ -46,19 +53,30 @@ const DTO_CRIAR = {
 
 describe('ContratosService', () => {
   let service: ContratosService;
+
   const prismaMock = {
     contrato: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
+      count: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
-    orgao: { findUnique: jest.fn() },
+    orgao: {
+      findUnique: jest.fn(),
+    },
+    $transaction: jest.fn(
+      (operacoes: Promise<unknown>[]) => Promise.all(operacoes),
+    ),
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+
+    prismaMock.contrato.findMany.mockResolvedValue([CONTRATO]);
+    prismaMock.contrato.count.mockResolvedValue(1);
     prismaMock.contrato.findUnique.mockResolvedValue(null);
+
     prismaMock.contrato.create.mockImplementation(({ data }) => ({
       ...CONTRATO,
       ...Object.fromEntries(
@@ -66,12 +84,14 @@ describe('ContratosService', () => {
       ),
       orgao: ORGAO,
     }));
+
     prismaMock.contrato.update.mockImplementation(({ data }) => ({
       ...CONTRATO,
       ...Object.fromEntries(
         Object.entries(data).filter(([, valor]) => valor !== undefined),
       ),
     }));
+
     prismaMock.orgao.findUnique.mockResolvedValue(ORGAO);
 
     const module: TestingModule = await Test.createTestingModule({
@@ -81,15 +101,149 @@ describe('ContratosService', () => {
       ],
     }).compile();
 
-    service = module.get(ContratosService);
+    service = module.get<ContratosService>(ContratosService);
   });
 
-  // buscarPorId e validarNumeroUnico usam o mesmo findUnique: o primeiro é por id, o segundo por número.
-  function contratoExistente(sobrescrever: Partial<ContratoDeTeste> = {}) {
+  // buscarPorId e validarNumeroUnico usam o mesmo findUnique.
+  function contratoExistente(
+    sobrescrever: Partial<ContratoDeTeste> = {},
+  ) {
     prismaMock.contrato.findUnique.mockImplementation(({ where }) =>
       where.id ? { ...CONTRATO, ...sobrescrever } : null,
     );
   }
+
+  describe('listar', () => {
+    it('retorna contratos com paginação padrão', async () => {
+      const resultado = await service.listar({});
+
+      expect(resultado).toEqual(
+        expect.objectContaining({
+          contratos: [
+            expect.objectContaining({
+              id: CONTRATO.id,
+              numero: CONTRATO.numero,
+              quantidadeEstacoes: 0,
+            }),
+          ],
+          total: 1,
+          pagina: 1,
+          tamanho: expect.any(Number),
+        }),
+      );
+
+      expect(prismaMock.contrato.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: undefined,
+            orgaoId: undefined,
+          }),
+          include: expect.any(Object),
+          orderBy: [{ criadoEm: 'desc' }, { id: 'asc' }],
+          skip: 0,
+          take: expect.any(Number),
+        }),
+      );
+
+      expect(prismaMock.contrato.count).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          status: undefined,
+          orgaoId: undefined,
+        }),
+      });
+    });
+
+    it('aplica filtros de status e órgão', async () => {
+      await service.listar({
+        status: StatusContrato.RASCUNHO,
+        orgaoId: ORGAO.id,
+      });
+
+      expect(prismaMock.contrato.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: StatusContrato.RASCUNHO,
+            orgaoId: ORGAO.id,
+          }),
+        }),
+      );
+
+      expect(prismaMock.contrato.count).toHaveBeenCalledWith({
+        where: expect.objectContaining({
+          status: StatusContrato.RASCUNHO,
+          orgaoId: ORGAO.id,
+        }),
+      });
+    });
+
+    it('aplica busca textual sem espaços extras nas extremidades', async () => {
+      await service.listar({ busca: '  Monitoramento  ' });
+
+      expect(prismaMock.contrato.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: [
+              {
+                numero: {
+                  contains: 'Monitoramento',
+                  mode: 'insensitive',
+                },
+              },
+              {
+                objeto: {
+                  contains: 'Monitoramento',
+                  mode: 'insensitive',
+                },
+              },
+              {
+                orgao: {
+                  nome: {
+                    contains: 'Monitoramento',
+                    mode: 'insensitive',
+                  },
+                },
+              },
+            ],
+          }),
+        }),
+      );
+    });
+
+    it('calcula o deslocamento ao consultar outra página', async () => {
+      await service.listar({ pagina: 2, tamanho: 10 });
+
+      expect(prismaMock.contrato.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          skip: 10,
+          take: 10,
+        }),
+      );
+    });
+
+    it('retorna a quantidade total informada pelo banco', async () => {
+      prismaMock.contrato.count.mockResolvedValue(27);
+      prismaMock.contrato.findMany.mockResolvedValue([CONTRATO]);
+
+      const resultado = await service.listar({
+        pagina: 2,
+        tamanho: 10,
+      });
+
+      expect(resultado.total).toBe(27);
+      expect(resultado.pagina).toBe(2);
+      expect(resultado.tamanho).toBe(10);
+    });
+
+    it('retorna lista vazia quando não existem contratos', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([]);
+      prismaMock.contrato.count.mockResolvedValue(0);
+
+      const resultado = await service.listar({});
+
+      expect(resultado.contratos).toEqual([]);
+      expect(resultado.total).toBe(0);
+    });
+  });
 
   describe('criar', () => {
     it('cria como RASCUNHO por padrão', async () => {
@@ -104,6 +258,7 @@ describe('ContratosService', () => {
           }),
         }),
       );
+
       expect(contrato.encerradoEm).toBeNull();
     });
 
@@ -125,6 +280,7 @@ describe('ContratosService', () => {
           fimVigencia: '2026-05-01',
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
+
       expect(prismaMock.contrato.create).not.toHaveBeenCalled();
     });
 
@@ -134,10 +290,11 @@ describe('ContratosService', () => {
       await expect(service.criar(DTO_CRIAR)).rejects.toBeInstanceOf(
         ConflictException,
       );
+
       expect(prismaMock.contrato.create).not.toHaveBeenCalled();
     });
 
-    it('converte a violação de unicidade do banco (corrida) em 409', async () => {
+    it('converte violação de unicidade do banco em conflito', async () => {
       prismaMock.contrato.create.mockRejectedValue(
         Object.assign(new Error('unique'), { code: 'P2002' }),
       );
@@ -163,9 +320,14 @@ describe('ContratosService', () => {
     });
 
     it('recusa órgão inativo', async () => {
-      prismaMock.orgao.findUnique.mockResolvedValue({ ...ORGAO, ativo: false });
+      prismaMock.orgao.findUnique.mockResolvedValue({
+        ...ORGAO,
+        ativo: false,
+      });
 
-      await expect(service.criar(DTO_CRIAR)).rejects.toThrow('Orgao inativo');
+      await expect(service.criar(DTO_CRIAR)).rejects.toThrow(
+        'Orgao inativo',
+      );
     });
 
     it('permite criar já ATIVO', async () => {
@@ -177,9 +339,12 @@ describe('ContratosService', () => {
       expect(contrato.status).toBe(StatusContrato.ATIVO);
     });
 
-    it('recusa criar direto como SUSPENSO (transição inexistente a partir de RASCUNHO)', async () => {
+    it('recusa criar diretamente como SUSPENSO', async () => {
       await expect(
-        service.criar({ ...DTO_CRIAR, status: StatusContrato.SUSPENSO }),
+        service.criar({
+          ...DTO_CRIAR,
+          status: StatusContrato.SUSPENSO,
+        }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -194,10 +359,10 @@ describe('ContratosService', () => {
   });
 
   describe('buscarPorId', () => {
-    it('lança 404 quando não existe', async () => {
-      await expect(service.buscarPorId('x')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+    it('lança 404 quando o contrato não existe', async () => {
+      await expect(
+        service.buscarPorId('x'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
@@ -208,10 +373,12 @@ describe('ContratosService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it('edita campos simples sem tocar no status', async () => {
+    it('edita campos simples sem alterar o status', async () => {
       contratoExistente();
 
-      await service.atualizar(CONTRATO.id, { objeto: 'Novo objeto' });
+      await service.atualizar(CONTRATO.id, {
+        objeto: 'Novo objeto',
+      });
 
       expect(prismaMock.contrato.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -223,14 +390,19 @@ describe('ContratosService', () => {
       );
     });
 
-    it('valida a vigência usando o valor já gravado quando só um lado é enviado', async () => {
+    it('valida a vigência usando o valor já gravado', async () => {
       contratoExistente();
 
       await expect(
-        service.atualizar(CONTRATO.id, { fimVigencia: '2025-12-31' }),
+        service.atualizar(CONTRATO.id, {
+          fimVigencia: '2025-12-31',
+        }),
       ).rejects.toBeInstanceOf(BadRequestException);
+
       await expect(
-        service.atualizar(CONTRATO.id, { inicioVigencia: '2027-01-01' }),
+        service.atualizar(CONTRATO.id, {
+          inicioVigencia: '2027-01-01',
+        }),
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
@@ -240,22 +412,25 @@ describe('ContratosService', () => {
       );
 
       await expect(
-        service.atualizar(CONTRATO.id, { numero: 'CTR-OUTRO' }),
+        service.atualizar(CONTRATO.id, {
+          numero: 'CTR-OUTRO',
+        }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('não revalida o número quando ele não mudou', async () => {
-      prismaMock.contrato.findUnique.mockImplementation(({ where }) =>
-        where.id ? CONTRATO : CONTRATO,
-      );
+      prismaMock.contrato.findUnique.mockImplementation(() => CONTRATO);
 
       await expect(
-        service.atualizar(CONTRATO.id, { numero: CONTRATO.numero }),
+        service.atualizar(CONTRATO.id, {
+          numero: CONTRATO.numero,
+        }),
       ).resolves.toBeDefined();
     });
 
     it('recusa mover para órgão inativo', async () => {
       contratoExistente();
+
       prismaMock.orgao.findUnique.mockResolvedValue({
         ...ORGAO,
         id: 'orgao-2',
@@ -263,18 +438,23 @@ describe('ContratosService', () => {
       });
 
       await expect(
-        service.atualizar(CONTRATO.id, { orgaoId: 'orgao-2' }),
+        service.atualizar(CONTRATO.id, {
+          orgaoId: 'orgao-2',
+        }),
       ).rejects.toThrow('Orgao inativo');
     });
 
-    it('converte a violação de unicidade do banco (corrida) em 409', async () => {
+    it('converte violação de unicidade do banco em conflito', async () => {
       contratoExistente();
+
       prismaMock.contrato.update.mockRejectedValue(
         Object.assign(new Error('unique'), { code: 'P2002' }),
       );
 
       await expect(
-        service.atualizar(CONTRATO.id, { numero: 'CTR-NOVO' }),
+        service.atualizar(CONTRATO.id, {
+          numero: 'CTR-NOVO',
+        }),
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
@@ -303,6 +483,7 @@ describe('ContratosService', () => {
       await expect(
         service.atualizar(CONTRATO.id, { status: novo }),
       ).rejects.toBeInstanceOf(BadRequestException);
+
       expect(prismaMock.contrato.update).not.toHaveBeenCalled();
     });
 
@@ -315,7 +496,9 @@ describe('ContratosService', () => {
 
       expect(prismaMock.contrato.update).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ encerradoEm: expect.any(Date) }),
+          data: expect.objectContaining({
+            encerradoEm: expect.any(Date),
+          }),
         }),
       );
     });
@@ -324,17 +507,20 @@ describe('ContratosService', () => {
       contratoExistente({ status: StatusContrato.ENCERRADO });
 
       await expect(
-        service.atualizar(CONTRATO.id, { objeto: 'tentativa' }),
+        service.atualizar(CONTRATO.id, {
+          objeto: 'tentativa',
+        }),
       ).rejects.toThrow('encerrado');
+
       expect(prismaMock.contrato.update).not.toHaveBeenCalled();
     });
   });
 
   describe('encerrar', () => {
     it('lança 404 quando o contrato não existe', async () => {
-      await expect(service.encerrar('x')).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.encerrar('x'),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('encerra sem excluir, gravando status e encerradoEm', async () => {
@@ -350,15 +536,17 @@ describe('ContratosService', () => {
           },
         }),
       );
+
       expect(contrato.status).toBe(StatusContrato.ENCERRADO);
     });
 
-    it('recusa reencerrar para não sobrescrever o encerradoEm original', async () => {
+    it('recusa reencerrar para preservar o encerradoEm original', async () => {
       contratoExistente({ status: StatusContrato.ENCERRADO });
 
-      await expect(service.encerrar(CONTRATO.id)).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
+      await expect(
+        service.encerrar(CONTRATO.id),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
       expect(prismaMock.contrato.update).not.toHaveBeenCalled();
     });
   });
