@@ -129,6 +129,29 @@ describe('IngestaoService', () => {
         },
       ]);
     });
+
+    it('reenvio do buffer (US03): dois ingerir() com mesmo unixtime fazem flush chamar registrarMedidas com ambas as medidas — skipDuplicates no banco descarta a duplicata', async () => {
+      // Simula o cenário: ESP32 envia, API aceita, resposta não chega → reenvio.
+      // O IngestaoService acumula as duas entradas no buffer antes do flush.
+      prismaMock.estacao.findUnique.mockResolvedValue({
+        ...ESTACAO_COM_COORDENADAS,
+        parametros: [{ id: 'parametro-temp', tipoParametro: { nome: 'temperatura' } }],
+      });
+
+      await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: { temperatura: 25 } });
+      await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: { temperatura: 25 } });
+
+      await service.flush();
+
+      // registrarMedidas recebe as duas entradas do buffer — o próprio
+      // banco descarta a linha duplicada via ON CONFLICT DO NOTHING
+      // (skipDuplicates: true no TelemetriaService.registrarMedidas).
+      expect(telemetriaMock.registrarMedidas).toHaveBeenCalledTimes(1);
+      expect(telemetriaMock.registrarMedidas).toHaveBeenCalledWith([
+        { parametroId: 'parametro-temp', estacaoId: ESTACAO_COM_COORDENADAS.id, valor: 25, unixtime: 1_760_000_000 },
+        { parametroId: 'parametro-temp', estacaoId: ESTACAO_COM_COORDENADAS.id, valor: 25, unixtime: 1_760_000_000 },
+      ]);
+    });
   });
 
   describe('listarParametros', () => {

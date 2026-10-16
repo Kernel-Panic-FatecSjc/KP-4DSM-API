@@ -1,5 +1,5 @@
 // Valida a mensagem no hook commit-msg com a mesma regra da CI
-// (.github/workflows/padrao-commit-pr.yaml). Se mudar o padrão lá, mude aqui.
+// (.github/workflows/estrategia-branch.yaml). Se mudar o padrão lá, mude aqui.
 const PADRAO = /^(feat|fix|docs|style|refactor|test|chore|ci)\(SCRUM-[0-9]+\): .+/;
 
 const AJUDA = `mensagem fora do padrão.
