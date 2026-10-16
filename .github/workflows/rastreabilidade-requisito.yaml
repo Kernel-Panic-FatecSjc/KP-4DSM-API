@@ -31,7 +31,8 @@ jobs:
       - name: Task da branch e dos commits ligada a um Requisito
         env:
           BRANCH: ${{ github.head_ref }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
@@ -57,11 +58,13 @@ jobs:
 
           # ID da branch e o do escopo tipo(SCRUM-{ID}) de cada commit: SCRUM-{ID}
           # citado só na descrição não é tarefa. Commits de merge ficam de fora
-          # (--no-merges), como em estrategia-branch.yaml.
+          # (--no-merges), como em estrategia-branch.yaml. O intervalo é main..cabeça do
+          # PR: o base.sha do evento e o HEAD (merge com a main atual) trariam
+          # commits que entraram na main depois da base.
           ids=$(
             {
               printf '%s\n' "$BRANCH" | grep -oE 'SCRUM-[0-9]+' | head -n 1 || true
-              git log --no-merges --format=%s "$BASE_SHA..HEAD" \
+              git log --no-merges --format=%s "origin/$BASE_REF..$HEAD_SHA" \
                 | grep -oE '^[a-z]+\(SCRUM-[0-9]+\)' | grep -oE 'SCRUM-[0-9]+' || true
             } | sort -u
           )
@@ -72,7 +75,7 @@ jobs:
               erro "Commit sem o escopo tipo(SCRUM-{ID}): $assunto"
               echo "- ❌ Commit sem o escopo \`tipo(SCRUM-{ID})\`: $assunto" >> "$extras"
             fi
-          done < <(git log --no-merges --format=%s "$BASE_SHA..HEAD")
+          done < <(git log --no-merges --format=%s "origin/$BASE_REF..$HEAD_SHA")
 
           if [ -z "$ids" ]; then
             echo "::error::Nenhum SCRUM-{ID} na branch nem nos commits."
