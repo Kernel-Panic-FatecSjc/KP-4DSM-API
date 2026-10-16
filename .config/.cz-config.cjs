@@ -1,6 +1,6 @@
 // Perguntas do `npm run commit` (commitizen + cz-customizable). Gera mensagens
 // no padrão validado pelo commit-msg (.commitlintrc.cjs) e pela CI
-// (.github/workflows/padrao-commit-pr.yaml): tipo(SCRUM-{ID}): descrição
+// (.github/workflows/estrategia-branch.yaml): tipo(SCRUM-{ID}): descrição
 // Padrão completo: docs/padraocommit.md
 module.exports = {
   types: [

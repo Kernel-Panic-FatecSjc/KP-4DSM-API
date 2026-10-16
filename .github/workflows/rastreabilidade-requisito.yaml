@@ -1,0 +1,226 @@
+name: Rastreabilidade de requisito
+
+# Garante o que docs/rastreabilidade.md define: toda Task (ou sub-task) citada
+# na branch ou nos commits do PR está ligada a um Requisito no Jira, e publica
+# no PR um comentário com o mapa tarefa -> pai -> Requisitos, com links pro Jira.
+# Secrets: JIRA_BASE_URL (https://empresa.atlassian.net), JIRA_EMAIL, JIRA_API_TOKEN.
+# Se o nome do tipo de issue ou do link for outro no Jira, ajuste as env abaixo.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  requisito:
+    name: Requisito vinculado
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Task da branch e dos commits ligada a um Requisito
+        env:
+          BRANCH: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          TIPO_REQUISITO: Requisito
+          TIPO_LINK: Relates
+        run: |
+          falhas=0
+          erro() { echo "::error::$1"; falhas=$((falhas + 1)); }
+          ok() { echo "  ok   $1"; }
+
+          if [ -z "$JIRA_BASE_URL" ] || [ -z "$JIRA_EMAIL" ] || [ -z "$JIRA_API_TOKEN" ]; then
+            echo "::error::Secrets do Jira ausentes (PR de fork não recebe secrets)."
+            exit 1
+          fi
+
+          # Arquivos dos comentários, publicados no passo seguinte: o mapa do PR e
+          # uma linha por tarefa (rows/SCRUM-N.md), usada no comentário de cada commit.
+          linhas="$RUNNER_TEMP/linhas.md"
+          extras="$RUNNER_TEMP/extras.md"
+          mapa="$RUNNER_TEMP/mapa.md"
+          rows="$RUNNER_TEMP/rows"
+          rm -rf "$rows" "$mapa"
+          mkdir -p "$rows"
+          : > "$linhas"
+          : > "$extras"
+
+          # Registra a linha da tarefa no mapa do PR e no comentário do commit.
+          registrar() { echo "$2" >> "$linhas"; echo "$2" > "$rows/$1.md"; }
+
+          # ID da branch e o do escopo tipo(SCRUM-{ID}) de cada commit: SCRUM-{ID}
+          # citado só na descrição não é tarefa. Commits de merge ficam de fora
+          # (--no-merges), como em estrategia-branch.yaml. O intervalo é main..cabeça do
+          # PR: o base.sha do evento e o HEAD (merge com a main atual) trariam
+          # commits que entraram na main depois da base.
+          ids=$(
+            {
+              printf '%s\n' "$BRANCH" | grep -oE 'SCRUM-[0-9]+' | head -n 1 || true
+              git log --no-merges --format=%s "origin/$BASE_REF..$HEAD_SHA" \
+                | grep -oE '^[a-z]+\(SCRUM-[0-9]+\)' | grep -oE 'SCRUM-[0-9]+' || true
+            } | sort -u
+          )
+          # Sem o escopo tipo(SCRUM-{ID}) o ID do commit não seria checado no Jira.
+          while IFS= read -r assunto; do
+            [ -z "$assunto" ] && continue
+            if ! printf '%s' "$assunto" | grep -qE '^[a-z]+\(SCRUM-[0-9]+\)'; then
+              erro "Commit sem o escopo tipo(SCRUM-{ID}): $assunto"
+              echo "- ❌ Commit sem o escopo \`tipo(SCRUM-{ID})\`: $assunto" >> "$extras"
+            fi
+          done < <(git log --no-merges --format=%s "origin/$BASE_REF..$HEAD_SHA")
+
+          if [ -z "$ids" ]; then
+            echo "::error::Nenhum SCRUM-{ID} na branch nem nos commits."
+            exit 1
+          fi
+
+          buscar() {
+            curl -sS -f -u "$JIRA_EMAIL:$JIRA_API_TOKEN" \
+              "$JIRA_BASE_URL/rest/api/3/issue/$1?fields=summary,issuetype,parent,issuelinks"
+          }
+
+          link() { echo "[$1]($JIRA_BASE_URL/browse/$1)"; }
+
+          # Requisitos ligados à issue, como "chave<TAB>título", um por linha.
+          requisitos() {
+            jq -r --arg tipo "$TIPO_REQUISITO" --arg link "$TIPO_LINK" '
+              .fields.issuelinks[]
+              | select(.type.name == $link or .type.inward == $link or .type.outward == $link)
+              | (.inwardIssue // .outwardIssue)
+              | select(.fields.issuetype.name == $tipo)
+              | "\(.key)\t\(.fields.summary | gsub("\\|"; "/"))"' <<<"$1" | tr -d '\r' | sort -u
+          }
+
+          for id in $ids; do
+            json=$(buscar "$id") || {
+              erro "$id: não consegui ler no Jira (não existe ou sem acesso)."
+              registrar "$id" "| $(link "$id") | — | — | — | ❌ não existe ou sem acesso |"
+              continue
+            }
+            tipo=$(jq -r '.fields.issuetype.name' <<<"$json" | tr -d '\r')
+            titulo=$(jq -r '.fields.summary | gsub("\\|"; "/")' <<<"$json" | tr -d '\r')
+            pai=$(jq -r '.fields.parent.key // empty' <<<"$json" | tr -d '\r')
+            lista=$(requisitos "$json")
+            proprios=$(cut -f1 <<<"$lista")
+            reqs_md=$(while IFS=$'\t' read -r k t; do if [ -n "$k" ]; then echo "$(link "$k") $t"; fi; done <<<"$lista" | paste -sd'~' | sed 's/~/<br>/g')
+            pai_md=${pai:+$(link "$pai")}
+            pai_md=${pai_md:-—}
+            resultado="✅"
+
+            if [ -z "$proprios" ]; then
+              # A própria issue precisa ter Requisito, sem herdar do pai.
+              erro "$id: sem link '$TIPO_LINK' para uma issue do tipo $TIPO_REQUISITO (docs/rastreabilidade.md)."
+              resultado="❌ sem Requisito"
+              reqs_md="—"
+            elif [ -z "$pai" ]; then
+              ok "$id -> $(paste -sd, <<<"$proprios") (sem pai)"
+            else
+              # Os Requisitos da issue precisam estar entre os do pai. Épico não
+              # carrega Requisito, então só vale quando o pai é Task/História.
+              if ! json_pai=$(buscar "$pai"); then
+                erro "$id: não consegui ler o pai $pai."
+                resultado="❌ não consegui ler o pai"
+              elif [ "$(jq -r '.fields.issuetype.hierarchyLevel' <<<"$json_pai")" -ge 1 ]; then
+                ok "$id -> $(paste -sd, <<<"$proprios") (pai $pai é épico)"
+              else
+                fora=$(comm -23 <(echo "$proprios") <(requisitos "$json_pai" | cut -f1))
+                if [ -n "$fora" ]; then
+                  erro "$id: Requisito(s) $(paste -sd, <<<"$fora") não estão entre os do pai $pai."
+                  resultado="❌ fora do pai: $(paste -sd, <<<"$fora")"
+                else
+                  ok "$id -> $(paste -sd, <<<"$proprios") (todos no pai $pai)"
+                fi
+              fi
+            fi
+            registrar "$id" "| $(link "$id") $titulo | $tipo | $pai_md | $reqs_md | $resultado |"
+          done
+
+          {
+            echo "<!-- rastreabilidade-requisito -->"
+            echo "### Rastreabilidade: tarefas e Requisitos"
+            echo
+            echo "| Item | Tipo | Pai | Requisitos | Resultado |"
+            echo "| --- | --- | --- | --- | --- |"
+            cat "$linhas"
+            [ -s "$extras" ] && { echo; cat "$extras"; }
+            echo
+            echo "_Atualizado a cada push pelo check **Requisito vinculado**._"
+          } > "$mapa"
+
+          [ "$falhas" -eq 0 ] || exit 1
+          echo "Todas as tarefas têm Requisito vinculado."
+
+      # Fora do check de propósito: falha ao comentar (fork, sem permissão) não
+      # muda o resultado da rastreabilidade.
+      - name: Mapa de Requisitos no PR e em cada commit
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mapa="$RUNNER_TEMP/mapa.md"
+          [ -f "$mapa" ] || exit 0
+          # Um comentário por commit do PR (merges de fora; os commits que vêm por
+          # baixo de um merge entram, desde que ainda não estejam na main). Cada
+          # rerun cria o que falta e corrige o que mudou no Jira.
+          marcador="<!-- rastreabilidade-commit -->"
+          git log --no-merges --format='%H%x09%s' "origin/$BASE_REF..$HEAD_SHA" | while IFS=$'\t' read -r sha assunto; do
+            id=$(printf '%s' "$assunto" | grep -oE '^[a-z]+\(SCRUM-[0-9]+\)' | grep -oE 'SCRUM-[0-9]+' || true)
+            corpo=$(
+              echo "$marcador"
+              echo "### Requisito deste commit"
+              echo
+              if [ -n "$id" ] && [ -f "$RUNNER_TEMP/rows/$id.md" ]; then
+                echo "| Item | Tipo | Pai | Requisitos | Resultado |"
+                echo "| --- | --- | --- | --- | --- |"
+                cat "$RUNNER_TEMP/rows/$id.md"
+              else
+                echo '❌ Commit sem o escopo `tipo(SCRUM-{ID})`: não dá para ligá-lo a um Requisito.'
+              fi
+              echo
+              echo "_Atualizado quando o check **Requisito vinculado** roda de novo._"
+            )
+            existente=$(gh api "repos/$REPO/commits/$sha/comments" --paginate \
+              --jq ".[] | select(.body | startswith(\"$marcador\")) | .id" | sed -n 1p) \
+              || { echo "::warning::Sem acesso aos comentários de ${sha:0:7}"; continue; }
+            if [ -z "$existente" ]; then
+              gh api "repos/$REPO/commits/$sha/comments" -f body="$corpo" > /dev/null \
+                && echo "  novo       ${sha:0:7} $assunto" || echo "::warning::Falha ao comentar ${sha:0:7}"
+            else
+              atual=$(gh api "repos/$REPO/comments/$existente" --jq .body | tr -d '\r')
+              if [ "$atual" = "$corpo" ]; then
+                echo "  igual      ${sha:0:7} $assunto"
+              else
+                gh api -X PATCH "repos/$REPO/comments/$existente" -f body="$corpo" > /dev/null \
+                  && echo "  atualizado ${sha:0:7} $assunto" || echo "::warning::Falha ao atualizar ${sha:0:7}"
+              fi
+            fi
+          done || true
+
+          # O mapa do PR vai por último e é recriado a cada execução: editar o
+          # comentário manteria a posição antiga e ele ficaria no meio da conversa.
+          # Publica o novo antes de apagar o anterior, pra nunca ficar sem mapa.
+          antigos=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.body | startswith("<!-- rastreabilidade-requisito -->")) | .id')
+          gh pr comment "$PR" --body-file "$mapa"
+          for antigo in $antigos; do
+            gh api -X DELETE "repos/$REPO/issues/comments/$antigo" > /dev/null
+          done
