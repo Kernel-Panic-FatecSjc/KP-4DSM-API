@@ -7,8 +7,7 @@ name: Requisitos no commit da main
 
 on:
   push:
-    # TEMPORÁRIO (SCRUM-90): a branch abaixo só entra para testar; remover antes do merge.
-    branches: [main, ci/SCRUM-90-integracao-rastreabilidade-req]
+    branches: [main]
 
 permissions:
   contents: write
