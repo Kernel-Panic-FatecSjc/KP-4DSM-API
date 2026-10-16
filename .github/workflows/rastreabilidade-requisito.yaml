@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
-      contents: read
+      contents: write
       pull-requests: write
 
     steps:
@@ -48,13 +48,19 @@ jobs:
             exit 1
           fi
 
-          # Arquivos do comentário do PR, publicado no passo seguinte.
+          # Arquivos dos comentários, publicados no passo seguinte: o mapa do PR e
+          # uma linha por tarefa (rows/SCRUM-N.md), usada no comentário de cada commit.
           linhas="$RUNNER_TEMP/linhas.md"
           extras="$RUNNER_TEMP/extras.md"
           mapa="$RUNNER_TEMP/mapa.md"
+          rows="$RUNNER_TEMP/rows"
+          rm -rf "$rows" "$mapa"
+          mkdir -p "$rows"
           : > "$linhas"
           : > "$extras"
-          rm -f "$mapa"
+
+          # Registra a linha da tarefa no mapa do PR e no comentário do commit.
+          registrar() { echo "$2" >> "$linhas"; echo "$2" > "$rows/$1.md"; }
 
           # ID da branch e o do escopo tipo(SCRUM-{ID}) de cada commit: SCRUM-{ID}
           # citado só na descrição não é tarefa. Commits de merge ficam de fora
@@ -102,7 +108,7 @@ jobs:
           for id in $ids; do
             json=$(buscar "$id") || {
               erro "$id: não consegui ler no Jira (não existe ou sem acesso)."
-              echo "| $(link "$id") | — | — | — | ❌ não existe ou sem acesso |" >> "$linhas"
+              registrar "$id" "| $(link "$id") | — | — | — | ❌ não existe ou sem acesso |"
               continue
             }
             tipo=$(jq -r '.fields.issuetype.name' <<<"$json" | tr -d '\r')
@@ -140,7 +146,7 @@ jobs:
                 fi
               fi
             fi
-            echo "| $(link "$id") $titulo | $tipo | $pai_md | $reqs_md | $resultado |" >> "$linhas"
+            registrar "$id" "| $(link "$id") $titulo | $tipo | $pai_md | $reqs_md | $resultado |"
           done
 
           {
@@ -160,13 +166,15 @@ jobs:
 
       # Fora do check de propósito: falha ao comentar (fork, sem permissão) não
       # muda o resultado da rastreabilidade.
-      - name: Mapa de Requisitos no PR
+      - name: Mapa de Requisitos no PR e em cada commit
         if: always()
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           mapa="$RUNNER_TEMP/mapa.md"
           [ -f "$mapa" ] || exit 0
@@ -178,3 +186,40 @@ jobs:
           else
             gh pr comment "$PR" --body-file "$mapa"
           fi
+
+          # Um comentário por commit do PR (merges de fora; os commits que vêm por
+          # baixo de um merge entram, desde que ainda não estejam na main). Cada
+          # rerun cria o que falta e corrige o que mudou no Jira.
+          marcador="<!-- rastreabilidade-commit -->"
+          git log --no-merges --format='%H%x09%s' "origin/$BASE_REF..$HEAD_SHA" | while IFS=$'\t' read -r sha assunto; do
+            id=$(printf '%s' "$assunto" | grep -oE '^[a-z]+\(SCRUM-[0-9]+\)' | grep -oE 'SCRUM-[0-9]+' || true)
+            corpo=$(
+              echo "$marcador"
+              echo "### Requisito deste commit"
+              echo
+              if [ -n "$id" ] && [ -f "$RUNNER_TEMP/rows/$id.md" ]; then
+                echo "| Item | Tipo | Pai | Requisitos | Resultado |"
+                echo "| --- | --- | --- | --- | --- |"
+                cat "$RUNNER_TEMP/rows/$id.md"
+              else
+                echo '❌ Commit sem o escopo `tipo(SCRUM-{ID})`: não dá para ligá-lo a um Requisito.'
+              fi
+              echo
+              echo "_Atualizado quando o check **Requisito vinculado** roda de novo._"
+            )
+            existente=$(gh api "repos/$REPO/commits/$sha/comments" --paginate \
+              --jq ".[] | select(.body | startswith(\"$marcador\")) | .id" | sed -n 1p) \
+              || { echo "::warning::Sem acesso aos comentários de ${sha:0:7}"; continue; }
+            if [ -z "$existente" ]; then
+              gh api "repos/$REPO/commits/$sha/comments" -f body="$corpo" > /dev/null \
+                && echo "  novo       ${sha:0:7} $assunto" || echo "::warning::Falha ao comentar ${sha:0:7}"
+            else
+              atual=$(gh api "repos/$REPO/comments/$existente" --jq .body | tr -d '\r')
+              if [ "$atual" = "$corpo" ]; then
+                echo "  igual      ${sha:0:7} $assunto"
+              else
+                gh api -X PATCH "repos/$REPO/comments/$existente" -f body="$corpo" > /dev/null \
+                  && echo "  atualizado ${sha:0:7} $assunto" || echo "::warning::Falha ao atualizar ${sha:0:7}"
+              fi
+            fi
+          done
