@@ -1,0 +1,44 @@
+name: Requisitos no commit da main
+
+# Copia o mapa de Requisitos que rastreabilidade-requisito.yaml publica no PR
+# para um comentário no commit que entrou na main, pra rastreabilidade
+# aparecer na página do commit. Só vale para merges feitos depois deste arquivo
+# entrar na main; commit direto (sem PR) não recebe comentário.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  comentar:
+    name: Copiar mapa para o commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Mapa do PR no commit de merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then
+            echo "Push direto, sem PR."
+            exit 0
+          fi
+
+          # O mapa é o comentário que começa com o marcador do check; a 1ª linha
+          # é o próprio marcador e não vai pro commit.
+          corpo=$(gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments" --paginate \
+            --jq '.[] | select(.body | startswith("<!-- rastreabilidade-requisito -->")) | .body' | sed 1d)
+          if [ -z "$corpo" ]; then
+            echo "PR #$pr sem mapa de Requisitos."
+            exit 0
+          fi
+
+          gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/comments" -f body="$corpo" > /dev/null
+          echo "Mapa do PR #$pr copiado para o commit $SHA."
