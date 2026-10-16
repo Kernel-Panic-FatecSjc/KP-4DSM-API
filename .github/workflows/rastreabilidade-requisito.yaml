@@ -178,15 +178,6 @@ jobs:
         run: |
           mapa="$RUNNER_TEMP/mapa.md"
           [ -f "$mapa" ] || exit 0
-          # Atualiza o comentário deste check (marcado no início) em vez de criar outro.
-          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-            --jq '.[] | select(.body | startswith("<!-- rastreabilidade-requisito -->")) | .id' | sed -n 1p)
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@"$mapa" > /dev/null
-          else
-            gh pr comment "$PR" --body-file "$mapa"
-          fi
-
           # Um comentário por commit do PR (merges de fora; os commits que vêm por
           # baixo de um merge entram, desde que ainda não estejam na main). Cada
           # rerun cria o que falta e corrige o que mudou no Jira.
@@ -222,4 +213,14 @@ jobs:
                   && echo "  atualizado ${sha:0:7} $assunto" || echo "::warning::Falha ao atualizar ${sha:0:7}"
               fi
             fi
+          done || true
+
+          # O mapa do PR vai por último e é recriado a cada execução: editar o
+          # comentário manteria a posição antiga e ele ficaria no meio da conversa.
+          # Publica o novo antes de apagar o anterior, pra nunca ficar sem mapa.
+          antigos=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.body | startswith("<!-- rastreabilidade-requisito -->")) | .id')
+          gh pr comment "$PR" --body-file "$mapa"
+          for antigo in $antigos; do
+            gh api -X DELETE "repos/$REPO/issues/comments/$antigo" > /dev/null
           done
