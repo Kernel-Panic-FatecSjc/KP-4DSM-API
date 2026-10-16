@@ -359,6 +359,7 @@ describe('ContratosService', () => {
       await expect(service.encerrar(CONTRATO.id)).rejects.toBeInstanceOf(
         BadRequestException,
       );
+      
       expect(prismaMock.contrato.update).not.toHaveBeenCalled();
     });
   });
