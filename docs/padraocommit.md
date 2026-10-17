@@ -12,3 +12,5 @@ Formato: `tipo(SCRUM-{ID}): descrição`, onde `SCRUM-{ID}` é o ID da tarefa no
 | **test**     | Adiciona ou modifica testes.                                                  | `test(SCRUM-{ID}): Criação de testes unitários para o módulo de autenticação`                                  |
 | **chore**    | Atualizações menores que não impactam diretamente a funcionalidade do código. | `chore(SCRUM-{ID}): Atualização de dependências do projeto`                                                    |
 | **ci**       | Alterações nos pipelines de Integração Contínua e Deploy Automático.          | `ci(SCRUM-{ID}): Ajuste no workflow de deploy para rodar migrations antes de iniciar a aplicação`              |
+| **hotfix**   | Correção urgente em produção. Passa por PR e review como os demais.           | `hotfix(SCRUM-{ID}): Correção do cálculo de vigência que bloqueava o cadastro de contratos`        |
+| **revert**   | Reversão de uma mudança já mesclada. Não use o botão Revert do GitHub: crie a branch `revert/SCRUM-{ID}-descricao-curta`. | `revert(SCRUM-{ID}): Reversão da criação da página de contratos`                       |
