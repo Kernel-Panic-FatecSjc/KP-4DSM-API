@@ -1,0 +1,81 @@
+name: Publicar em staging
+
+# O revisor leva o PR para staging colocando o label "staging": o PR entra
+# integrado com a main atual, para testar o código antes de aprovar. Não há
+# deploy; o push feito com o GITHUB_TOKEN não dispara outros workflows. Se
+# houver deploy, chame-o do job "publicar", ex.:
+#   gh workflow run cd-staging.yaml --ref staging
+#
+# Staging é um ambiente só: o label fica em um PR por vez (ao rotular um PR, o
+# label sai dos outros) e, enquanto estiver no PR, cada push novo republica.
+# O autor não leva o próprio PR: o label posto por ele é removido.
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  LABEL: staging
+  PR: ${{ github.event.pull_request.number }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  recusar-autor:
+    name: Recusar label do autor
+    if: >-
+      github.event.action == 'labeled' &&
+      github.event.label.name == 'staging' &&
+      github.event.sender.login == github.event.pull_request.user.login
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Tirar o label e avisar
+        run: |
+          gh pr edit "$PR" --repo "$GITHUB_REPOSITORY" --remove-label "$LABEL"
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" \
+            --body "O label \`$LABEL\` foi removido: quem leva o PR para staging é o revisor, não o autor."
+
+  publicar:
+    name: Publicar em staging
+    # Sem fork (o token não escreve nele) e sem rascunho. Rotulado por outra
+    # pessoa, ou push novo num PR que já tem o label.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      !github.event.pull_request.draft &&
+      (
+        (github.event.action == 'labeled' &&
+          github.event.label.name == 'staging' &&
+          github.event.sender.login != github.event.pull_request.user.login) ||
+        (github.event.action == 'synchronize' &&
+          contains(github.event.pull_request.labels.*.name, 'staging'))
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Uma publicação por vez; a mais recente vence.
+    concurrency:
+      group: staging
+      cancel-in-progress: true
+
+    steps:
+      - name: Soltar o label dos outros PRs
+        run: |
+          gh pr list --repo "$GITHUB_REPOSITORY" --label "$LABEL" --state open \
+            --json number --jq '.[].number' | while read -r outro; do
+            if [ "$outro" != "$PR" ]; then
+              gh pr edit "$outro" --repo "$GITHUB_REPOSITORY" --remove-label "$LABEL"
+            fi
+          done
+
+      # Sem ref: o checkout pega o merge do PR com a main atual.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Atualizar a branch staging
+        run: git push --force origin HEAD:refs/heads/staging
