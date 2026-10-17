@@ -1,0 +1,76 @@
+name: Revisão exigida
+
+# Grava no commit do PR o status "revisao/aprovada", que a ruleset da main
+# exige. Não dá para fazer isso só com a ruleset porque a regra de aprovações
+# dela não tem exceção por tipo de PR.
+#
+#   docs (só documentação) -> passa sozinho
+#   demais tipos           -> 1 aprovação de quem não é o autor, no commit atual
+#
+# Aprovação de commit antigo não conta. O tipo vem do título do PR.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+concurrency:
+  group: revisao-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  statuses: write
+  pull-requests: read
+
+jobs:
+  revisao:
+    name: Revisão exigida
+    # Editar a descrição não muda o tipo nem os arquivos do PR.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.action != 'edited' ||
+      github.event.changes.title
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Gravar o status do commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          AUTOR: ${{ github.event.pull_request.user.login }}
+          TITULO: ${{ github.event.pull_request.title }}
+          URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          status() {
+            gh api "repos/$REPO/statuses/$SHA" -f state="$1" -f context="revisao/aprovada" \
+              -f target_url="$URL_RUN" -f description="$2" > /dev/null
+            echo "$1: $2"
+          }
+
+          tipo=$(printf '%s' "$TITULO" | grep -oE '^[a-z]+' || true)
+
+          if [ "$tipo" = "docs" ]; then
+            fora=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename' \
+              | grep -vE '^docs/|\.md$' || true)
+            if [ -n "$fora" ]; then
+              status failure "docs só pode mudar documentação: $(printf '%s' "$fora" | head -n 1)"
+            else
+              status success "Dispensado: PR de documentação"
+            fi
+            exit 0
+          fi
+
+          # Última revisão de cada pessoa, no commit atual, que não seja a do autor.
+          aprovacoes=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+            --jq '.[] | select(.state != "COMMENTED") | [.user.login, .state, .commit_id] | @tsv' \
+            | awk -F'\t' -v sha="$SHA" -v autor="$AUTOR" '{ultimo[$1]=$2 FS $3} END {for (u in ultimo) {split(ultimo[u], r, FS); if (u != autor && r[1] == "APPROVED" && r[2] == sha) n++} print n+0}')
+
+          if [ "$aprovacoes" -ge 1 ]; then
+            status success "Aprovado por quem não é o autor"
+          else
+            status pending "Aguardando 1 aprovação no commit atual"
+          fi
