@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { EstacaoParametrosRespostaDto } from './dto/estacao-parametros-resposta.dto';
@@ -16,6 +23,11 @@ interface LoteComFalha<T> {
 // Pausa entre as tentativas feitas no encerramento, quando não há mais o
 // timer do flush para esperar o banco voltar.
 const PAUSA_ENTRE_TENTATIVAS_NO_ENCERRAMENTO_MS = 250;
+// Itens por linha no log de descarte, para não montar uma linha de vários MB.
+const ITENS_POR_LINHA_DE_LOG = 500;
+
+const esperar = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms).unref?.());
 
 @Injectable()
 export class IngestaoService implements OnModuleInit, OnModuleDestroy {
@@ -32,12 +44,19 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   private falhasBrutas: LoteComFalha<LeituraBrutaParaGravar>[] = [];
   private falhasMedidas: LoteComFalha<MedidaParaGravar>[] = [];
   // Encadeia os flushes (timer, lote cheio, encerramento) para que dois não
-  // peguem as mesmas falhas ao mesmo tempo.
+  // peguem as mesmas falhas ao mesmo tempo. Fica no máximo um esperando: com
+  // o banco lento, o lote cheio pediria um flush por requisição, e cada um
+  // gastaria uma tentativa das falhas em sequência.
   private flushEmAndamento: Promise<void> = Promise.resolve();
+  private flushNaFila?: Promise<void>;
+  // O que está sendo gravado agora, para o log caso o encerramento estoure o prazo.
+  private emGravacao?: { brutas: LeituraBrutaParaGravar[]; medidas: MedidaParaGravar[] };
+  private encerrando = false;
   private timer?: NodeJS.Timeout;
   private readonly tamanhoLoteMaximo: number;
   private readonly intervaloFlushMs: number;
   private readonly tentativasMaximas: number;
+  private readonly prazoEncerramentoMs: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -47,6 +66,7 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
     this.tamanhoLoteMaximo = Number(config.get('INGESTAO_LOTE_TAMANHO_MAX') ?? 5000);
     this.intervaloFlushMs = Number(config.get('INGESTAO_LOTE_INTERVALO_MS') ?? 2000);
     this.tentativasMaximas = Number(config.get('INGESTAO_LOTE_TENTATIVAS_MAX') ?? 5);
+    this.prazoEncerramentoMs = Number(config.get('INGESTAO_ENCERRAMENTO_PRAZO_MS') ?? 8000);
   }
 
   onModuleInit(): void {
@@ -54,15 +74,38 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
     this.timer.unref?.();
   }
 
-  // Roda no encerramento (SIGTERM, com enableShutdownHooks no main.ts): grava
-  // o que está no buffer e insiste nas falhas até esgotar as tentativas.
+  // Roda no encerramento (SIGTERM, com enableShutdownHooks em configurarApp):
+  // para de aceitar leituras, grava o buffer e insiste nas falhas até esgotar
+  // as tentativas ou o prazo. O prazo fica abaixo dos 10 s do docker stop,
+  // para o descarte sair no log antes de um SIGKILL.
   async onModuleDestroy(): Promise<void> {
+    this.encerrando = true;
     clearInterval(this.timer);
+
+    const prazo = Date.now() + this.prazoEncerramentoMs;
+    const terminou = await Promise.race([
+      this.drenar(prazo).then(() => true),
+      esperar(this.prazoEncerramentoMs).then(() => false),
+    ]);
+    if (!terminou || this.temFalhasPendentes()) this.descartarNoEncerramento();
+  }
+
+  private async drenar(prazo: number): Promise<void> {
     await this.flush();
-    while (this.temFalhasPendentes()) {
-      await new Promise((resolve) => setTimeout(resolve, PAUSA_ENTRE_TENTATIVAS_NO_ENCERRAMENTO_MS));
+    while (this.temFalhasPendentes() && Date.now() + PAUSA_ENTRE_TENTATIVAS_NO_ENCERRAMENTO_MS < prazo) {
+      await esperar(PAUSA_ENTRE_TENTATIVAS_NO_ENCERRAMENTO_MS);
       await this.flush();
     }
+  }
+
+  private descartarNoEncerramento(): void {
+    const brutas = this.emGravacao?.brutas ?? this.falhasBrutas.flatMap((lote) => lote.itens);
+    const medidas = this.emGravacao?.medidas ?? this.falhasMedidas.flatMap((lote) => lote.itens);
+    const motivo = this.emGravacao
+      ? `encerramento sem concluir a gravação em ${this.prazoEncerramentoMs} ms (podem ter sido gravados)`
+      : 'encerramento com falhas ainda pendentes';
+    this.registrarDescarte('leitura(s) bruta(s)', [...brutas, ...this.loteBrutas], motivo);
+    this.registrarDescarte('medida(s)', [...medidas, ...this.loteMedidas], motivo);
   }
 
   async ingerir(payload: IngerirTelemetriaDto): Promise<IngestaoRespostaDto> {
@@ -78,6 +121,12 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
 
     if (!estacao) {
       throw new NotFoundException(`Nenhuma estação cadastrada para o vid "${payload.vid}"`);
+    }
+
+    // Conferido depois da consulta, logo antes de entrar no buffer: o que
+    // entra a partir daqui não teria mais flush. 503 faz o datalogger reenviar.
+    if (this.encerrando) {
+      throw new ServiceUnavailableException('API em encerramento; reenvie a leitura');
     }
 
     const agora = Math.floor(Date.now() / 1000);
@@ -130,8 +179,15 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
 
   /** Grava os dois lotes acumulados. Público para permitir flush manual (testes, shutdown). */
   flush(): Promise<void> {
-    this.flushEmAndamento = this.flushEmAndamento.then(() => this.gravarLotes());
-    return this.flushEmAndamento;
+    if (this.flushNaFila) return this.flushNaFila;
+
+    const proximo = this.flushEmAndamento.then(() => {
+      this.flushNaFila = undefined;
+      return this.gravarLotes();
+    });
+    this.flushNaFila = proximo;
+    this.flushEmAndamento = proximo;
+    return proximo;
   }
 
   private async gravarLotes(): Promise<void> {
@@ -139,6 +195,10 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
     const medidas = this.loteMedidas;
     this.loteBrutas = [];
     this.loteMedidas = [];
+    this.emGravacao = {
+      brutas: [...this.falhasBrutas.flatMap((lote) => lote.itens), ...brutas],
+      medidas: [...this.falhasMedidas.flatMap((lote) => lote.itens), ...medidas],
+    };
 
     [this.falhasBrutas, this.falhasMedidas] = await Promise.all([
       this.gravarComNovaTentativa('leitura(s) bruta(s)', brutas, this.falhasBrutas, (itens) =>
@@ -148,12 +208,14 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
         this.telemetria.registrarMedidas(itens),
       ),
     ]);
+    this.emGravacao = undefined;
   }
 
   /**
    * Grava as falhas anteriores junto com os itens novos, num INSERT só. Se
    * falhar, devolve tudo para a próxima tentativa; a parte que já esgotou as
-   * tentativas é descartada com log de erro trazendo os itens, para dar para
+   * tentativas é descartada com log de erro trazendo os itens (ver
+   * registrarDescarte), para dar para
    * recuperar a partir do log. Regravar não duplica nada: as leituras brutas
    * têm id fixo e as medidas o índice único (parametroId, unixtime), os dois
    * com ON CONFLICT DO NOTHING.
@@ -178,9 +240,10 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
           restantes.push({ itens: lote.itens, tentativas });
           continue;
         }
-        this.logger.error(
-          `Descartando ${lote.itens.length} ${descricao} após ${tentativas} tentativa(s) de gravação: ` +
-            `${(erro as Error).message}. Itens: ${JSON.stringify(lote.itens)}`,
+        this.registrarDescarte(
+          descricao,
+          lote.itens,
+          `${tentativas} tentativa(s) de gravação: ${(erro as Error).message}`,
           (erro as Error).stack,
         );
       }
@@ -192,6 +255,19 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
         );
       }
       return restantes;
+    }
+  }
+
+  /** Log de erro com os itens descartados em JSON, em pedaços, para recuperar a partir do log. */
+  private registrarDescarte<T>(descricao: string, itens: T[], motivo: string, pilha?: string): void {
+    if (itens.length === 0) return;
+
+    this.logger.error(`Descartando ${itens.length} ${descricao} após ${motivo}`, pilha);
+    for (let inicio = 0; inicio < itens.length; inicio += ITENS_POR_LINHA_DE_LOG) {
+      const pedaco = itens.slice(inicio, inicio + ITENS_POR_LINHA_DE_LOG);
+      this.logger.error(
+        `Itens descartados (${descricao}, ${inicio + 1}-${inicio + pedaco.length} de ${itens.length}): ${JSON.stringify(pedaco)}`,
+      );
     }
   }
 
