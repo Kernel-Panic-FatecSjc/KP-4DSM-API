@@ -11,6 +11,9 @@ async function bootstrap() {
 
   app.use(cookieParser());
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  // Sem isso o SIGTERM (ex.: deploy) encerra o processo sem rodar o
+  // onModuleDestroy, e o lote da ingestão ainda em memória se perde.
+  app.enableShutdownHooks();
   app.enableCors({
     origin: configService.get<string>('FRONTEND_URL', 'http://localhost:3000'),
     credentials: true,
