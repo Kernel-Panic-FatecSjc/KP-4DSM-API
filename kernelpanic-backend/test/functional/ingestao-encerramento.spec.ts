@@ -19,8 +19,8 @@ describe('Ingestão no encerramento da API (funcional)', () => {
         $disconnect: jest.fn(),
       },
     });
-    // como no main.ts
-    app.enableShutdownHooks();
+    // criarAppDeTeste aplica configurarApp, o mesmo do main.ts: é ele que
+    // liga os shutdown hooks
     estacao.findUnique.mockResolvedValue(ESTACAO_COM_COORDENADAS);
     executeRawUnsafe.mockResolvedValue(1);
   });

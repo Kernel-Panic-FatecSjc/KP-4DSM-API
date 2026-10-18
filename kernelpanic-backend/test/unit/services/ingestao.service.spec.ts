@@ -1,4 +1,4 @@
-import { Logger, NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { IngestaoService } from '../../../src/ingestao/ingestao.service';
@@ -24,6 +24,7 @@ describe('IngestaoService', () => {
     // lote grande e intervalo alto: nos testes o flush é sempre manual, via service.flush()
     configMock.get.mockImplementation((chave: string) => {
       if (chave === 'INGESTAO_LOTE_TENTATIVAS_MAX') return 3;
+      if (chave === 'INGESTAO_ENCERRAMENTO_PRAZO_MS') return 1000;
       return chave === 'INGESTAO_LOTE_TAMANHO_MAX' ? 999_999 : 999_999_999;
     });
     telemetriaMock.registrarLeiturasBrutas.mockResolvedValue(1);
@@ -219,11 +220,9 @@ describe('IngestaoService', () => {
       for (let tentativa = 0; tentativa < 3; tentativa++) await service.flush();
 
       expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(3);
-      expect(logErro).toHaveBeenCalledTimes(1);
-      const [mensagem] = logErro.mock.calls[0] as [string];
-      expect(mensagem).toContain('Descartando 1 leitura(s) bruta(s) após 3 tentativa(s)');
-      expect(mensagem).toContain('banco fora do ar');
-      expect(mensagem).toContain(leitura.leituraBrutaId);
+      const mensagens = logErro.mock.calls.map(([mensagem]) => String(mensagem)).join('\n');
+      expect(mensagens).toContain('Descartando 1 leitura(s) bruta(s) após 3 tentativa(s) de gravação: banco fora do ar');
+      expect(mensagens).toContain(leitura.leituraBrutaId);
 
       await service.flush();
       expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(3);
@@ -240,11 +239,66 @@ describe('IngestaoService', () => {
       expect(idsGravados(1)).toEqual([leitura.leituraBrutaId]);
     });
 
-    it('não grava o mesmo lote duas vezes com flushes simultâneos', async () => {
-      await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS });
-      await Promise.all([service.flush(), service.flush()]);
+    it('o flush pedido durante outro espera ele terminar e reenvia o que falhou', async () => {
+      let falharPrimeira!: (erro: Error) => void;
+      telemetriaMock.registrarLeiturasBrutas.mockImplementationOnce(
+        () => new Promise((_resolve, reject) => (falharPrimeira = reject)),
+      );
 
-      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(1);
+      const leitura = await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS });
+      const primeiro = service.flush();
+      await new Promise(setImmediate);
+      const segundo = service.flush();
+
+      falharPrimeira(FALHA);
+      await Promise.all([primeiro, segundo]);
+
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(2);
+      expect(idsGravados(1)).toEqual([leitura.leituraBrutaId]);
+    });
+
+    it('mantém no máximo um flush na fila', async () => {
+      let liberarPrimeiro!: (total: number) => void;
+      telemetriaMock.registrarLeiturasBrutas.mockImplementationOnce(
+        () => new Promise((resolve) => (liberarPrimeiro = resolve)),
+      );
+
+      await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS });
+      const primeiro = service.flush();
+      await new Promise(setImmediate);
+      await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_060, leituras: LEITURAS });
+      const naFila = [service.flush(), service.flush(), service.flush()];
+
+      liberarPrimeiro(1);
+      await Promise.all([primeiro, ...naFila]);
+
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(2);
+    });
+
+    it('responde 503 às leituras que chegam depois de o encerramento começar', async () => {
+      const encerramento = service.onModuleDestroy();
+
+      await expect(
+        service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      await encerramento;
+      expect(telemetriaMock.registrarLeiturasBrutas).not.toHaveBeenCalled();
+    });
+
+    it('descarta com log ao estourar o prazo de encerramento com o banco pendurado', async () => {
+      const logErro = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      telemetriaMock.registrarLeiturasBrutas.mockImplementation(() => new Promise(() => undefined));
+
+      const leitura = await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS });
+      const inicio = Date.now();
+      await service.onModuleDestroy();
+
+      expect(Date.now() - inicio).toBeLessThan(2000);
+      const mensagens = logErro.mock.calls.map(([mensagem]) => String(mensagem)).join('\n');
+      expect(mensagens).toContain('Descartando 1 leitura(s) bruta(s) após encerramento sem concluir a gravação');
+      expect(mensagens).toContain(leitura.leituraBrutaId);
+      logErro.mockRestore();
+      telemetriaMock.registrarLeiturasBrutas.mockReset();
     });
   });
 
