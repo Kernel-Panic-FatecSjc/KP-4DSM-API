@@ -84,6 +84,23 @@ describe('Ingestão (funcional)', () => {
     expect(executeRawUnsafe).not.toHaveBeenCalled();
   });
 
+  it('grava na tentativa seguinte as leituras de um flush que falhou no banco', async () => {
+    executeRawUnsafe.mockRejectedValueOnce(new Error('conexão com o banco perdida'));
+
+    const primeira = await postar({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS }).expect(202);
+    await ingestaoService.flush();
+    expect(executeRawUnsafe).toHaveBeenCalledTimes(1);
+
+    const segunda = await postar({ vid: VID_ESTACAO, unixtime: 1_760_000_060, leituras: LEITURAS }).expect(202);
+    await ingestaoService.flush();
+
+    expect(executeRawUnsafe).toHaveBeenCalledTimes(2);
+    const valoresGravados = executeRawUnsafe.mock.calls[1].slice(1);
+    expect(valoresGravados).toEqual(
+      expect.arrayContaining([primeira.body.leituraBrutaId, segunda.body.leituraBrutaId]),
+    );
+  });
+
   it('expõe a configuração de sensores da estação para o datalogger', async () => {
     estacao.findUnique.mockResolvedValue(ESTACAO_COM_TIPOS);
 

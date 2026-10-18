@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { IngestaoService } from '../../../src/ingestao/ingestao.service';
@@ -22,9 +22,12 @@ describe('IngestaoService', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     // lote grande e intervalo alto: nos testes o flush é sempre manual, via service.flush()
-    configMock.get.mockImplementation((chave: string) =>
-      chave === 'INGESTAO_LOTE_TAMANHO_MAX' ? 999_999 : 999_999_999,
-    );
+    configMock.get.mockImplementation((chave: string) => {
+      if (chave === 'INGESTAO_LOTE_TENTATIVAS_MAX') return 3;
+      return chave === 'INGESTAO_LOTE_TAMANHO_MAX' ? 999_999 : 999_999_999;
+    });
+    telemetriaMock.registrarLeiturasBrutas.mockResolvedValue(1);
+    telemetriaMock.registrarMedidas.mockResolvedValue(1);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -151,6 +154,97 @@ describe('IngestaoService', () => {
         { parametroId: 'parametro-temp', estacaoId: ESTACAO_COM_COORDENADAS.id, valor: 25, unixtime: 1_760_000_000 },
         { parametroId: 'parametro-temp', estacaoId: ESTACAO_COM_COORDENADAS.id, valor: 25, unixtime: 1_760_000_000 },
       ]);
+    });
+  });
+
+  describe('flush com falha', () => {
+    const FALHA = new Error('banco fora do ar');
+    const ESTACAO_COM_TEMPERATURA = {
+      ...ESTACAO_COM_COORDENADAS,
+      parametros: [{ id: 'parametro-temp', tipoParametro: { nome: 'temperatura' } }],
+    };
+
+    beforeEach(() => {
+      prismaMock.estacao.findUnique.mockResolvedValue(ESTACAO_COM_TEMPERATURA);
+    });
+
+    const idsGravados = (chamada: number) =>
+      telemetriaMock.registrarLeiturasBrutas.mock.calls[chamada][0].map((leitura: { id: string }) => leitura.id);
+
+    it('devolve o lote à fila e grava na tentativa seguinte, junto com as leituras novas', async () => {
+      telemetriaMock.registrarLeiturasBrutas.mockRejectedValueOnce(FALHA);
+
+      const primeira = await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS });
+      await service.flush();
+      const segunda = await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_060, leituras: LEITURAS });
+      await service.flush();
+
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(2);
+      expect(idsGravados(1)).toEqual([primeira.leituraBrutaId, segunda.leituraBrutaId]);
+
+      await service.flush();
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(2);
+    });
+
+    it('tenta de novo no próximo flush mesmo sem leituras novas', async () => {
+      telemetriaMock.registrarLeiturasBrutas.mockRejectedValueOnce(FALHA);
+
+      const leitura = await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS });
+      await service.flush();
+      await service.flush();
+
+      expect(idsGravados(1)).toEqual([leitura.leituraBrutaId]);
+    });
+
+    it('reenvia só o tipo que falhou', async () => {
+      telemetriaMock.registrarMedidas.mockRejectedValueOnce(FALHA);
+
+      await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS });
+      await service.flush();
+      await service.flush();
+
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(1);
+      expect(telemetriaMock.registrarMedidas).toHaveBeenCalledTimes(2);
+      expect(telemetriaMock.registrarMedidas).toHaveBeenLastCalledWith([
+        expect.objectContaining({ parametroId: 'parametro-temp', unixtime: 1_760_000_000 }),
+      ]);
+    });
+
+    it('descarta com log de erro detalhado ao esgotar as tentativas', async () => {
+      const logErro = jest.spyOn(Logger.prototype, 'error').mockImplementation();
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+      telemetriaMock.registrarLeiturasBrutas.mockRejectedValue(FALHA);
+
+      const leitura = await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS });
+      for (let tentativa = 0; tentativa < 3; tentativa++) await service.flush();
+
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(3);
+      expect(logErro).toHaveBeenCalledTimes(1);
+      const [mensagem] = logErro.mock.calls[0] as [string];
+      expect(mensagem).toContain('Descartando 1 leitura(s) bruta(s) após 3 tentativa(s)');
+      expect(mensagem).toContain('banco fora do ar');
+      expect(mensagem).toContain(leitura.leituraBrutaId);
+
+      await service.flush();
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(3);
+      logErro.mockRestore();
+    });
+
+    it('insiste nas falhas ao encerrar até gravar o lote pendente', async () => {
+      telemetriaMock.registrarLeiturasBrutas.mockRejectedValueOnce(FALHA);
+
+      const leitura = await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS });
+      await service.onModuleDestroy();
+
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(2);
+      expect(idsGravados(1)).toEqual([leitura.leituraBrutaId]);
+    });
+
+    it('não grava o mesmo lote duas vezes com flushes simultâneos', async () => {
+      await service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS });
+      await Promise.all([service.flush(), service.flush()]);
+
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(1);
     });
   });
 
