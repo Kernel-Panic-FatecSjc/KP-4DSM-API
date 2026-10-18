@@ -71,6 +71,15 @@ $ npm run test:functional
 $ npm run test:cov
 ```
 
+## Ingestão: chave por estação
+
+As rotas `POST /ingestao/telemetria` e `GET /ingestao/estacoes/:vid/parametros` exigem, no header `x-chave-estacao`, a chave da própria estação do `vid`. A chave de outra estação, uma chave errada ou um `vid` inexistente recebem 401.
+
+- A chave é gerada no cadastro (`POST /estacoes`, só administrador) e volta **uma única vez**, no campo `chaveIngestao` da resposta. O banco guarda só o hash (`estacoes.chaveIngestaoHash`).
+- Para trocar a chave, ou gerar a de uma estação cadastrada antes dela existir: `POST /estacoes/:id/chave-ingestao` (só administrador). A chave anterior para de valer na hora. Na tela de estações, o menu da estação tem "Gerar chave" / "Regenerar chave".
+- `possuiChaveIngestao` na resposta da estação indica se ela já tem chave.
+- Em desenvolvimento, `INGESTAO_ROTA_ABERTA=true` com `NODE_ENV=development` abre a rota sem chave. Em qualquer outro `NODE_ENV`, essa opção faz a API não subir.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
