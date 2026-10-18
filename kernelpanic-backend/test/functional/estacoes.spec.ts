@@ -74,6 +74,13 @@ describe('Gerenciamento de estações (funcional)', () => {
       expect(resposta.body).not.toHaveProperty('chaveIngestaoHash');
       expect(JSON.stringify(logAuditoria.create.mock.calls)).not.toContain(resposta.body.chaveIngestao);
     });
+
+    it('recusa com 403 quem não é administrador, sem cadastrar', async () => {
+      usuario.findUnique.mockResolvedValue({ ...USUARIO, tipo: 'MONITOR' });
+
+      await request(app.getHttpServer()).post('/estacoes').set('Cookie', cookie).send(NOVA).expect(403);
+      expect(estacao.create).not.toHaveBeenCalled();
+    });
   });
 
   describe('POST /estacoes/:id/chave-ingestao', () => {

@@ -122,6 +122,12 @@ describe('Ingestão (funcional)', () => {
       .get('/ingestao/estacoes/ESP32-00002/parametros')
       .set(HEADER_CHAVE_INGESTAO, CHAVE_INGESTAO)
       .expect(401);
+    // o vid do corpo não troca a estação da URL
+    await request(app.getHttpServer())
+      .get('/ingestao/estacoes/ESP32-00002/parametros')
+      .set(HEADER_CHAVE_INGESTAO, CHAVE_INGESTAO)
+      .send({ vid: VID_ESTACAO })
+      .expect(401);
 
     await ingestaoService.flush();
     expect(executeRawUnsafe).not.toHaveBeenCalled();

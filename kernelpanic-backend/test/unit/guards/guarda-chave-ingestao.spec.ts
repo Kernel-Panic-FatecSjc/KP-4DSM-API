@@ -53,6 +53,16 @@ describe('GuardaChaveIngestao', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
   });
 
+  it('usa o vid da URL mesmo com outro vid no corpo', async () => {
+    const contexto = contextoCom({
+      headers: comChave(CHAVE),
+      body: { vid: 'ESP32-00001' },
+      params: { vid: 'ESP32-00002' },
+    });
+
+    await expect(guardaCom().canActivate(contexto)).rejects.toBeInstanceOf(UnauthorizedException);
+  });
+
   it('recusa chave ausente, errada, vid desconhecido e estação ainda sem chave', async () => {
     const casos = [
       { body: { vid: 'ESP32-00001' } },
