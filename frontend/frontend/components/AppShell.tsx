@@ -1,6 +1,6 @@
 'use client';
 
-import { FileText, Bell, ClipboardList, Database, Gauge, LayoutDashboard, LogIn, LogOut, Menu, MapPin, PanelLeftClose, PanelLeftOpen, Users, X } from 'lucide-react';
+import { Building, FileText, Bell, ClipboardList, Database, Gauge, LayoutDashboard, LogIn, LogOut, Menu, MapPin, PanelLeftClose, PanelLeftOpen, Users, X } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -21,6 +21,7 @@ const NAV_ITEMS = [
   { label: 'Usuários', href: '/usuarios', icon: Users },
   { label: 'Auditoria', href: '/auditoria', icon: ClipboardList },
   { label: 'Contratos', href: '/contratos', icon: FileText },
+  { label: 'Órgãos', href: '/orgaos', icon: Building },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
