@@ -11,8 +11,8 @@ const AMBIENTES_COM_ROTA_ABERTA = ['development', 'test'];
 
 /**
  * Só a própria estação envia dados em seu nome: a chave do header precisa
- * bater com o hash guardado na estação do vid da requisição (no corpo, na
- * telemetria, ou na URL, na consulta de parâmetros).
+ * bater com o hash guardado na estação do vid da requisição (na URL, na
+ * consulta de parâmetros, ou no corpo, na telemetria).
  */
 @Injectable()
 export class GuardaChaveIngestao implements CanActivate {
@@ -43,7 +43,9 @@ export class GuardaChaveIngestao implements CanActivate {
 
     const request = context.switchToHttp().getRequest<Request>();
     const chave = request.headers[HEADER_CHAVE_INGESTAO];
-    const vid: unknown = request.body?.vid ?? request.params?.vid;
+    // Na URL primeiro: o body-parser também lê corpo em GET, e um vid no
+    // corpo não pode trocar a estação que a rota de parâmetros consulta.
+    const vid: unknown = request.params?.vid ?? request.body?.vid;
 
     if (typeof chave !== 'string' || typeof vid !== 'string') {
       throw new UnauthorizedException('Chave de ingestão inválida');

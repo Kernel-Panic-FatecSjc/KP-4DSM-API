@@ -34,7 +34,9 @@ export class EstacoesController {
     return estacoes.map((estacao) => new EstacaoRespostaDto(estacao));
   }
 
+  // A resposta traz a chave de ingestão da estação: só o administrador cadastra.
   @Post()
+  @UseGuards(GuardaAdministrador)
   async criar(
     @Body() dto: CriarEstacaoDto,
     @UsuarioAutenticado() usuario: PayloadJwt,
