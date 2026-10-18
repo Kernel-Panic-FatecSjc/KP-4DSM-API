@@ -138,9 +138,9 @@ export class EstacoesService {
       (tipoParametroId) => !atuais.some((parametro) => parametro.tipoParametroId === tipoParametroId),
     );
 
-    // Apagar um Parametro leva junto as Medida dele (onDelete: Cascade). Um
-    // sensor que já coletou dados só sai do cadastro às custas da série
-    // histórica, então a remoção é recusada em vez de destruir a medição.
+    // Apagar um Parametro tentaria levar junto as Medida dele (onDelete:
+    // Cascade), e o trigger que mantém as medidas imutáveis barra isso. A
+    // checagem aqui responde 409 com mensagem clara antes de chegar ao banco.
     if (aRemover.length > 0) {
       const comMedidas = await this.prisma.medida.findFirst({
         where: { parametroId: { in: aRemover.map((parametro) => parametro.id) } },
