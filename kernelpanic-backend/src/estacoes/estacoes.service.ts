@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
+import { gerarChaveIngestao } from '../ingestao/chave-ingestao';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtualizarEstacaoDto } from './dto/atualizar-estacao.dto';
 import { CriarEstacaoDto } from './dto/criar-estacao.dto';
@@ -10,6 +11,11 @@ const INCLUIR_SENSORES = {
 } satisfies Prisma.EstacaoInclude;
 
 type EstacaoComSensores = Prisma.EstacaoGetPayload<{ include: typeof INCLUIR_SENSORES }>;
+
+export interface EstacaoCriada {
+  estacao: EstacaoComSensores;
+  chaveIngestao: string;
+}
 
 @Injectable()
 export class EstacoesService {
@@ -31,7 +37,8 @@ export class EstacoesService {
     });
   }
 
-  async criar(dto: CriarEstacaoDto, usuarioId: string): Promise<EstacaoComSensores> {
+  /** Cadastra a estação já com a chave de ingestão, devolvida só desta vez. */
+  async criar(dto: CriarEstacaoDto, usuarioId: string): Promise<EstacaoCriada> {
     const tipoParametroIds = dto.tipoParametroIds ?? [];
     const identificadores = new Set(tipoParametroIds);
     if (identificadores.size !== tipoParametroIds.length) {
@@ -51,13 +58,15 @@ export class EstacoesService {
       throw new BadRequestException('Um ou mais sensores selecionados não existem');
     }
 
-    return this.prisma.estacao.create({
+    const { chave, hash } = gerarChaveIngestao();
+    const estacao = await this.prisma.estacao.create({
       data: {
         nome: dto.nome,
         endereco: dto.endereco,
         vid: dto.vid,
         latitude: dto.latitude,
         longitude: dto.longitude,
+        chaveIngestaoHash: hash,
         usuarioId,
         parametros: {
           create: tipoParametroIds.map((tipoParametroId) => ({ tipoParametroId })),
@@ -65,6 +74,23 @@ export class EstacoesService {
       },
       include: INCLUIR_SENSORES,
     });
+
+    return { estacao, chaveIngestao: chave };
+  }
+
+  /**
+   * Troca a chave de ingestão da estação: a anterior para de valer na hora.
+   * A nova é devolvida só desta vez; o banco guarda apenas o hash.
+   */
+  async regenerarChaveIngestao(id: string): Promise<string> {
+    const estacao = await this.prisma.estacao.findUnique({ where: { id }, select: { id: true } });
+    if (!estacao) {
+      throw new NotFoundException('Estação não encontrada');
+    }
+
+    const { chave, hash } = gerarChaveIngestao();
+    await this.prisma.estacao.update({ where: { id }, data: { chaveIngestaoHash: hash } });
+    return chave;
   }
 
   async atualizar(id: string, dto: AtualizarEstacaoDto): Promise<EstacaoComSensores> {
