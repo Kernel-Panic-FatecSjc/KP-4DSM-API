@@ -108,7 +108,6 @@ export default function OrgaosPage() {
   const [pagina, setPagina] = useState(1);
   const [modalAberto, setModalAberto] = useState(false);
   const [orgaoEditando, setOrgaoEditando] = useState<Orgao | null>(null);
-  const [orgaoExcluindo, setOrgaoExcluindo] = useState<Orgao | null>(null);
   const [dadosParaDesativar, setDadosParaDesativar] =
     useState<FormularioOrgao | null>(null);
   const [formulario, setFormulario] = useState<FormularioOrgao>(FORMULARIO_INICIAL);
@@ -215,12 +214,6 @@ export default function OrgaosPage() {
     aplicarOrgao(dadosParaDesativar);
   }
 
-  function excluirOrgao() {
-    if (!orgaoExcluindo) return;
-    setOrgaos((atuais) => atuais.filter((orgao) => orgao.id !== orgaoExcluindo.id));
-    setOrgaoExcluindo(null);
-  }
-
   function fecharModal() {
     setModalAberto(false);
     setDadosParaDesativar(null);
@@ -271,14 +264,6 @@ export default function OrgaosPage() {
             <Pencil className="size-3" />
             Editar
           </button>
-          <button
-            type="button"
-            onClick={() => setOrgaoExcluindo(orgao)}
-            className="inline-flex items-center gap-1 text-xs font-medium text-destructive hover:underline"
-          >
-            <Trash2 className="size-3" />
-            Excluir
-          </button>
         </div>
       ),
     },
@@ -301,7 +286,7 @@ export default function OrgaosPage() {
         <article className="rounded-lg border border-border bg-card px-4 py-4">
           <p className="font-mono text-[10px] uppercase text-muted-foreground">Total de órgãos</p>
           <p className="mt-2 font-display text-2xl font-semibold">{estatisticas.total}</p>
-          <p className="mt-1 text-xs text-muted-foreground">cadastrados neste navegador</p>
+          <p className="mt-1 text-xs text-muted-foreground">órgãos cadastrados</p>
         </article>
         <article className="rounded-lg border border-border bg-card px-4 py-4">
           <p className="font-mono text-[10px] uppercase text-muted-foreground">Ativos</p>
@@ -475,41 +460,6 @@ export default function OrgaosPage() {
               </Button>
             </div>
           </form>
-        </div>
-      )}
-
-      {orgaoExcluindo && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
-          <div
-            className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="titulo-exclusao-orgao"
-          >
-            <h2 id="titulo-exclusao-orgao" className="text-lg font-semibold">
-              Excluir órgão
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Tem certeza que deseja excluir <strong>{orgaoExcluindo.nome}</strong>? Esta ação não
-              pode ser desfeita.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setOrgaoExcluindo(null)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="button"
-                onClick={excluirOrgao}
-                className="bg-red-600 text-white hover:bg-red-700"
-              >
-                Excluir
-              </Button>
-            </div>
-          </div>
         </div>
       )}
 
