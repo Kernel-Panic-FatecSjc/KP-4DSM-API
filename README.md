@@ -6,7 +6,7 @@
 
 ![Defesa Civil](https://img.shields.io/badge/Defesa%20Civil-Sistema%20de%20Alertas-blue)
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-yellow)
-![Sprint](https://img.shields.io/badge/Sprint-1-green)
+![Sprint](https://img.shields.io/badge/Sprint-2-green)
 
 [A Dor do Cliente](#a-dor) | 
 [A Solução](#a-solução) |
@@ -216,7 +216,7 @@ A solução combina:
 <a id="arquitetura-do-projeto"></a>
 ## 🛠  Arquitetura do Projeto
 
-![Diagrama da arquitetura do projeto](docs/images/arquitetura.png)
+![Diagrama da arquitetura do projeto](docs/images/arquitetura.jpeg)
 
 ---
 
