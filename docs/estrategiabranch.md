@@ -40,6 +40,7 @@ A filosofia é simples: a branch `main` representa o código mais atual e já va
 
    - Com a aprovação do review e os checks verdes, verifica-se se a entrega atende à **Definition of Done (DoD)**.
    - Se atender, o PR é mesclado na `main`. Se não, volta para a implementação.
+   - Com o merge, a tarefa da branch (`SCRUM-{ID}`) é movida para **Concluído** no Jira automaticamente. PR `revert` não conclui tarefa.
 
 6. **Publicação em Produção**
 
@@ -73,6 +74,7 @@ Tudo entra na `main` por PR, sem exceção: não existe push direto, nem de docu
 | Aprovação de quem não é o autor, no commit atual (`docs` só de documentação dispensa) | `.github/workflows/revisao-exigida.yaml` | `revisao/aprovada` (status do commit) |
 | Staging opcional, por label do revisor | `.github/workflows/publicar-staging.yaml` | nenhum (não bloqueia o merge) |
 | Sem push direto e sem push forçado na `main` | Rulesets da `main` | nenhum |
+| Tarefa da branch vai para Concluído no Jira quando o PR é mesclado (menos `revert`) | `.github/workflows/concluir-tarefa.yaml` | nenhum (roda depois do merge) |
 
 **Staging por label.** O revisor coloca o label `staging` no PR; o workflow tira o label dos outros PRs abertos e publica na branch `staging` o PR integrado com a `main` atual. O label posto pelo autor é removido com um aviso. Enquanto o label estiver, cada push novo no PR republica. Não há aceite nem status: staging serve só para testar durante a revisão.
 
@@ -81,5 +83,5 @@ Tudo entra na `main` por PR, sem exceção: não existe push direto, nem de docu
 * Ruleset `main - histórico`, sem bypass: bloquear *force push* e exclusão.
 * Ruleset `main - merge`, sem bypass: exigir PR, e exigir os checks `CI ok`, `Estratégia de branch`, `Requisito vinculado` e o status `revisao/aprovada`. A contagem de aprovações não fica na ruleset porque ela não tem exceção por tipo de PR; é o status `revisao/aprovada` que cobra a aprovação e já descarta a que ficou para um commit antigo.
 * Label `staging` no repositório.
-* Secrets do repositório `JIRA_BASE_URL`, `JIRA_EMAIL` e `JIRA_API_TOKEN`, usados pelo check `Requisito vinculado` (o token só precisa de leitura no Jira). PR de fork não recebe secrets, e o check falha nele.
+* Secrets do repositório `JIRA_BASE_URL`, `JIRA_EMAIL` e `JIRA_API_TOKEN`, usados pelo check `Requisito vinculado` e pelo workflow que conclui a tarefa no merge. O usuário do token precisa ler as issues e poder transicioná-las no projeto. PR de fork não recebe secrets, e o check falha nele.
 * Branch `staging` sem ruleset: ela é sobrescrita pelo workflow a cada publicação.
