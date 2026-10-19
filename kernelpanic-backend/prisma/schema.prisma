@@ -114,7 +114,8 @@ model Parametro {
   @@map("parametros")
 }
 
-/// Leituras coletadas ao longo do tempo (série temporal).
+/// Leituras coletadas ao longo do tempo (série temporal). Imutável: trigger no banco
+/// barra update/delete, inclusive o cascade vindo de Estacao e Parametro.
 model Medida {
   id       String @id @default(uuid())
   unixtime BigInt
@@ -166,8 +167,9 @@ model Alarme {
 }
 
 /// Payload bruto recebido diretamente do datalogger (ESP32), como chegou, antes de
-/// qualquer validação/normalização em Parametro/Medida. Imutável — preserva a
-/// procedência técnica do dado e o momento exato de recebimento (RF03/US04).
+/// qualquer validação/normalização em Parametro/Medida. Imutável (trigger no banco
+/// barra update/delete) — preserva a procedência técnica do dado e o momento exato
+/// de recebimento (RF03/US04).
 model LeituraBruta {
   id                  String                               @id @default(uuid())
   vidEstacao          String
