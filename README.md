@@ -240,7 +240,8 @@ KP-4DSM-API
 │   │   └── 📁 login/         → Página de login
 │   ├── 📁 components/        → Componentes React reutilizáveis
 │   ├── 📁 lib/               → Utilitários e serviços API
-│   └── 📁 public/            → Arquivos estáticos
+│   ├── 📁 public/            → Arquivos estáticos
+│   └── 📁 test/              → Testes unitários (Vitest) e funcionais (Playwright)
 │
 └── 📁 kernelpanic-backend/    → API NestJS
     ├── 📁 src/
