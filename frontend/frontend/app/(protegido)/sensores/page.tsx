@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import { api, ErroApi, type SensorApi, type SensorPayload, type UnidadeSensor } from '@/lib/api';
+import { formatarFaixa, lerFaixa } from '@/lib/faixa-sensor';
 
 const ITEMS_PER_PAGE = 10;
 
@@ -19,6 +20,8 @@ type FormularioSensor = {
   unidade: string;
   fator: string;
   ganho: string;
+  valorMinimo: string;
+  valorMaximo: string;
 };
 
 // Fator 1 e ganho 0 deixam a leitura bruta inalterada, o ponto de partida
@@ -28,6 +31,8 @@ const FORMULARIO_INICIAL: FormularioSensor = {
   unidade: '',
   fator: '1',
   ganho: '0',
+  valorMinimo: '',
+  valorMaximo: '',
 };
 
 export default function SensoresPage() {
@@ -149,6 +154,8 @@ export default function SensoresPage() {
       unidade: sensor.unidade,
       fator: String(sensor.fator),
       ganho: String(sensor.ganho),
+      valorMinimo: sensor.valorMinimo == null ? '' : String(sensor.valorMinimo),
+      valorMaximo: sensor.valorMaximo == null ? '' : String(sensor.valorMaximo),
     });
     setErroFormulario(null);
     setModalAberto(true);
@@ -188,7 +195,20 @@ export default function SensoresPage() {
       return;
     }
 
-    const payload: SensorPayload = { nome, unidade, fator, ganho };
+    const faixa = lerFaixa(formulario.valorMinimo, formulario.valorMaximo);
+    if ('erro' in faixa) {
+      setErroFormulario(faixa.erro);
+      return;
+    }
+
+    const payload: SensorPayload = {
+      nome,
+      unidade,
+      fator,
+      ganho,
+      valorMinimo: faixa.minimo,
+      valorMaximo: faixa.maximo,
+    };
 
     setSalvando(true);
     setErroFormulario(null);
@@ -271,6 +291,12 @@ export default function SensoresPage() {
     },
     { header: 'Fator', key: 'fator', className: 'font-mono text-xs' },
     { header: 'Ganho', key: 'ganho', className: 'font-mono text-xs' },
+    {
+      header: 'Faixa válida',
+      key: 'valorMinimo',
+      className: 'font-mono text-xs',
+      render: (_, sensor) => formatarFaixa(sensor.valorMinimo, sensor.valorMaximo),
+    },
     {
       header: 'Estações',
       key: 'estacoesAssociadas',
@@ -510,6 +536,41 @@ export default function SensoresPage() {
               <p className="text-xs text-muted-foreground">
                 Fator e ganho calibram a leitura bruta enviada pelo datalogger. Use fator 1 e ganho 0
                 para manter o valor original.
+              </p>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="sensor-valor-minimo" className="text-sm font-medium">
+                    Valor mínimo (opcional)
+                  </label>
+                  <Input
+                    id="sensor-valor-minimo"
+                    type="number"
+                    step="any"
+                    value={formulario.valorMinimo}
+                    onChange={(e) => setFormulario((anterior) => ({ ...anterior, valorMinimo: e.target.value }))}
+                    placeholder="Sem limite"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="sensor-valor-maximo" className="text-sm font-medium">
+                    Valor máximo (opcional)
+                  </label>
+                  <Input
+                    id="sensor-valor-maximo"
+                    type="number"
+                    step="any"
+                    value={formulario.valorMaximo}
+                    onChange={(e) => setFormulario((anterior) => ({ ...anterior, valorMaximo: e.target.value }))}
+                    placeholder="Sem limite"
+                  />
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Faixa física válida da leitura (limites inclusivos). Leitura fora dela não é gravada como
+                medida e fica registrada como erro de leitura.
               </p>
 
               {erroFormulario && (
