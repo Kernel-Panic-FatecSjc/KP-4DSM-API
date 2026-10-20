@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ContratosModule } from './contratos/contratos.module';
 import { AlarmesModule } from './alarmes/alarmes.module';
 import { AlertasModule } from './alertas/alertas.module';
 import { AuditoriaModule } from './auditoria/auditoria.module';
@@ -30,6 +31,7 @@ import { OrgaosModule } from './orgaos/orgaos.module';
     AlertasModule,
     AuditoriaModule,
     DashboardModule,
+    ContratosModule,
     EstacoesModule,
     IngestaoModule,
     OrgaosModule,
