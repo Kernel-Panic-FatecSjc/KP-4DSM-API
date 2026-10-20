@@ -110,7 +110,10 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
 
   /** Grava os dois lotes acumulados. Público para permitir flush manual (testes, shutdown). */
   async flush(): Promise<void> {
-    if (this.loteBrutas.length === 0 && this.loteMedidas.length === 0) return;
+    if (this.loteBrutas.length === 0 && this.loteMedidas.length === 0) {
+      this.estadoFlush = 'ok';
+      return;
+    }
 
     const brutas = this.loteBrutas;
     const medidas = this.loteMedidas;
