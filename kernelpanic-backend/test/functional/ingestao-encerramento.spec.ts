@@ -1,6 +1,12 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { ESTACAO_COM_COORDENADAS, LEITURAS, VID_ESTACAO } from '../fixtures';
+import { HEADER_CHAVE_INGESTAO } from '../../src/ingestao/guarda-chave-ingestao.guard';
+import {
+  CHAVE_INGESTAO,
+  ESTACAO_COM_COORDENADAS,
+  LEITURAS,
+  VID_ESTACAO,
+} from '../fixtures';
 import { criarAppDeTeste } from '../helpers';
 
 // O lote da ingestão fica em memória até o próximo flush; ao receber SIGTERM
@@ -42,6 +48,7 @@ describe('Ingestão no encerramento da API (funcional)', () => {
 
     const resposta = await request(app.getHttpServer())
       .post('/ingestao/telemetria')
+      .set(HEADER_CHAVE_INGESTAO, CHAVE_INGESTAO)
       .send({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS })
       .expect(202);
     expect(executeRawUnsafe).not.toHaveBeenCalled();
@@ -50,6 +57,8 @@ describe('Ingestão no encerramento da API (funcional)', () => {
     await sinalReenviado;
 
     expect(executeRawUnsafe).toHaveBeenCalledTimes(1);
-    expect(executeRawUnsafe.mock.calls[0]).toContain(resposta.body.leituraBrutaId);
+    expect(executeRawUnsafe.mock.calls[0]).toContain(
+      resposta.body.leituraBrutaId,
+    );
   });
 });
