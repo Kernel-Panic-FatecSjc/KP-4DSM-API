@@ -5,6 +5,7 @@ import { UsuariosModule } from '../usuarios/usuarios.module';
 import { ContratosController } from './contratos.controller';
 import { ContratosService } from './contratos.service';
 
+
 @Module({
   imports: [
     PassportModule.register({ defaultStrategy: 'jwt' }),

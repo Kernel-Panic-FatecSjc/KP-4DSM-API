@@ -45,6 +45,7 @@ export interface ContratosPaginados {
   tamanho: number;
 }
 
+
 // P2002 = violação de unicidade. A checagem prévia de número não cobre duas
 // requisições simultâneas; a constraint do banco é quem garante, e aqui o erro
 // dela vira 409 em vez de estourar como 500.
@@ -76,6 +77,7 @@ export class ContratosService {
           ]
         : undefined,
     };
+    
 
     // Mesmo where na listagem e na contagem para o total refletir os filtros.
     // O desempate por id mantem a ordem estavel entre paginas.

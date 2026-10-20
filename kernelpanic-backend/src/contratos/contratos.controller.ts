@@ -34,6 +34,7 @@ import {
   ContratoListagemRespostaDto,
   ContratosPaginadosRespostaDto,
 } from './dto/contrato-listagem-resposta.dto';
+
 import { CriarContratoDto } from './dto/criar-contrato.dto';
 import { ListarContratosQueryDto } from './dto/listar-contratos-query.dto';
 import { EstacaoRespostaDto } from '../estacoes/dto/estacao-resposta.dto';
@@ -101,6 +102,7 @@ export class ContratosController {
     await this.auditoriaService.registrar({
       acao: 'contratos.estacoes.consultar',
       entidade: 'Contrato',
+      
       entidadeId: id,
       usuarioId: usuario.sub,
     });
