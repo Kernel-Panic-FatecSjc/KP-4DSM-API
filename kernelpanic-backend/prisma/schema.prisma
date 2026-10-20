@@ -45,6 +45,31 @@ enum StatusOperacionalEstacao {
   INATIVA
 }
 
+enum EsferaOrgao {
+  MUNICIPAL
+  ESTADUAL
+  FEDERAL
+}
+
+enum ModalidadeLicitacao {
+  PREGAO
+  CONCORRENCIA
+  CONCURSO
+  LEILAO
+  DIALOGO_COMPETITIVO
+  DISPENSA
+  INEXIGIBILIDADE
+  OUTRA
+}
+
+enum StatusContrato {
+  RASCUNHO
+  ATIVO
+  VIGENTE
+  SUSPENSO
+  ENCERRADO
+}
+
 model Usuario {
   id           String      @id @default(uuid())
   nome         String
@@ -61,6 +86,65 @@ model Usuario {
   @@map("usuarios")
 }
 
+/// Órgão público contratante.
+model OrgaoPublico {
+  id           String     @id @default(uuid())
+  nome         String
+  cnpj         String?    @unique
+  esfera       EsferaOrgao
+  municipio    String
+  uf           String     @db.Char(2)
+  ativo        Boolean    @default(true)
+  criadoEm     DateTime   @default(now())
+  atualizadoEm DateTime   @updatedAt
+
+  contratos Contrato[]
+
+  @@map("orgaos_publicos")
+}
+
+/// Processo licitatório. Uma licitação pode estar relacionada a vários contratos.
+/// O contrato pode existir sem licitação vinculada, quando aplicável.
+model Licitacao {
+  id             String             @id @default(uuid())
+  numeroProcesso String             @unique
+  modalidade     ModalidadeLicitacao
+  objeto         String?
+  criadoEm       DateTime           @default(now())
+  atualizadoEm   DateTime           @updatedAt
+
+  contratos Contrato[]
+
+  @@index([modalidade])
+  @@map("licitacoes")
+}
+
+/// Contratos relacionados a um órgão público e, opcionalmente, a uma licitação.
+model Contrato {
+  id             String         @id @default(uuid())
+  numero         String         @unique
+  objeto         String
+  inicioVigencia DateTime
+  fimVigencia    DateTime
+  status         StatusContrato @default(RASCUNHO)
+  criadoEm       DateTime       @default(now())
+  atualizadoEm   DateTime       @updatedAt
+  encerradoEm    DateTime?
+
+  orgaoId String
+  orgao   OrgaoPublico @relation(fields: [orgaoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  licitacaoId String?
+  licitacao   Licitacao? @relation(fields: [licitacaoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  estacoes Estacao[]
+
+  @@index([orgaoId])
+  @@index([status])
+  @@index([licitacaoId])
+  @@map("contratos")
+}
+
 /// Estações físicas de coleta.
 model Estacao {
   id                String                   @id @default(uuid())
@@ -70,22 +154,23 @@ model Estacao {
   latitude          Float                    @default(0)
   longitude         Float                    @default(0)
   statusOperacional StatusOperacionalEstacao @default(ATIVA)
-  /// SHA-256 da chave que a estação manda no header da ingestão. A chave em si
-  /// só aparece uma vez, ao cadastrar ou regenerar; nula = estação sem chave.
-  chaveIngestaoHash String?
   criadoEm          DateTime                 @default(now())
   atualizadoEm      DateTime                 @updatedAt
 
   usuarioId String
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
 
+  contratoId String?
+  contrato   Contrato? @relation(fields: [contratoId], references: [id], onDelete: SetNull)
+
   parametros Parametro[]
   medidas    Medida[]
 
+  @@index([contratoId])
   @@map("estacoes")
 }
 
-/// Definição global dos tipos de sensores/métricas (ex.: pluviômetro, temperatura).
+/// Definição global dos tipos de sensores/métricas.
 model TipoParametro {
   id      String @id @default(uuid())
   nome    String
@@ -99,7 +184,7 @@ model TipoParametro {
   @@map("tipos_parametro")
 }
 
-/// Associa uma estação aos tipos de parâmetros que ela suporta (configuração de sensores por estação).
+/// Associa uma estação aos tipos de parâmetros que ela suporta.
 model Parametro {
   id       String   @id @default(uuid())
   criadoEm DateTime @default(now())
@@ -117,8 +202,7 @@ model Parametro {
   @@map("parametros")
 }
 
-/// Leituras coletadas ao longo do tempo (série temporal). Imutável: trigger no banco
-/// barra update/delete, inclusive o cascade vindo de Estacao e Parametro.
+/// Leituras coletadas ao longo do tempo.
 model Medida {
   id       String @id @default(uuid())
   unixtime BigInt
@@ -137,7 +221,7 @@ model Medida {
   @@map("medidas")
 }
 
-/// Regras de limite e condições lógicas atreladas a um parâmetro (ex.: valor > 30).
+/// Regras de limite e condições lógicas vinculadas a um parâmetro.
 model Alerta {
   id          String           @id @default(uuid())
   operador    OperadorAlerta
@@ -154,7 +238,7 @@ model Alerta {
   @@map("alertas")
 }
 
-/// Histórico de ocorrências: relaciona uma medida que violou uma regra ao alerta correspondente.
+/// Histórico de ocorrências que relaciona uma medida ao alerta correspondente.
 model Alarme {
   id          String       @id @default(uuid())
   disparadoEm DateTime     @default(now())
@@ -169,10 +253,7 @@ model Alarme {
   @@map("alarmes")
 }
 
-/// Payload bruto recebido diretamente do datalogger (ESP32), como chegou, antes de
-/// qualquer validação/normalização em Parametro/Medida. Imutável (trigger no banco
-/// barra update/delete) — preserva a procedência técnica do dado e o momento exato
-/// de recebimento (RF03/US04).
+/// Payload bruto recebido diretamente do datalogger (ESP32).
 model LeituraBruta {
   id                  String                               @id @default(uuid())
   vidEstacao          String
@@ -185,12 +266,7 @@ model LeituraBruta {
   @@map("leituras_brutas")
 }
 
-/// Trilha de auditoria: registro imutável (sem updatedAt e protegida por trigger
-/// contra update/delete) de ações executadas por usuários no sistema, para rastreabilidade
-/// forense e prestação de contas (RF: auditoria/LGPD, US07).
-/// `acao` segue a convenção "recurso.verbo" (ex.: "usuarios.criar",
-/// "autenticacao.login", "alertas.inativar") em vez de enum, para não exigir
-/// migration a cada nova ação auditável.
+/// Trilha de auditoria de ações executadas por usuários.
 model LogAuditoria {
   id         String   @id @default(uuid())
   acao       String
