@@ -18,11 +18,13 @@ describe('Ingestão (funcional)', () => {
   let ingestaoService: IngestaoService;
   const estacao = { findUnique: jest.fn() };
   const executeRawUnsafe = jest.fn();
+  const leituraErro = { createMany: jest.fn() };
 
   beforeAll(async () => {
     app = await criarAppDeTeste({
       prismaMock: {
         estacao,
+        leituraErro,
         $executeRawUnsafe: executeRawUnsafe,
         $connect: jest.fn(),
         $disconnect: jest.fn(),
@@ -39,6 +41,7 @@ describe('Ingestão (funcional)', () => {
     jest.clearAllMocks();
     estacao.findUnique.mockResolvedValue(ESTACAO_COM_COORDENADAS);
     executeRawUnsafe.mockResolvedValue(1);
+    leituraErro.createMany.mockResolvedValue({ count: 0 });
   });
 
   afterAll(async () => {

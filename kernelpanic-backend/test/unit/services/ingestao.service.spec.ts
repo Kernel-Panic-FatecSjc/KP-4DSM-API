@@ -15,7 +15,11 @@ import {
 describe('IngestaoService', () => {
   let service: IngestaoService;
   const prismaMock = { estacao: { findUnique: jest.fn() } };
-  const telemetriaMock = { registrarLeiturasBrutas: jest.fn(), registrarMedidas: jest.fn() };
+  const telemetriaMock = {
+    registrarLeiturasBrutas: jest.fn(),
+    registrarMedidas: jest.fn(),
+    registrarLeiturasErro: jest.fn(),
+  };
   const configMock = { get: jest.fn() };
   const REGEX_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

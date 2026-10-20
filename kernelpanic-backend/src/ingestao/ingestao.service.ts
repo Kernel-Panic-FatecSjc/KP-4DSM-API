@@ -1,11 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { MotivoLeituraErro } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EstacaoParametrosRespostaDto } from './dto/estacao-parametros-resposta.dto';
 import { IngestaoRespostaDto } from './dto/ingestao-resposta.dto';
 import { IngerirTelemetriaDto } from './dto/ingerir-telemetria.dto';
-import { LeituraBrutaParaGravar, MedidaParaGravar, TelemetriaService } from './telemetria.service';
+import { motivoForaDaFaixa } from './faixa-fisica';
+import {
+  LeituraBrutaParaGravar,
+  LeituraErroParaGravar,
+  MedidaParaGravar,
+  TelemetriaService,
+} from './telemetria.service';
 
 @Injectable()
 export class IngestaoService implements OnModuleInit, OnModuleDestroy {
@@ -17,6 +24,8 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   // leituras de uma vez.
   private loteBrutas: LeituraBrutaParaGravar[] = [];
   private loteMedidas: MedidaParaGravar[] = [];
+  // Leituras recebidas que não viraram medida (fora da faixa ou sem parâmetro).
+  private loteErros: LeituraErroParaGravar[] = [];
   private timer?: NodeJS.Timeout;
   private readonly tamanhoLoteMaximo: number;
   private readonly intervaloFlushMs: number;
@@ -47,7 +56,12 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
         id: true,
         latitude: true,
         longitude: true,
-        parametros: { select: { id: true, tipoParametro: { select: { nome: true } } } },
+        parametros: {
+          select: {
+            id: true,
+            tipoParametro: { select: { nome: true, valorMinimo: true, valorMaximo: true } },
+          },
+        },
       },
     });
 
@@ -71,9 +85,13 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
       unixtimeDispositivo,
     });
 
-    this.enfileirarMedidas(estacao, payload.leituras, unixtimeDispositivo);
+    this.enfileirarMedidas(estacao, payload.leituras, unixtimeDispositivo, leituraBrutaId, payload.vid);
 
-    if (this.loteBrutas.length >= this.tamanhoLoteMaximo || this.loteMedidas.length >= this.tamanhoLoteMaximo) {
+    if (
+      this.loteBrutas.length >= this.tamanhoLoteMaximo ||
+      this.loteMedidas.length >= this.tamanhoLoteMaximo ||
+      this.loteErros.length >= this.tamanhoLoteMaximo
+    ) {
       void this.flush();
     }
 
@@ -86,40 +104,74 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   }
 
   private enfileirarMedidas(
-    estacao: { id: string; parametros?: { id: string; tipoParametro: { nome: string } }[] },
+    estacao: {
+      id: string;
+      parametros?: {
+        id: string;
+        tipoParametro: { nome: string; valorMinimo?: number | null; valorMaximo?: number | null };
+      }[];
+    },
     leituras: Record<string, number>,
     unixtime: number,
+    leituraBrutaId: string,
+    vidEstacao: string,
   ): void {
     // O nome do sensor no payload casa com o "nome" do tipoParametro
     // configurado para a estação (é o mesmo mapa que /parametros expõe para
-    // o datalogger aprender). Leituras sem tipoParametro correspondente são
-    // descartadas aqui — já foram preservadas intactas em leituras_brutas.
-    const mapaParametros = new Map((estacao.parametros ?? []).map((p) => [p.tipoParametro.nome, p.id]));
+    // o datalogger aprender). A leitura sem parâmetro correspondente, ou fora
+    // da faixa física do sensor, não vira medida: fica registrada em
+    // leituras_erro, e o pacote segue intacto em leituras_brutas.
+    const mapaParametros = new Map((estacao.parametros ?? []).map((p) => [p.tipoParametro.nome, p]));
 
-    for (const [nome, valor] of Object.entries(leituras)) {
-      const parametroId = mapaParametros.get(nome);
-      if (!parametroId) continue;
-      this.loteMedidas.push({ parametroId, estacaoId: estacao.id, valor, unixtime });
+    for (const [nomeSensor, valor] of Object.entries(leituras)) {
+      const parametro = mapaParametros.get(nomeSensor);
+      const valorMinimo = parametro?.tipoParametro.valorMinimo ?? null;
+      const valorMaximo = parametro?.tipoParametro.valorMaximo ?? null;
+
+      const motivo = parametro
+        ? motivoForaDaFaixa(valor, valorMinimo, valorMaximo)
+        : MotivoLeituraErro.SENSOR_NAO_CONFIGURADO;
+
+      if (parametro && !motivo) {
+        this.loteMedidas.push({ parametroId: parametro.id, estacaoId: estacao.id, valor, unixtime });
+        continue;
+      }
+
+      this.loteErros.push({
+        id: randomUUID(),
+        leituraBrutaId,
+        vidEstacao,
+        nomeSensor,
+        parametroId: parametro?.id ?? null,
+        valor,
+        unixtime,
+        motivo: motivo ?? MotivoLeituraErro.SENSOR_NAO_CONFIGURADO,
+        valorMinimo,
+        valorMaximo,
+      });
     }
   }
 
   /** Grava os dois lotes acumulados. Público para permitir flush manual (testes, shutdown). */
   async flush(): Promise<void> {
-    if (this.loteBrutas.length === 0 && this.loteMedidas.length === 0) return;
+    if (this.loteBrutas.length === 0 && this.loteMedidas.length === 0 && this.loteErros.length === 0) return;
 
     const brutas = this.loteBrutas;
     const medidas = this.loteMedidas;
+    const erros = this.loteErros;
     this.loteBrutas = [];
     this.loteMedidas = [];
+    this.loteErros = [];
 
     try {
       await Promise.all([
         this.telemetria.registrarLeiturasBrutas(brutas),
         this.telemetria.registrarMedidas(medidas),
+        this.telemetria.registrarLeiturasErro(erros),
       ]);
     } catch (erro) {
       this.logger.error(
-        `Falha ao gravar lote (${brutas.length} leitura(s) bruta(s), ${medidas.length} medida(s))`,
+        `Falha ao gravar lote (${brutas.length} leitura(s) bruta(s), ${medidas.length} medida(s), ${erros.length} leitura(s) com erro)`,
         erro as Error,
       );
     }
