@@ -1,3 +1,4 @@
+import { gerarChaveIngestao } from '../../src/ingestao/chave-ingestao';
 import type { Executor } from './simulador-esp32';
 
 // Sem hífen: precisa bater com o padrão de nome de sensor aceito pelo
@@ -10,6 +11,7 @@ const EMAIL_USUARIO_CARGA = 'carga-alertas@kernelpanic.dev';
 
 export interface EstacaoComAlerta {
   vid: string;
+  chaveIngestao: string;
   baseTemperatura: number;
   alertaId: string;
 }
@@ -67,13 +69,15 @@ export async function prepararCenarioAlertas(
   for (let i = 1; i <= quantidade; i++) {
     const vid = `${PREFIXO_VID_CARGA}${String(i).padStart(5, '0')}`;
     const baseTemperatura = Number((18 + Math.random() * 12).toFixed(1));
+    // chave nova a cada execução, já que o banco só guarda o hash
+    const { chave, hash } = gerarChaveIngestao();
 
     const { rows: estacaoRows } = (await executor.query(
-      `INSERT INTO estacoes (id, nome, endereco, vid, latitude, longitude, "usuarioId", "criadoEm", "atualizadoEm")
-       VALUES (gen_random_uuid(), $1, 'Gerado por teste de carga', $2, 0, 0, $3, now(), now())
-       ON CONFLICT (vid) DO UPDATE SET nome = EXCLUDED.nome
+      `INSERT INTO estacoes (id, nome, endereco, vid, latitude, longitude, "chaveIngestaoHash", "usuarioId", "criadoEm", "atualizadoEm")
+       VALUES (gen_random_uuid(), $1, 'Gerado por teste de carga', $2, 0, 0, $3, $4, now(), now())
+       ON CONFLICT (vid) DO UPDATE SET nome = EXCLUDED.nome, "chaveIngestaoHash" = EXCLUDED."chaveIngestaoHash"
        RETURNING id`,
-      [`Estação de carga ${i}`, vid, usuarioId],
+      [`Estação de carga ${i}`, vid, hash, usuarioId],
     )) as { rows: { id: string }[] };
     const estacaoId = estacaoRows[0].id;
 
@@ -102,7 +106,7 @@ export async function prepararCenarioAlertas(
         )) as { rows: { id: string }[] }
       ).rows[0].id;
 
-    estacoes.push({ vid, baseTemperatura, alertaId });
+    estacoes.push({ vid, chaveIngestao: chave, baseTemperatura, alertaId });
   }
 
   return estacoes;

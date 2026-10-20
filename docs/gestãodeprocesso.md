@@ -80,7 +80,7 @@ Com o code review em andamento, o código pode ser testado rodando antes de ser 
 * **Aprovação:** o PR precisa de 1 aprovação de quem não é o autor, no commit atual. Commit novo exige nova aprovação. PRs `docs` que só mudam documentação não precisam de review.
 * **Verificação do DoD:** a entrega é checada contra a **Definition of Done**. Se não atender, volta para a implementação.
 * **Merge na main:** com a aprovação e os checks `CI ok`, `Estratégia de branch` e `Requisito vinculado` verdes, o PR é mesclado e a feature branch excluída. Não existe push direto na `main`.
-* **Tarefa Concluída:** estado final tanto das tarefas técnicas (após o merge) quanto das não técnicas (após a validação). A User Story é concluída quando todas as suas tarefas estão concluídas, e o Requisito quando todas as suas User Stories estão concluídas.
+* **Tarefa Concluída:** estado final tanto das tarefas técnicas (após o merge) quanto das não técnicas (após a validação). Tarefa com PR é movida para **Concluído** no Jira automaticamente quando o PR é mesclado (menos `revert`); a sem PR é movida por quem a validou. A User Story é concluída quando todas as suas tarefas estão concluídas, e o Requisito quando todas as suas User Stories estão concluídas.
 
 ### 6. Release e Operação
 
