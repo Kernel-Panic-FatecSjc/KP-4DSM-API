@@ -72,6 +72,31 @@ describe('Ingestão (funcional)', () => {
     expect(executeRawUnsafe).toHaveBeenCalledTimes(1);
   });
 
+  it('aceita com 202 o pacote de estação inativa, guarda o bruto e avisa no corpo', async () => {
+    estacao.findUnique.mockResolvedValue({ ...ESTACAO_COM_COORDENADAS, statusOperacional: 'INATIVA' });
+
+    const resposta = await postar({
+      vid: VID_ESTACAO,
+      unixtime: 1_760_000_000,
+      leituras: LEITURAS,
+    }).expect(202);
+    await ingestaoService.flush();
+
+    expect(resposta.body).toMatchObject({ estacaoInativa: true, sensoresRecebidos: 3 });
+    expect(executeRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(executeRawUnsafe.mock.calls[0]).toContain(resposta.body.leituraBrutaId);
+  });
+
+  it('responde estacaoInativa false para a estação ativa', async () => {
+    const resposta = await postar({
+      vid: VID_ESTACAO,
+      unixtime: 1_760_000_000,
+      leituras: LEITURAS,
+    }).expect(202);
+
+    expect(resposta.body.estacaoInativa).toBe(false);
+  });
+
   it('descarta campos desconhecidos do payload (whitelist)', async () => {
     await postar({ vid: VID_ESTACAO, bateria: 3.7, leituras: LEITURAS }).expect(202);
   });
