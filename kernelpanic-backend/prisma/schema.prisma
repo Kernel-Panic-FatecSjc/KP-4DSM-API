@@ -154,6 +154,7 @@ model Estacao {
   latitude          Float                    @default(0)
   longitude         Float                    @default(0)
   statusOperacional StatusOperacionalEstacao @default(ATIVA)
+  chaveIngestaoHash String?
   criadoEm          DateTime                 @default(now())
   atualizadoEm      DateTime                 @updatedAt
 
