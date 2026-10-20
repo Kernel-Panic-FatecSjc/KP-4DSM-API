@@ -34,4 +34,8 @@ export class AtualizarEstacaoDto {
   @IsArray()
   @IsUUID('4', { each: true })
   tipoParametroIds?: string[];
+
+  @IsOptional()
+  @IsUUID('4')
+  contratoId?: string | null;
 }

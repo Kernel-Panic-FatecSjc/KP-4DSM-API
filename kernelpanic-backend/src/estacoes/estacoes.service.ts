@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
+import { StatusContrato } from '../generated/prisma/client';
 import { gerarChaveIngestao } from '../ingestao/chave-ingestao';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtualizarEstacaoDto } from './dto/atualizar-estacao.dto';
@@ -58,6 +59,8 @@ export class EstacoesService {
       throw new BadRequestException('Um ou mais sensores selecionados não existem');
     }
 
+    if (dto.contratoId) await this.validarContratoAtivo(dto.contratoId);
+
     const { chave, hash } = gerarChaveIngestao();
     const estacao = await this.prisma.estacao.create({
       data: {
@@ -68,6 +71,7 @@ export class EstacoesService {
         longitude: dto.longitude,
         chaveIngestaoHash: hash,
         usuarioId,
+        contratoId: dto.contratoId,
         parametros: {
           create: tipoParametroIds.map((tipoParametroId) => ({ tipoParametroId })),
         },
@@ -110,6 +114,8 @@ export class EstacoesService {
       }
     }
 
+    if (dto.contratoId) await this.validarContratoAtivo(dto.contratoId);
+
     const sensores = dto.tipoParametroIds
       ? await this.planejarMudancaDeSensores(estacao.parametros, dto.tipoParametroIds)
       : undefined;
@@ -123,6 +129,7 @@ export class EstacoesService {
         latitude: dto.latitude,
         longitude: dto.longitude,
         statusOperacional: dto.statusOperacional,
+        contratoId: dto.contratoId,
         parametros: sensores,
       },
       include: INCLUIR_SENSORES,
@@ -183,5 +190,15 @@ export class EstacoesService {
       deleteMany: aRemover.length > 0 ? { id: { in: aRemover.map(({ id }) => id) } } : undefined,
       create: aAdicionar.map((tipoParametroId) => ({ tipoParametroId })),
     };
+  }
+
+  private async validarContratoAtivo(id: string): Promise<void> {
+    const contrato = await this.prisma.contrato.findUnique({
+      where: { id },
+      select: { id: true, status: true },
+    });
+    if (!contrato || contrato.status !== StatusContrato.ATIVO) {
+      throw new BadRequestException('A estacao deve ser vinculada a um contrato ativo');
+    }
   }
 }

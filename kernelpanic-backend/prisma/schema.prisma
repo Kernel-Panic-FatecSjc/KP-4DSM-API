@@ -172,6 +172,38 @@ model Estacao {
   @@map("estacoes")
 }
 
+model Orgao {
+  id           String   @id @default(uuid())
+  nome         String
+  cnpj         String?  @unique
+  ativo        Boolean  @default(true)
+  criadoEm     DateTime @default(now())
+  atualizadoEm DateTime @updatedAt
+
+  contratos Contrato[]
+
+  @@map("orgaos")
+}
+
+model Contrato {
+  id             String         @id @default(uuid())
+  numero         String         @unique
+  objeto         String
+  inicioVigencia DateTime
+  fimVigencia    DateTime
+  status         StatusContrato @default(RASCUNHO)
+  criadoEm       DateTime       @default(now())
+  atualizadoEm   DateTime       @updatedAt
+  encerradoEm    DateTime?
+  orgaoId        String
+  orgao          Orgao          @relation(fields: [orgaoId], references: [id], onDelete: Restrict)
+  estacoes       Estacao[]
+
+  @@index([orgaoId])
+  @@index([status])
+  @@map("contratos")
+}
+
 /// Definição global dos tipos de sensores/métricas (ex.: pluviômetro, temperatura).
 model TipoParametro {
   id          String @id @default(uuid())
