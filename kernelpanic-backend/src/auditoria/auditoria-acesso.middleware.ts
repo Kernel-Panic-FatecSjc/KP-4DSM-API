@@ -13,7 +13,10 @@ export class AuditoriaAcessoMiddleware implements NestMiddleware {
   constructor(private readonly auditoriaService: AuditoriaService) {}
 
   use(request: RequisicaoComUsuario, response: Response, next: NextFunction): void {
-    if (request.path.startsWith('/ingestao')) {
+    // originalUrl, e não path: com forRoutes('*') o Express corta o prefixo que
+    // casou, então request.path chega aqui como '/' e este desvio nunca disparava
+    // (cada POST do datalogger gerava uma linha de auditoria).
+    if (request.originalUrl.startsWith('/ingestao')) {
       next();
       return;
     }
