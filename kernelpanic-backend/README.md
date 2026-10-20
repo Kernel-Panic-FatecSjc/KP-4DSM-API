@@ -80,6 +80,22 @@ As rotas `POST /ingestao/telemetria` e `GET /ingestao/estacoes/:vid/parametros` 
 - `possuiChaveIngestao` na resposta da estação indica se ela já tem chave.
 - Em desenvolvimento, `INGESTAO_ROTA_ABERTA=true` com `NODE_ENV=development` abre a rota sem chave. Em qualquer outro `NODE_ENV`, essa opção faz a API não subir.
 
+## Ingestão: estação inativa
+
+Uma estação com `statusOperacional` `INATIVA` (remoção lógica ou edição do status) continua podendo enviar telemetria em `POST /ingestao/telemetria`, mas o dado não alimenta dashboard nem alertas:
+
+- O pacote é **guardado em `leituras_brutas`** (procedência), como o de qualquer estação.
+- **Nenhuma medida é gerada**, e por isso nenhum alarme: os alarmes nascem do trigger do banco quando uma medida entra.
+- A resposta continua **202**, e o corpo traz `estacaoInativa: true` (nas estações ativas é `false`):
+
+```json
+{ "leituraBrutaId": "…", "estacaoId": "…", "sensoresRecebidos": 3, "recebidoEm": 1760000000, "estacaoInativa": true }
+```
+
+- Por que 202 e não 409: o 409 faria o datalogger tratar o envio como falha e reenviar para sempre um dado que não vai ser aceito, já que a estação não volta a ficar ativa sozinha. O 202 mantém o contrato ("recebi") e o campo avisa que o pacote não virou medida.
+- Reativar a estação (`statusOperacional: ATIVA`) volta a gerar medidas a partir dali. O que chegou enquanto ela estava inativa fica só em `leituras_brutas`.
+- A documentação OpenAPI/Swagger desta resposta entra com a configuração do Swagger (SCRUM-45), que ainda não existe no projeto.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
