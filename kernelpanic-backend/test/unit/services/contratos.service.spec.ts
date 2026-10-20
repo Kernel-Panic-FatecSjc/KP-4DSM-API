@@ -6,6 +6,7 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import { StatusContrato } from '../../../src/generated/prisma/client';
 import { ContratosService } from '../../../src/contratos/contratos.service';
+import { ListarContratosQueryDto } from '../../../src/contratos/dto/listar-contratos-query.dto';
 import { PrismaService } from '../../../src/prisma/prisma.service';
 
 const ORGAO = { id: 'orgao-1', nome: 'Prefeitura', cnpj: null, ativo: true };
@@ -48,15 +49,27 @@ describe('ContratosService', () => {
   let service: ContratosService;
   const prismaMock = {
     contrato: {
+      findMany: jest.fn(),
+      count: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
     orgaoPublico: { findUnique: jest.fn() },
+    estacao: { groupBy: jest.fn() },
+    $transaction: jest.fn(),
   };
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    prismaMock.$transaction.mockImplementation((operacoes) =>
+      Promise.all(operacoes),
+    );
+    prismaMock.contrato.findMany.mockResolvedValue([CONTRATO]);
+    prismaMock.contrato.count.mockResolvedValue(1);
+    prismaMock.estacao.groupBy.mockResolvedValue([
+      { contratoId: CONTRATO.id, _count: { _all: 3 } },
+    ]);
     prismaMock.contrato.findUnique.mockResolvedValue(null);
     prismaMock.contrato.create.mockImplementation(({ data }) => ({
       ...CONTRATO,
@@ -85,6 +98,72 @@ describe('ContratosService', () => {
   });
 
   afterEach(() => jest.useRealTimers());
+
+  describe('listar', () => {
+    it('aplica filtros, busca e paginação e inclui órgão e contagem de estações', async () => {
+      const query = Object.assign(new ListarContratosQueryDto(), {
+        status: StatusContrato.VIGENTE,
+        orgaoId: ORGAO.id,
+        busca: '  CTR-2026  ',
+        pagina: 3,
+        tamanho: 5,
+      });
+
+      const resultado = await service.listar(query);
+
+      const where = {
+        status: StatusContrato.VIGENTE,
+        orgaoId: ORGAO.id,
+        OR: [
+          { numero: { contains: 'CTR-2026', mode: 'insensitive' } },
+          { objeto: { contains: 'CTR-2026', mode: 'insensitive' } },
+          { orgao: { nome: { contains: 'CTR-2026', mode: 'insensitive' } } },
+        ],
+      };
+      expect(prismaMock.contrato.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where,
+        include: { orgao: true },
+          skip: 10,
+          take: 5,
+        }),
+      );
+      expect(prismaMock.contrato.count).toHaveBeenCalledWith({ where });
+      expect(prismaMock.estacao.groupBy).toHaveBeenCalledWith({
+        by: ['contratoId'],
+        where: { contratoId: { in: [CONTRATO.id] } },
+        _count: { _all: true },
+      });
+      expect(resultado).toMatchObject({
+        total: 1,
+        pagina: 3,
+        tamanho: 5,
+        contratos: [{ orgao: ORGAO, quantidadeEstacoes: 3 }],
+      });
+    });
+
+    it('usa paginação padrão e não consulta estações quando não há contratos', async () => {
+      prismaMock.contrato.findMany.mockResolvedValue([]);
+      prismaMock.contrato.count.mockResolvedValue(0);
+
+      const resultado = await service.listar(new ListarContratosQueryDto());
+
+      expect(prismaMock.contrato.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: undefined, orgaoId: undefined, OR: undefined },
+          skip: 0,
+          take: 10,
+        }),
+      );
+      expect(resultado).toMatchObject({
+        total: 0,
+        pagina: 1,
+        tamanho: 10,
+        contratos: [],
+      });
+      expect(prismaMock.estacao.groupBy).not.toHaveBeenCalled();
+    });
+  });
 
   // buscarPorId e validarNumeroUnico usam o mesmo findUnique: o primeiro é por id, o segundo por número.
   function contratoExistente(sobrescrever: Partial<ContratoDeTeste> = {}) {
