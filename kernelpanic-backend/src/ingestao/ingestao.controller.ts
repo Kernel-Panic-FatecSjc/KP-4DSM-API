@@ -14,6 +14,8 @@ import { IngestaoService } from './ingestao.service';
 export class IngestaoController {
   constructor(private readonly ingestaoService: IngestaoService) {}
 
+  // 202 também para estação inativa: o pacote é guardado, mas não gera medida
+  // nem alarme, e o corpo traz estacaoInativa: true (ver README, "Ingestão: estação inativa").
   @Post('telemetria')
   @HttpCode(HttpStatus.ACCEPTED)
   async ingerir(@Body() payload: IngerirTelemetriaDto): Promise<IngestaoRespostaDto> {

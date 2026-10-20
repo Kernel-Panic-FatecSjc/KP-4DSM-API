@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { StatusOperacionalEstacao } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EstacaoParametrosRespostaDto } from './dto/estacao-parametros-resposta.dto';
 import { IngestaoRespostaDto } from './dto/ingestao-resposta.dto';
@@ -47,6 +48,7 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
         id: true,
         latitude: true,
         longitude: true,
+        statusOperacional: true,
         parametros: { select: { id: true, tipoParametro: { select: { nome: true } } } },
       },
     });
@@ -71,7 +73,13 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
       unixtimeDispositivo,
     });
 
-    this.enfileirarMedidas(estacao, payload.leituras, unixtimeDispositivo);
+    // Estação inativa: o pacote fica em leituras_brutas (procedência), mas não
+    // vira medida, então não alimenta o dashboard nem dispara alarme (os
+    // alarmes nascem do trigger de medidas).
+    const estacaoInativa = estacao.statusOperacional === StatusOperacionalEstacao.INATIVA;
+    if (!estacaoInativa) {
+      this.enfileirarMedidas(estacao, payload.leituras, unixtimeDispositivo);
+    }
 
     if (this.loteBrutas.length >= this.tamanhoLoteMaximo || this.loteMedidas.length >= this.tamanhoLoteMaximo) {
       void this.flush();
@@ -82,6 +90,7 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
       estacao.id,
       Object.keys(payload.leituras).length,
       agora,
+      estacaoInativa,
     );
   }
 
