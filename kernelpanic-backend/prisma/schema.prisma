@@ -87,12 +87,16 @@ model Estacao {
 
 /// Definição global dos tipos de sensores/métricas (ex.: pluviômetro, temperatura).
 model TipoParametro {
-  id      String @id @default(uuid())
-  nome    String
-  unidade String
-  fator   Float
-  ganho   Float
-  json    Json?
+  id          String @id @default(uuid())
+  nome        String
+  unidade     String
+  fator       Float
+  ganho       Float
+  json        Json?
+  /// Faixa física válida da leitura (inclusiva e opcional): fora dela a
+  /// ingestão não grava medida e registra a leitura em leituras_erro.
+  valorMinimo Float?
+  valorMaximo Float?
 
   parametros Parametro[]
 

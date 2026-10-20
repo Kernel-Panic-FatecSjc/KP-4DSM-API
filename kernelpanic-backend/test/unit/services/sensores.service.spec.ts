@@ -1,4 +1,4 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../../src/prisma/prisma.service';
 import { SensoresService } from '../../../src/sensores/sensores.service';
@@ -11,6 +11,8 @@ const SENSOR = {
   fator: 1,
   ganho: 0.2,
   json: null,
+  valorMinimo: null,
+  valorMaximo: null,
   _count: { parametros: 0 },
 };
 
@@ -52,6 +54,25 @@ describe('SensoresService', () => {
       expect(sensor).toBe(SENSOR);
     });
 
+    it('cadastra a faixa física, e mínimo igual ao máximo é uma faixa de um valor só', async () => {
+      const base = { nome: 'Termômetro', unidade: UnidadeSensor.MILIMETRO, fator: 1, ganho: 0 };
+
+      await service.criar({ ...base, valorMinimo: -40, valorMaximo: 60 });
+      expect(prismaMock.tipoParametro.create).toHaveBeenLastCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ valorMinimo: -40, valorMaximo: 60 }) }),
+      );
+
+      await service.criar({ ...base, valorMinimo: 5, valorMaximo: 5 });
+      expect(prismaMock.tipoParametro.create).toHaveBeenCalledTimes(2);
+    });
+
+    it('recusa faixa com mínimo maior que o máximo, sem gravar', async () => {
+      await expect(
+        service.criar({ nome: 'Termômetro', unidade: UnidadeSensor.MILIMETRO, fator: 1, ganho: 0, valorMinimo: 10, valorMaximo: 9 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.tipoParametro.create).not.toHaveBeenCalled();
+    });
+
     it('recusa nome repetido, ignorando maiúsculas', async () => {
       prismaMock.tipoParametro.findFirst.mockResolvedValue({ id: 'sensor-1' });
 
@@ -72,6 +93,29 @@ describe('SensoresService', () => {
         expect.objectContaining({ where: { id: 'sensor-1' } }),
       );
       expect(prismaMock.tipoParametro.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('confere a faixa final contra o limite que já estava cadastrado', async () => {
+      prismaMock.tipoParametro.findUnique.mockResolvedValue({ ...SENSOR, valorMinimo: 0, valorMaximo: 100 });
+
+      await expect(service.atualizar('sensor-1', { valorMaximo: -1 })).rejects.toBeInstanceOf(BadRequestException);
+      await expect(service.atualizar('sensor-1', { valorMinimo: 101 })).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.tipoParametro.update).not.toHaveBeenCalled();
+
+      await service.atualizar('sensor-1', { valorMinimo: 100 });
+      expect(prismaMock.tipoParametro.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ valorMinimo: 100 }) }),
+      );
+    });
+
+    it('limpa um limite com null e aceita o outro sozinho', async () => {
+      prismaMock.tipoParametro.findUnique.mockResolvedValue({ ...SENSOR, valorMinimo: 0, valorMaximo: 100 });
+
+      await service.atualizar('sensor-1', { valorMaximo: null });
+
+      expect(prismaMock.tipoParametro.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ valorMaximo: null }) }),
+      );
     });
 
     it('não checa conflito quando o nome não muda', async () => {

@@ -28,6 +28,16 @@ export class CriarSensorDto {
   @IsNumber({ allowInfinity: false, allowNaN: false })
   ganho!: number;
 
+  // Faixa física válida da leitura, inclusiva e opcional: fora dela a ingestão
+  // não grava a medida (ver leituras_erro). null limpa o limite.
+  @IsOptional()
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  valorMinimo?: number | null;
+
+  @IsOptional()
+  @IsNumber({ allowInfinity: false, allowNaN: false })
+  valorMaximo?: number | null;
+
   @IsOptional()
   @IsObject()
   json?: Record<string, unknown>;

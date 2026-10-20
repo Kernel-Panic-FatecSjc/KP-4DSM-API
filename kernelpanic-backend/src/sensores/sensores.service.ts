@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtualizarSensorDto } from './dto/atualizar-sensor.dto';
@@ -19,6 +19,7 @@ export class SensoresService {
 
   async criar(dto: CriarSensorDto) {
     await this.garantirNomeLivre(dto.nome);
+    this.garantirFaixaValida(dto.valorMinimo, dto.valorMaximo);
 
     return this.prisma.tipoParametro.create({
       data: {
@@ -26,6 +27,8 @@ export class SensoresService {
         unidade: dto.unidade,
         fator: dto.fator,
         ganho: dto.ganho,
+        valorMinimo: dto.valorMinimo,
+        valorMaximo: dto.valorMaximo,
         json: dto.json as Prisma.InputJsonValue | undefined,
       },
       include: CONTAR_ESTACOES,
@@ -42,6 +45,13 @@ export class SensoresService {
       await this.garantirNomeLivre(dto.nome, id);
     }
 
+    // Os limites não enviados continuam os do cadastro: a faixa final é que
+    // precisa fazer sentido, não só o que veio no corpo.
+    this.garantirFaixaValida(
+      dto.valorMinimo === undefined ? sensor.valorMinimo : dto.valorMinimo,
+      dto.valorMaximo === undefined ? sensor.valorMaximo : dto.valorMaximo,
+    );
+
     return this.prisma.tipoParametro.update({
       where: { id },
       data: {
@@ -49,6 +59,8 @@ export class SensoresService {
         unidade: dto.unidade,
         fator: dto.fator,
         ganho: dto.ganho,
+        valorMinimo: dto.valorMinimo,
+        valorMaximo: dto.valorMaximo,
         json: dto.json as Prisma.InputJsonValue | undefined,
       },
       include: CONTAR_ESTACOES,
@@ -75,6 +87,13 @@ export class SensoresService {
     }
 
     await this.prisma.tipoParametro.delete({ where: { id } });
+  }
+
+  // Os dois limites são inclusivos, então mínimo igual ao máximo é uma faixa de um valor só.
+  private garantirFaixaValida(minimo?: number | null, maximo?: number | null): void {
+    if (minimo != null && maximo != null && minimo > maximo) {
+      throw new BadRequestException('valorMinimo não pode ser maior que valorMaximo');
+    }
   }
 
   // ignorarId deixa o próprio sensor fora da busca: sem ele, corrigir só a
