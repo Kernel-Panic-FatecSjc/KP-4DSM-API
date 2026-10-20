@@ -16,6 +16,8 @@ export class IngestaoController {
 
   // 202 também para estação inativa: o pacote é guardado, mas não gera medida
   // nem alarme, e o corpo traz estacaoInativa: true (ver README, "Ingestão: estação inativa").
+  // TODO(SCRUM-45): documentar no Swagger quando o OpenAPI for configurado: o 202 com
+  // estacaoInativa (true quando o pacote foi guardado sem gerar medida) e o 401/404.
   @Post('telemetria')
   @HttpCode(HttpStatus.ACCEPTED)
   async ingerir(@Body() payload: IngerirTelemetriaDto): Promise<IngestaoRespostaDto> {
