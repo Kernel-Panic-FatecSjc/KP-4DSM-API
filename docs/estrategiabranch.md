@@ -1,6 +1,6 @@
 # Estratégia de Branches
 
-Adotamos o **GitHub Flow**, com validação da branch em staging antes do merge e releases versionadas ao final de cada sprint.
+Adotamos o **GitHub Flow**, com staging opcional para testar o código durante a revisão e releases versionadas ao final de cada sprint.
 Esta estratégia combina a simplicidade de uma única branch principal com um processo de lançamento controlado para o ambiente de produção. O modelo se alinha aos requisitos de Integração Contínua (CI) e às políticas do time, como a Definition of Ready (DoR) e a Definition of Done (DoD).
 
 A filosofia é simples: a branch `main` representa o código mais atual e já validado, enquanto o ambiente de produção é atualizado apenas por meio de releases explícitas, geradas ao final de cada sprint.
@@ -10,7 +10,7 @@ A filosofia é simples: a branch `main` representa o código mais atual e já va
 1. **Branch principal**
 
    - Utilizamos apenas uma branch de longa duração: `main`.
-   - Ela só recebe código que passou por CI, code review, testes de sistema, aceite do PO e DoD.
+   - Ela só recebe código que passou por CI, code review e DoD.
 
 2. **Branches de tarefa**
 
@@ -29,16 +29,18 @@ A filosofia é simples: a branch `main` representa o código mais atual e já va
         - O título do PR segue o mesmo formato do commit: `tipo(SCRUM-{ID}): descrição` (ex: `feat(SCRUM-12): Criação da tela de login`)
         - Devem contar com um revisor que não é o responsável direto pela task.
 
-4. **Validação em Staging**
+4. **Staging (opcional, durante a revisão)**
 
-   - Após a aprovação no code review, e antes do merge na main, a **branch da tarefa** é publicada no ambiente de **staging**.
-   - Nesse ambiente são executados os testes de sistema e o **aceite do Product Owner**.
-   - Se houver reprovação, a tarefa volta para a implementação com um feedback.
+   - Para testar o código rodando, o **revisor** coloca o label `staging` no PR. O PR é publicado na branch `staging`, integrado com a `main` atual, e cada push novo no PR republica enquanto o label estiver.
+   - Staging é um ambiente só: o label fica em **um PR por vez** (ao rotular um PR, ele sai dos outros). O autor não leva o próprio PR: o label posto por ele é removido.
+   - Não há deploy: a pipeline só atualiza a branch `staging`. Os testes de sistema são feitos por quem revisa, rodando essa branch.
+   - Se o código não passar, o revisor pede mudanças no review e a tarefa volta para a implementação.
 
 5. **Merge na main**
 
-   - Com a validação em staging aprovada, verifica-se se a entrega atende à **Definition of Done (DoD)**.
-   - Se atender, a branch é integrada na `main`. Se não, volta para a implementação.
+   - Com a aprovação do review e os checks verdes, verifica-se se a entrega atende à **Definition of Done (DoD)**.
+   - Se atender, o PR é mesclado na `main`. Se não, volta para a implementação.
+   - Com o merge, a tarefa da branch (`SCRUM-{ID}`) é movida para **Concluído** no Jira automaticamente. PR `revert` não conclui tarefa.
 
 6. **Publicação em Produção**
 
@@ -49,16 +51,16 @@ A filosofia é simples: a branch `main` representa o código mais atual e já va
 7. **Rollback e Hotfixes**
 
    - Se o health check falhar, é feito **rollback** para a versão anterior.
-   - Em seguida, realiza-se a análise de causa e a correção (**hotfix**). O bug é registrado no Jira, ligado ao Requisito afetado, e a correção segue o mesmo fluxo das demais tarefas: nova branch a partir da `main`, PR, CI, code review, validação em staging e nova release.
+   - Em seguida, realiza-se a análise de causa e a correção (**hotfix**). O bug é registrado no Jira, ligado ao Requisito afetado, e a correção segue o mesmo fluxo das demais tarefas: nova branch `hotfix/SCRUM-{ID}-descricao-curta` a partir da `main`, PR, CI, code review (staging opcional) e nova release.
 
-### Exceção: documentação e entregáveis não técnicos
+### Documentação, hotfix e revert
 
-Atualizações de documentação e entregáveis que não são código (atas, diagramas, relatórios de sprint, arquivos `.md`) podem ser commitadas direto na `main`, sem branch e sem PR.
+Tudo entra na `main` por PR, sem exceção: não existe push direto, nem de documentação, e ninguém contorna as regras da `main`.
 
-- O commit só pode conter documentação. Se incluir qualquer arquivo de código ou de configuração da aplicação, segue o fluxo normal.
-- O commit segue o [padrão de commit](padraocommit.md) com o tipo `docs`: `docs(SCRUM-{ID}): descrição`. A tarefa continua ligada a um Requisito (ver [rastreabilidade](rastreabilidade.md)).
-- A validação por outro membro do time, prevista para tarefas não técnicas, é feita sobre o commit na `main`. Se houver ajuste, ele é feito em um novo commit.
-- A branch protection da `main` deve permitir push direto aos membros do time. Se não permitir, abre-se um PR sem exigência de aprovação.
+- **`docs`:** PR com o tipo `docs(SCRUM-{ID}): descrição`. Se ele só mudar arquivos de documentação (`docs/` e `*.md`), **não precisa de review**: o status `revisao/aprovada` passa sozinho. Se mexer em qualquer outro arquivo, o status falha e o PR segue o fluxo normal, com o tipo certo.
+- **`hotfix`:** correção urgente. Passa por PR, CI e os checks de padrão, e **exige review**. O staging é opcional.
+- **`revert`:** reversão de uma mudança já mesclada. Não use o botão Revert do GitHub (ele gera nomes fora do padrão): crie a branch `revert/SCRUM-{ID}-descricao-curta` e commite `revert(SCRUM-{ID}): descrição`. Exige review.
+- Tarefas de documentação e entregáveis não técnicos continuam ligadas a um Requisito (ver [rastreabilidade](rastreabilidade.md)).
 
 ### Como a pipeline garante esta estratégia
 
@@ -69,16 +71,17 @@ Atualizações de documentação e entregáveis que não são código (atas, dia
 | Título e commits `tipo(SCRUM-{ID}): descrição`, mesmo ID na branch e no título | `.github/workflows/estrategia-branch.yaml` e hook `commit-msg` | Estratégia de branch |
 | Tarefa da branch e dos commits ligada a Requisito no Jira, dentro dos Requisitos do pai (ver [rastreabilidade](rastreabilidade.md)) | `.github/workflows/rastreabilidade-requisito.yaml` | Requisito vinculado |
 | CI verde (build, lint, testes, migrations) | `.github/workflows/ci.yaml` | CI ok |
-| Code review por alguém que não é o autor | Ruleset da `main` (1 aprovação; o autor não aprova o próprio PR) | Review |
-| Validação em staging e aceite do PO | `.github/workflows/validacao-staging.yaml` | staging/aceite-po |
-| Push direto na `main` só com documentação, sem push forçado | `.github/workflows/estrategia-branch.yaml` | Push direto na main (no commit) |
+| Aprovação de quem não é o autor, no commit atual (`docs` só de documentação dispensa) | `.github/workflows/revisao-exigida.yaml` | `revisao/aprovada` (status do commit) |
+| Staging opcional, por label do revisor | `.github/workflows/publicar-staging.yaml` | nenhum (não bloqueia o merge) |
+| Sem push direto e sem push forçado na `main` | Rulesets da `main` | nenhum |
+| Tarefa da branch vai para Concluído no Jira quando o PR é mesclado (menos `revert`) | `.github/workflows/concluir-tarefa.yaml` | nenhum (roda depois do merge) |
 
-**Validação em staging.** Quando um review aprova o PR, o workflow confere se o `CI ok` está verde no commit aprovado e publica na branch `staging` o PR integrado com a `main` atual. Staging recebe uma tarefa por vez. O PO testa e aprova ou rejeita o job **Aceite do PO** no GitHub Actions (environment `aceite-staging`). A aprovação grava o status `staging/aceite-po` no commit do PR e libera o merge. A rejeição marca o status como falho e a tarefa volta para a implementação. Commit novo no PR exige novo review e novo aceite.
+**Staging por label.** O revisor coloca o label `staging` no PR; o workflow tira o label dos outros PRs abertos e publica na branch `staging` o PR integrado com a `main` atual. O label posto pelo autor é removido com um aviso. Enquanto o label estiver, cada push novo no PR republica. Não há aceite nem status: staging serve só para testar durante a revisão.
 
 **Configuração no GitHub.**
 
-* Environment `aceite-staging`: *required reviewers* com o PO e *prevent self-review* marcado.
 * Ruleset `main - histórico`, sem bypass: bloquear *force push* e exclusão.
-* Ruleset `main - merge`: exigir PR com 1 aprovação, descartar aprovações quando houver commit novo, e exigir os checks `CI ok`, `Estratégia de branch`, `Requisito vinculado` e `staging/aceite-po`. Os membros do time ficam como *bypass* para permitir o push direto de documentação; o bypass num PR fica registrado, e o job **Push direto na main** fica vermelho se um commit direto tiver algo além de documentação.
-* Secrets do repositório `JIRA_BASE_URL`, `JIRA_EMAIL` e `JIRA_API_TOKEN`, usados pelo check `Requisito vinculado` (o token só precisa de leitura no Jira). PR de fork não recebe secrets, e o check falha nele.
-* Branch `staging` sem ruleset: ela é sobrescrita pelo workflow a cada validação.
+* Ruleset `main - merge`, sem bypass: exigir PR, e exigir os checks `CI ok`, `Estratégia de branch`, `Requisito vinculado` e o status `revisao/aprovada`. A contagem de aprovações não fica na ruleset porque ela não tem exceção por tipo de PR; é o status `revisao/aprovada` que cobra a aprovação e já descarta a que ficou para um commit antigo.
+* Label `staging` no repositório.
+* Secrets do repositório `JIRA_BASE_URL`, `JIRA_EMAIL` e `JIRA_API_TOKEN`, usados pelo check `Requisito vinculado` e pelo workflow que conclui a tarefa no merge. O usuário do token precisa ler as issues e poder transicioná-las no projeto. PR de fork não recebe secrets, e o check falha nele.
+* Branch `staging` sem ruleset: ela é sobrescrita pelo workflow a cada publicação.

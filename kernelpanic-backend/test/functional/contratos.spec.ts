@@ -51,6 +51,7 @@ describe('Contratos (funcional)', () => {
   const estacao = { findMany: jest.fn(), groupBy: jest.fn() };
   const contrato = {
     findMany: jest.fn(),
+    count: jest.fn(),
     findUnique: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -71,6 +72,7 @@ describe('Contratos (funcional)', () => {
         estacao,
         orgao,
         logAuditoria,
+        $transaction: jest.fn((operacoes: Promise<unknown>[]) => Promise.all(operacoes)),
         $connect: jest.fn(),
         $disconnect: jest.fn(),
       },
@@ -87,6 +89,7 @@ describe('Contratos (funcional)', () => {
       ({ where }) => [ADMIN, MONITOR].find((u) => u.id === where.id) ?? null,
     );
     contrato.findMany.mockResolvedValue([CONTRATO]);
+    contrato.count.mockResolvedValue(1);
     estacao.groupBy.mockResolvedValue([]);
     estacao.findMany.mockResolvedValue([]);
     contrato.findUnique.mockImplementation(({ where }) =>
@@ -391,6 +394,17 @@ describe('Contratos (funcional)', () => {
       );
       expect(documento.paths['/contratos/{id}']).not.toHaveProperty('delete');
 
+      const hierarquia = documento.paths['/contratos/{id}/estacoes'].get!;
+      expect(hierarquia.responses).toHaveProperty('200');
+      expect(hierarquia.tags).toContain('contratos');
+
+      const listarEstacoes = documento.paths['/estacoes'].get!;
+      expect(listarEstacoes.parameters).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: 'contratoId', in: 'query' }),
+        ]),
+      );
+
       const criar = documento.paths['/contratos'].post!;
       expect(criar.tags).toContain('contratos');
       expect(Object.keys(criar.responses)).toEqual(
@@ -407,6 +421,12 @@ describe('Contratos (funcional)', () => {
       });
       expect(schemas.CriarContratoDto).toBeDefined();
       expect(schemas.AtualizarContratoDto).toBeDefined();
+      expect(schemas.EstacaoRespostaDto).toMatchObject({
+        properties: expect.objectContaining({
+          contratoId: expect.anything(),
+          sensores: expect.anything(),
+        }),
+      });
     });
   });
 });

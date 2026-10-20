@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
+import { gerarChaveIngestao } from '../ingestao/chave-ingestao';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtualizarEstacaoDto } from './dto/atualizar-estacao.dto';
 import { CriarEstacaoDto } from './dto/criar-estacao.dto';
@@ -10,6 +11,11 @@ const INCLUIR_SENSORES = {
 } satisfies Prisma.EstacaoInclude;
 
 type EstacaoComSensores = Prisma.EstacaoGetPayload<{ include: typeof INCLUIR_SENSORES }>;
+
+export interface EstacaoCriada {
+  estacao: EstacaoComSensores;
+  chaveIngestao: string;
+}
 
 @Injectable()
 export class EstacoesService {
@@ -32,7 +38,8 @@ export class EstacoesService {
     });
   }
 
-  async criar(dto: CriarEstacaoDto, usuarioId: string): Promise<EstacaoComSensores> {
+  /** Cadastra a estação já com a chave de ingestão, devolvida só desta vez. */
+  async criar(dto: CriarEstacaoDto, usuarioId: string): Promise<EstacaoCriada> {
     const tipoParametroIds = dto.tipoParametroIds ?? [];
     const identificadores = new Set(tipoParametroIds);
     if (identificadores.size !== tipoParametroIds.length) {
@@ -56,13 +63,15 @@ export class EstacoesService {
       throw new BadRequestException('Um ou mais sensores selecionados não existem');
     }
 
-    return this.prisma.estacao.create({
+    const { chave, hash } = gerarChaveIngestao();
+    const estacao = await this.prisma.estacao.create({
       data: {
         nome: dto.nome,
         endereco: dto.endereco,
         vid: dto.vid,
         latitude: dto.latitude,
         longitude: dto.longitude,
+        chaveIngestaoHash: hash,
         usuarioId,
         contratoId: dto.contratoId ?? undefined,
         parametros: {
@@ -71,6 +80,23 @@ export class EstacoesService {
       },
       include: INCLUIR_SENSORES,
     });
+
+    return { estacao, chaveIngestao: chave };
+  }
+
+  /**
+   * Troca a chave de ingestão da estação: a anterior para de valer na hora.
+   * A nova é devolvida só desta vez; o banco guarda apenas o hash.
+   */
+  async regenerarChaveIngestao(id: string): Promise<string> {
+    const estacao = await this.prisma.estacao.findUnique({ where: { id }, select: { id: true } });
+    if (!estacao) {
+      throw new NotFoundException('Estação não encontrada');
+    }
+
+    const { chave, hash } = gerarChaveIngestao();
+    await this.prisma.estacao.update({ where: { id }, data: { chaveIngestaoHash: hash } });
+    return chave;
   }
 
   async atualizar(id: string, dto: AtualizarEstacaoDto): Promise<EstacaoComSensores> {
@@ -160,9 +186,9 @@ export class EstacoesService {
       (tipoParametroId) => !atuais.some((parametro) => parametro.tipoParametroId === tipoParametroId),
     );
 
-    // Apagar um Parametro leva junto as Medida dele (onDelete: Cascade). Um
-    // sensor que já coletou dados só sai do cadastro às custas da série
-    // histórica, então a remoção é recusada em vez de destruir a medição.
+    // Apagar um Parametro tentaria levar junto as Medida dele (onDelete:
+    // Cascade), e o trigger que mantém as medidas imutáveis barra isso. A
+    // checagem aqui responde 409 com mensagem clara antes de chegar ao banco.
     if (aRemover.length > 0) {
       const comMedidas = await this.prisma.medida.findFirst({
         where: { parametroId: { in: aRemover.map((parametro) => parametro.id) } },

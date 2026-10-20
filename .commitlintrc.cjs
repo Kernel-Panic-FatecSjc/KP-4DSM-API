@@ -1,12 +1,12 @@
 // Valida a mensagem no hook commit-msg com a mesma regra da CI
 // (.github/workflows/estrategia-branch.yaml). Se mudar o padrão lá, mude aqui.
-const PADRAO = /^(feat|fix|docs|style|refactor|test|chore|ci)\(SCRUM-[0-9]+\): .+/;
+const PADRAO = /^(feat|fix|docs|style|refactor|test|chore|ci|hotfix|revert)\(SCRUM-[0-9]+\): .+/;
 
 const AJUDA = `mensagem fora do padrão.
 
   Formato esperado:  tipo(SCRUM-{ID}): descrição
 
-    tipo         feat, fix, docs, style, refactor, test, chore, ci
+    tipo         feat, fix, docs, style, refactor, test, chore, ci, hotfix, revert
     SCRUM-{ID}   ID da tarefa no Jira, obrigatório em todos os tipos
 
   Exemplos:

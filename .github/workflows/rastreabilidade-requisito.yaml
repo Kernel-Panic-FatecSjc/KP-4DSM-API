@@ -17,6 +17,9 @@ concurrency:
 jobs:
   requisito:
     name: Requisito vinculado
+    # Título e descrição do PR não entram na checagem: editar só vale se o
+    # destino mudou.
+    if: github.event.action != 'edited' || github.event.changes.base
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

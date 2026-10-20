@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
+import { chaveIngestaoConfere } from '../../src/ingestao/chave-ingestao';
 import { ESTACAO_COM_SENSORES, TIPO_CHUVA } from '../fixtures';
 import { criarAppDeTeste } from '../helpers';
 
@@ -10,7 +11,7 @@ describe('Gerenciamento de estações (funcional)', () => {
   let app: INestApplication;
   let cookie: string;
   const usuario = { findUnique: jest.fn() };
-  const estacao = { findUnique: jest.fn(), update: jest.fn() };
+  const estacao = { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), create: jest.fn() };
   const tipoParametro = { findMany: jest.fn() };
   const medida = { findFirst: jest.fn() };
   const logAuditoria = { create: jest.fn() };
@@ -36,8 +37,13 @@ describe('Gerenciamento de estações (funcional)', () => {
     jest.clearAllMocks();
     usuario.findUnique.mockResolvedValue(USUARIO);
     estacao.findUnique.mockResolvedValue(ESTACAO_COM_SENSORES);
+    estacao.findMany.mockResolvedValue([]);
     // Como o Prisma, devolve os sensores do include mesmo quando o PATCH não mexe neles.
     estacao.update.mockImplementation(({ data: { parametros: _parametros, ...campos } }) => ({
+      ...ESTACAO_COM_SENSORES,
+      ...campos,
+    }));
+    estacao.create.mockImplementation(({ data: { parametros: _parametros, ...campos } }) => ({
       ...ESTACAO_COM_SENSORES,
       ...campos,
     }));
@@ -49,6 +55,88 @@ describe('Gerenciamento de estações (funcional)', () => {
 
   afterAll(async () => {
     await app.close();
+  });
+
+  describe('GET /estacoes', () => {
+    it('filtra pelo contrato e devolve o vínculo na resposta', async () => {
+      const contratoId = '11111111-1111-4111-8111-111111111111';
+      estacao.findMany.mockResolvedValueOnce([
+        { ...ESTACAO_COM_SENSORES, contratoId },
+      ]);
+
+      const resposta = await request(app.getHttpServer())
+        .get('/estacoes')
+        .query({ contratoId })
+        .set('Cookie', cookie)
+        .expect(200);
+
+      expect(estacao.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ contratoId }) }),
+      );
+      expect(resposta.body[0]).toMatchObject({ id: ESTACAO_COM_SENSORES.id, contratoId });
+    });
+  });
+
+  describe('POST /estacoes', () => {
+    const NOVA = { nome: 'Estação Sul', endereco: 'Rua B', vid: '11:22:33:44:55:99', latitude: -23.2, longitude: -45.9 };
+
+    it('devolve a chave de ingestão uma única vez, sem expor o hash', async () => {
+      estacao.findUnique.mockResolvedValue(null);
+
+      const resposta = await request(app.getHttpServer())
+        .post('/estacoes')
+        .set('Cookie', cookie)
+        .send(NOVA)
+        .expect(201);
+
+      const { data } = estacao.create.mock.calls[0][0];
+      expect(chaveIngestaoConfere(resposta.body.chaveIngestao, data.chaveIngestaoHash)).toBe(true);
+      expect(resposta.body).toMatchObject({ vid: NOVA.vid, possuiChaveIngestao: true });
+      expect(resposta.body).not.toHaveProperty('chaveIngestaoHash');
+      expect(JSON.stringify(logAuditoria.create.mock.calls)).not.toContain(resposta.body.chaveIngestao);
+    });
+
+    it('recusa com 403 quem não é administrador, sem cadastrar', async () => {
+      usuario.findUnique.mockResolvedValue({ ...USUARIO, tipo: 'MONITOR' });
+
+      await request(app.getHttpServer()).post('/estacoes').set('Cookie', cookie).send(NOVA).expect(403);
+      expect(estacao.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('POST /estacoes/:id/chave-ingestao', () => {
+    const regenerar = (comCookie = cookie) =>
+      request(app.getHttpServer())
+        .post(`/estacoes/${ESTACAO_COM_SENSORES.id}/chave-ingestao`)
+        .set('Cookie', comCookie);
+
+    it('gera uma chave nova para o administrador e registra na auditoria sem a chave', async () => {
+      const resposta = await regenerar().expect(201);
+
+      const { data } = estacao.update.mock.calls[0][0];
+      expect(chaveIngestaoConfere(resposta.body.chaveIngestao, data.chaveIngestaoHash)).toBe(true);
+      expect(logAuditoria.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          acao: 'estacoes.regenerarChaveIngestao',
+          entidadeId: ESTACAO_COM_SENSORES.id,
+        }),
+      });
+      expect(JSON.stringify(logAuditoria.create.mock.calls)).not.toContain(resposta.body.chaveIngestao);
+    });
+
+    it('recusa com 403 quem não é administrador', async () => {
+      usuario.findUnique.mockResolvedValue({ ...USUARIO, tipo: 'MONITOR' });
+
+      await regenerar().expect(403);
+      expect(estacao.update).not.toHaveBeenCalled();
+    });
+
+    it('responde 404 quando a estação não existe', async () => {
+      estacao.findUnique.mockResolvedValue(null);
+
+      await regenerar().expect(404);
+      expect(estacao.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('PATCH /estacoes/:id', () => {

@@ -1,5 +1,5 @@
--- Permite associar uma estação a um contrato sem exigir que todas as estações
--- existentes sejam vinculadas imediatamente.
+-- Restabelece o vínculo estação/contrato depois que a migração de main
+-- removeu contratos e órgãos.
 ALTER TABLE "estacoes"
 ADD COLUMN "contratoId" TEXT;
 

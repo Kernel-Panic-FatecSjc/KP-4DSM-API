@@ -69,18 +69,18 @@ O fluxo muda conforme o tipo da tarefa.
 
 **Tarefas não técnicas**
 
-* **Execução:** a tarefa é realizada pelo responsável. Entregáveis versionados no repositório (documentação, diagramas, atas) podem ser commitados direto na `main` (ver [exceção na estratégia de branches](estrategiabranch.md#exceção-documentação-e-entregáveis-não-técnicos)).
+* **Execução:** a tarefa é realizada pelo responsável. Entregáveis versionados no repositório (documentação, diagramas, atas) entram por PR como qualquer outro, mas, se só mudarem arquivos de documentação (`docs/` e `*.md`), o PR não precisa de review (ver [documentação, hotfix e revert](estrategiabranch.md#documentação-hotfix-e-revert)).
 * **Validação:** outro desenvolvedor valida o resultado. Se não estiver adequado, a tarefa é refeita; se estiver, é considerada concluída.
 
 ### 5. Validação e Integração
 
-Após a aprovação no Code Review, as tarefas técnicas passam por validações adicionais antes de entrar na base principal.
+Com o code review em andamento, o código pode ser testado rodando antes de ser aprovado.
 
-* **Deploy em Staging:** a branch da tarefa é publicada no ambiente de homologação.
-* **Testes de Sistema e Aceite do PO:** o sistema é testado de forma integrada e o **Product Owner** dá o aceite. Se reprovado, a tarefa volta para a implementação.
+* **Staging (opcional):** para testar a branch rodando, o **revisor** coloca o label `staging` no PR, e ele é publicado na branch `staging`, integrado com a `main`. Fica um PR por vez, e o autor não leva o próprio PR. Se não passar, o revisor pede mudanças e a tarefa volta para a implementação.
+* **Aprovação:** o PR precisa de 1 aprovação de quem não é o autor, no commit atual. Commit novo exige nova aprovação. PRs `docs` que só mudam documentação não precisam de review.
 * **Verificação do DoD:** a entrega é checada contra a **Definition of Done**. Se não atender, volta para a implementação.
-* **Merge na main:** atendidos todos os critérios, a branch é integrada na `main` e a feature branch excluida.
-* **Tarefa Concluída:** estado final tanto das tarefas técnicas (após o merge) quanto das não técnicas (após a validação). A User Story é concluída quando todas as suas tarefas estão concluídas, e o Requisito quando todas as suas User Stories estão concluídas.
+* **Merge na main:** com a aprovação e os checks `CI ok`, `Estratégia de branch` e `Requisito vinculado` verdes, o PR é mesclado e a feature branch excluída. Não existe push direto na `main`.
+* **Tarefa Concluída:** estado final tanto das tarefas técnicas (após o merge) quanto das não técnicas (após a validação). Tarefa com PR é movida para **Concluído** no Jira automaticamente quando o PR é mesclado (menos `revert`); a sem PR é movida por quem a validou. A User Story é concluída quando todas as suas tarefas estão concluídas, e o Requisito quando todas as suas User Stories estão concluídas.
 
 ### 6. Release e Operação
 

@@ -119,7 +119,7 @@ O Jira não obriga o link entre User Story/Task e Requisito, então a regra é c
    * **Os Requisitos** da issue precisam estar todos entre os do pai (Task ou User Story). Pai que é Épico não conta, já que Épico não carrega Requisito.
    * **Se falhar:** ID inexistente ou sem acesso no Jira, Requisito ausente ou Requisito fora do pai.
    * **Configuração:** secrets `JIRA_BASE_URL`, `JIRA_EMAIL` e `JIRA_API_TOKEN` no GitHub, e o check marcado como obrigatório na ruleset da `main` (ver [estratégia de branches](estrategiabranch.md)).
-   * **Limite:** vale só para PRs. O commit direto de documentação na `main` não passa por ele, então a regra desses fica a cargo da planning.
+   * **Alcance:** vale para todo PR, inclusive de `docs`, `hotfix` e `revert`: como não existe push direto na `main`, tudo passa por ele.
 2. **Automação do Jira** (avisa na hora):
    * **Gatilho:** issue criada.
    * **Condição:** tipo de issue = História, Tarefa ou Bug **e** nenhuma issue vinculada pelo link `é relacionado com` é do tipo Requisito.

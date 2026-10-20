@@ -1,6 +1,25 @@
 'use client';
 
-import { FileText, Bell, ClipboardList, Database, Gauge, LayoutDashboard, LogIn, LogOut, Menu, MapPin, PanelLeftClose, PanelLeftOpen, Users, X } from 'lucide-react';
+import {
+  Building,
+  Bell,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  Database,
+  FileText,
+  Gauge,
+  LayoutDashboard,
+  LogIn,
+  LogOut,
+  MapPin,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Users,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -11,33 +30,122 @@ import { ehRotaPublica, useSessao } from './ProtectedLayout';
 import { RegiaoProvider } from './RegiaoVisitante';
 import { Button } from './ui/button';
 
-const NAV_ITEMS = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Alertas Globais', href: '/alertas-globais', icon: Bell },
-  { label: 'Gerenciamento de Alertas', href: '/gerenciamento-de-alertas', icon: Bell },
-  { label: 'Estações', href: '/estacoes', icon: MapPin },
-  { label: 'Sensores', href: '/sensores', icon: Gauge },
-  { label: 'Leituras brutas', href: '/leituras-brutas', icon: Database },
-  { label: 'Usuários', href: '/usuarios', icon: Users },
-  { label: 'Auditoria', href: '/auditoria', icon: ClipboardList },
-  { label: 'Contratos', href: '/contratos', icon: FileText },
+
+interface NavLink {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+}
+
+
+interface NavGroup {
+  label: string;
+  icon: LucideIcon;
+  children: NavLink[];
+}
+
+
+type NavItem = NavLink | NavGroup;
+
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    label: 'Dashboard',
+    href: '/dashboard',
+    icon: LayoutDashboard,
+  },
+  {
+    label: 'Alertas',
+    icon: Bell,
+    children: [
+      {
+        label: 'Alertas Globais',
+        href: '/alertas-globais',
+        icon: Bell,
+      },
+      {
+        label: 'Gerenciamento de Alertas',
+        href: '/gerenciamento-de-alertas',
+        icon: ClipboardList,
+      },
+    ],
+  },
+  {
+    label: 'Monitoramento',
+    icon: Gauge,
+    children: [
+      {
+        label: 'Estações',
+        href: '/estacoes',
+        icon: MapPin,
+      },
+      {
+        label: 'Sensores',
+        href: '/sensores',
+        icon: Gauge,
+      },
+      {
+        label: 'Leituras brutas',
+        href: '/leituras-brutas',
+        icon: Database,
+      },
+    ],
+  },
+  {
+    label: 'Administração',
+    icon: Users,
+    children: [
+      {
+        label: 'Usuários',
+        href: '/usuarios',
+        icon: Users,
+      },
+      {
+        label: 'Auditoria',
+        href: '/auditoria',
+        icon: ClipboardList,
+      },
+      {
+        label: 'Contratos',
+        href: '/contratos',
+        icon: FileText,
+      },
+      {
+        label: 'Órgãos',
+        href: '/orgaos',
+        icon: Building,
+      },
+    ],
+  },
 ];
+
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    Alertas: true,
+  });
   const autenticado = useSessao() === 'autenticado';
-  // Visitantes (sem login) só enxergam as abas públicas.
-  const itensVisiveis = autenticado ? NAV_ITEMS : NAV_ITEMS.filter((item) => ehRotaPublica(item.href));
 
-  const tituloAtual = NAV_ITEMS.find((item) => pathname.startsWith(item.href))?.label ?? 'Painel';
+
+  const todosOsItens = NAV_ITEMS.flatMap((item) =>
+    'children' in item ? item.children : [item],
+  );
+
+
+  const tituloAtual =
+    todosOsItens.find((item) => pathname.startsWith(item.href))?.label
+    ?? 'Painel';
+
 
   async function handleLogout() {
     await api('/autenticacao/logout', { method: 'POST' });
     router.push('/login');
   }
+
 
   return (
     <div className="flex min-h-screen bg-background font-body text-foreground antialiased">
@@ -67,31 +175,153 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
 
-        <nav className="flex-1 space-y-0.5 px-2 py-3">
+
+        <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
           {(!collapsed || mobileOpen) && (
-            <p className="px-2 py-1.5 font-mono text-[10px] uppercase text-sidebar-muted">Operação</p>
+            <p className="px-2 py-1.5 font-mono text-[10px] uppercase text-sidebar-muted">
+              Operação
+            </p>
           )}
-          {itensVisiveis.map((item) => {
+
+
+          {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
-            const ativo = pathname.startsWith(item.href);
+            const expandido = !collapsed || mobileOpen;
+
+
+            // Item individual, como Dashboard
+            if (!('children' in item)) {
+              const ativo = pathname.startsWith(item.href);
+
+
+              if (!autenticado && !ehRotaPublica(item.href)) {
+                return null;
+              }
+
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <Button
+                    variant="ghost"
+                    className={cn(
+                      'h-9 w-full justify-start px-3 text-[13px] text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                      ativo &&
+                        'bg-lime text-lime-foreground hover:bg-lime hover:text-lime-foreground',
+                      !expandido && 'justify-center px-0',
+                    )}
+                    title={!expandido ? item.label : undefined}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    {expandido && <span>{item.label}</span>}
+                  </Button>
+                </Link>
+              );
+            }
+
+
+            // Grupo com links internos
+            const filhosVisiveis = item.children.filter(
+              (filho) => autenticado || ehRotaPublica(filho.href),
+            );
+
+
+            if (filhosVisiveis.length === 0) {
+              return null;
+            }
+
+
+            const grupoAtivo = filhosVisiveis.some(
+              (filho) => pathname.startsWith(filho.href),
+            );
+
+
+            const aberto = openGroups[item.label] ?? grupoAtivo;
+
+
             return (
-              <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}>
+              <div key={item.label} className="space-y-1">
                 <Button
+                  type="button"
                   variant="ghost"
+                  onClick={() => {
+                    if (!expandido) {
+                      setCollapsed(false);
+                      setOpenGroups((prev) => ({
+                        ...prev,
+                        [item.label]: true,
+                      }));
+                      return;
+                    }
+
+
+                    setOpenGroups((prev) => ({
+                      ...prev,
+                      [item.label]: !aberto,
+                    }));
+                  }}
                   className={cn(
                     'h-9 w-full justify-start px-3 text-[13px] text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                    ativo && 'bg-lime text-lime-foreground hover:bg-lime hover:text-lime-foreground',
-                    collapsed && !mobileOpen && 'justify-center px-0',
+                    grupoAtivo && 'bg-sidebar-accent',
+                    !expandido && 'justify-center px-0',
                   )}
-                  title={collapsed && !mobileOpen ? item.label : undefined}
+                  title={!expandido ? item.label : undefined}
                 >
-                  <Icon className="shrink-0" />
-                  {(!collapsed || mobileOpen) && <span>{item.label}</span>}
+                  <Icon className="size-4 shrink-0" />
+
+
+                  {expandido && (
+                    <>
+                      <span className="flex-1 text-left">{item.label}</span>
+                      {aberto ? (
+                        <ChevronDown className="size-4 shrink-0" />
+                      ) : (
+                        <ChevronRight className="size-4 shrink-0" />
+                      )}
+                    </>
+                  )}
                 </Button>
-              </Link>
+
+
+                {expandido && aberto && (
+                  <div className="ml-4 space-y-1 border-l border-sidebar-border pl-2">
+                    {filhosVisiveis.map((filho) => {
+                      const FilhoIcon = filho.icon;
+                      const ativo = pathname.startsWith(filho.href);
+
+
+                      return (
+                        <Link
+                          key={filho.href}
+                          href={filho.href}
+                          onClick={() => setMobileOpen(false)}
+                        >
+                          <Button
+                            variant="ghost"
+                            className={cn(
+                              'h-auto min-h-9 w-full justify-start gap-2 px-2 py-2 text-left text-xs text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                              ativo &&
+                                'bg-lime text-lime-foreground hover:bg-lime hover:text-lime-foreground',
+                            )}
+                          >
+                            <FilhoIcon className="size-3.5 shrink-0" />
+                            <span className="whitespace-normal">
+                              {filho.label}
+                            </span>
+                          </Button>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
+
 
         <div className="border-t border-sidebar-border p-2">
           {autenticado ? (
@@ -125,6 +355,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
+
       {mobileOpen && (
         <button
           type="button"
@@ -133,6 +364,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onClick={() => setMobileOpen(false)}
         />
       )}
+
 
       <div
         className={cn(
@@ -161,6 +393,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Button>
           <p className="truncate font-display text-[15px] font-semibold">{tituloAtual}</p>
         </header>
+
 
         <RegiaoProvider>
           <main className="flex-1 p-4 md:p-6">{children}</main>

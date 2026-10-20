@@ -2,7 +2,7 @@
 
 import { createPortal } from 'react-dom';
 import { useEffect, useMemo, useState,} from 'react';
-import { MoreHorizontal, Plus, Search, X } from 'lucide-react';
+import { Copy, MoreHorizontal, Plus, Search, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -11,7 +11,9 @@ import {
   type AtualizarEstacaoPayload,
   type CriarEstacaoPayload,
   type EstacaoApi,
+  type EstacaoCriadaApi,
   type SensorApi,
+  type Usuario,
 } from '@/lib/api';
 import { PageHeading } from '@/components/PageHeading';
 import { DataTable, type Column } from '@/components/DataTable';
@@ -33,7 +35,14 @@ type Estacao = {
   longitude: number;
   status: 'Ativo' | 'Não Ativo';
   endereco: string;
+  possuiChaveIngestao: boolean;
   sensores: Sensor[];
+};
+
+// Chave de ingestão recém-gerada: aparece uma única vez, para gravar no datalogger.
+type ChaveExibida = {
+  estacao: string;
+  chave: string;
 };
 
 const ITEMS_PER_PAGE = 5;
@@ -82,6 +91,18 @@ export default function EstacoesPage() {
   const [sensoresSelecionados, setSensoresSelecionados] =
     useState<Sensor[]>([]);
 
+  // Cadastro e chave de ingestão são só do administrador (a API responde 403).
+  const [ehAdministrador, setEhAdministrador] = useState(false);
+  const [chaveExibida, setChaveExibida] =
+    useState<ChaveExibida | null>(null);
+  const [chaveCopiada, setChaveCopiada] = useState(false);
+
+  useEffect(() => {
+    api<Usuario>('/autenticacao/perfil')
+      .then((perfil) => setEhAdministrador(perfil.tipo === 'ADMINISTRADOR'))
+      .catch(() => setEhAdministrador(false));
+  }, []);
+
   useEffect(() => {
     api<EstacaoApi[]>('/estacoes')
       .then((resposta) => {
@@ -90,6 +111,7 @@ export default function EstacoesPage() {
             id: estacao.id,
             nome: estacao.nome,
             codigo: estacao.vid,
+            possuiChaveIngestao: estacao.possuiChaveIngestao,
             latitude: estacao.latitude,
             longitude: estacao.longitude,
             status:
@@ -274,7 +296,7 @@ export default function EstacoesPage() {
       };
 
       const novaEstacaoApi =
-        await api<EstacaoApi>('/estacoes', {
+        await api<EstacaoCriadaApi>('/estacoes', {
           method: 'POST',
           body: JSON.stringify(payload),
         });
@@ -283,6 +305,7 @@ export default function EstacoesPage() {
         id: novaEstacaoApi.id,
         nome: novaEstacaoApi.nome,
         codigo: novaEstacaoApi.vid,
+        possuiChaveIngestao: novaEstacaoApi.possuiChaveIngestao,
         latitude: novaEstacaoApi.latitude,
         longitude: novaEstacaoApi.longitude,
         status:
@@ -309,7 +332,7 @@ export default function EstacoesPage() {
       limparFormulario();
       setPaginaAtual(1);
 
-      alert('Estação cadastrada com sucesso!');
+      exibirChave(novaEstacao.nome, novaEstacaoApi.chaveIngestao);
     } catch (erro) {
       if (erro instanceof ErroApi) {
         if (erro.status === 401) {
@@ -323,6 +346,64 @@ export default function EstacoesPage() {
 
       console.error(erro);
       alert('Não foi possível cadastrar a estação.');
+    }
+  };
+
+  const exibirChave = (estacao: string, chave: string) => {
+    setChaveCopiada(false);
+    setChaveExibida({ estacao, chave });
+  };
+
+  const copiarChave = async () => {
+    if (!chaveExibida) return;
+
+    try {
+      await navigator.clipboard.writeText(chaveExibida.chave);
+      setChaveCopiada(true);
+    } catch {
+      alert('Não foi possível copiar. Selecione a chave e copie manualmente.');
+    }
+  };
+
+  const regenerarChave = async (estacao: Estacao) => {
+    setMenuAbertoCodigo(null);
+
+    if (
+      estacao.possuiChaveIngestao &&
+      !confirm(
+        `Gerar uma nova chave para ${estacao.nome}? A chave atual para de funcionar na hora e o datalogger precisa ser atualizado.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const { chaveIngestao } = await api<{ chaveIngestao: string }>(
+        `/estacoes/${estacao.id}/chave-ingestao`,
+        { method: 'POST' },
+      );
+
+      setEstacoes((anteriores) =>
+        anteriores.map((item) =>
+          item.id === estacao.id
+            ? { ...item, possuiChaveIngestao: true }
+            : item,
+        ),
+      );
+      exibirChave(estacao.nome, chaveIngestao);
+    } catch (erro) {
+      if (erro instanceof ErroApi) {
+        if (erro.status === 401) {
+          router.push('/login?proximo=/estacoes');
+          return;
+        }
+
+        alert(erro.message);
+        return;
+      }
+
+      console.error(erro);
+      alert('Não foi possível gerar a chave de ingestão.');
     }
   };
 
@@ -507,6 +588,7 @@ export default function EstacoesPage() {
         id: estacaoAtualizada.id,
         nome: estacaoAtualizada.nome,
         codigo: estacaoAtualizada.vid,
+        possuiChaveIngestao: estacaoAtualizada.possuiChaveIngestao,
         latitude: estacaoAtualizada.latitude,
         longitude: estacaoAtualizada.longitude,
         status:
@@ -689,6 +771,18 @@ export default function EstacoesPage() {
                   Editar
                 </button>
 
+                {ehAdministrador && (
+                  <button
+                    type="button"
+                    className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                    onClick={() => void regenerarChave(estacao)}
+                  >
+                    {estacao.possuiChaveIngestao
+                      ? 'Regenerar chave'
+                      : 'Gerar chave'}
+                  </button>
+                )}
+
                 <button
                   type="button"
                   className={`w-full rounded-md px-3 py-2 text-left text-sm ${
@@ -742,13 +836,15 @@ export default function EstacoesPage() {
           />
         </div>
 
-        <Button
-          type="button"
-          onClick={abrirModalCadastro}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Nova estação
-        </Button>
+        {ehAdministrador && (
+          <Button
+            type="button"
+            onClick={abrirModalCadastro}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Nova estação
+          </Button>
+        )}
       </div>
 
       <div className="min-h-[300px]">
@@ -1231,6 +1327,60 @@ export default function EstacoesPage() {
             </div>
           </div>
         )}
+
+      {chaveExibida && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
+          <div
+            className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl"
+            role="dialog"
+            aria-labelledby="titulo-chave-ingestao"
+          >
+            <h2
+              id="titulo-chave-ingestao"
+              className="text-lg font-semibold"
+            >
+              Chave de ingestão
+            </h2>
+
+            <p className="mt-2 text-sm text-muted-foreground">
+              Grave esta chave no datalogger da estação{' '}
+              <strong>{chaveExibida.estacao}</strong>. Ela
+              não será mostrada de novo; se perder, gere
+              outra.
+            </p>
+
+            <div className="mt-4 flex items-center gap-2">
+              <code className="flex-1 break-all rounded-md bg-muted px-3 py-2 text-sm">
+                {chaveExibida.chave}
+              </code>
+
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void copiarChave()}
+                aria-label="Copiar chave"
+              >
+                <Copy className="h-4 w-4" />
+              </Button>
+            </div>
+
+            {chaveCopiada && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Chave copiada.
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end">
+              <Button
+                type="button"
+                onClick={() => setChaveExibida(null)}
+              >
+                Já guardei a chave
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
