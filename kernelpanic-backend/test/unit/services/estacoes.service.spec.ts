@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, NotFoundException } from '@nest
 import { Test, TestingModule } from '@nestjs/testing';
 import { AtualizarEstacaoDto } from '../../../src/estacoes/dto/atualizar-estacao.dto';
 import { EstacoesService } from '../../../src/estacoes/estacoes.service';
+import { chaveIngestaoConfere } from '../../../src/ingestao/chave-ingestao';
 import { PrismaService } from '../../../src/prisma/prisma.service';
 import { TIPO_CHUVA, TIPO_TEMPERATURA } from '../../fixtures';
 
@@ -177,6 +178,14 @@ describe('EstacoesService', () => {
       expect(data.parametros).toEqual({ create: [] });
     });
 
+    it('gera a chave de ingestão, guarda só o hash e devolve a chave', async () => {
+      const { chaveIngestao } = await service.criar(NOVA, 'usuario-1');
+
+      const { data } = prismaMock.estacao.create.mock.calls[0][0];
+      expect(data.chaveIngestaoHash).not.toBe(chaveIngestao);
+      expect(chaveIngestaoConfere(chaveIngestao, data.chaveIngestaoHash)).toBe(true);
+    });
+
     it('continua recusando sensor inexistente quando algum é informado', async () => {
       prismaMock.tipoParametro.findMany.mockResolvedValue([]);
 
@@ -184,6 +193,25 @@ describe('EstacoesService', () => {
         service.criar({ ...NOVA, tipoParametroIds: [TIPO_CHUVA] }, 'usuario-1'),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.estacao.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('regenerarChaveIngestao', () => {
+    it('troca o hash guardado e devolve a chave nova', async () => {
+      prismaMock.estacao.findUnique.mockResolvedValue(ESTACAO);
+
+      const chave = await service.regenerarChaveIngestao(ESTACAO.id);
+
+      const { where, data } = prismaMock.estacao.update.mock.calls[0][0];
+      expect(where).toEqual({ id: ESTACAO.id });
+      expect(chaveIngestaoConfere(chave, data.chaveIngestaoHash)).toBe(true);
+    });
+
+    it('lança NotFoundException quando a estação não existe', async () => {
+      prismaMock.estacao.findUnique.mockResolvedValue(null);
+
+      await expect(service.regenerarChaveIngestao('sumida')).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.estacao.update).not.toHaveBeenCalled();
     });
   });
 });

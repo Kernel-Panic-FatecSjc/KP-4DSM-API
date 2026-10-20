@@ -12,6 +12,7 @@ export class EstacaoRespostaDto {
   latitude: number;
   longitude: number;
   statusOperacional: string;
+  possuiChaveIngestao: boolean;
   sensores: Array<{ id: string; nome: string; unidade: string }>;
   criadoEm: Date;
   atualizadoEm: Date;
@@ -24,6 +25,7 @@ export class EstacaoRespostaDto {
     this.latitude = estacao.latitude;
     this.longitude = estacao.longitude;
     this.statusOperacional = estacao.statusOperacional;
+    this.possuiChaveIngestao = Boolean(estacao.chaveIngestaoHash);
     this.sensores = estacao.parametros.map(({ tipoParametro }) => ({
       id: tipoParametro.id,
       nome: tipoParametro.nome,
@@ -31,5 +33,14 @@ export class EstacaoRespostaDto {
     }));
     this.criadoEm = estacao.criadoEm;
     this.atualizadoEm = estacao.atualizadoEm;
+  }
+}
+/** Resposta do cadastro: única vez em que a chave de ingestão aparece. */
+export class EstacaoCriadaRespostaDto extends EstacaoRespostaDto {
+  chaveIngestao: string;
+
+  constructor(estacao: EstacaoComSensores, chaveIngestao: string) {
+    super(estacao);
+    this.chaveIngestao = chaveIngestao;
   }
 }

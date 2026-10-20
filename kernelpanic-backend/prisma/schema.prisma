@@ -70,6 +70,9 @@ model Estacao {
   latitude          Float                    @default(0)
   longitude         Float                    @default(0)
   statusOperacional StatusOperacionalEstacao @default(ATIVA)
+  /// SHA-256 da chave que a estação manda no header da ingestão. A chave em si
+  /// só aparece uma vez, ao cadastrar ou regenerar; nula = estação sem chave.
+  chaveIngestaoHash String?
   criadoEm          DateTime                 @default(now())
   atualizadoEm      DateTime                 @updatedAt
 
