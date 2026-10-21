@@ -1,4 +1,10 @@
+import { calcularHashChaveIngestao } from '../src/ingestao/chave-ingestao';
+
 export const VID_ESTACAO = 'ESP32-00001';
+
+// Chave de ingestão da estação VID_ESTACAO, aceita pela GuardaChaveIngestao.
+export const CHAVE_INGESTAO = 'chave-de-ingestao-de-teste';
+export const HASH_CHAVE_INGESTAO = calcularHashChaveIngestao(CHAVE_INGESTAO);
 
 export const LEITURAS = {
   temperatura: 24.3,
@@ -10,6 +16,7 @@ export const ESTACAO_COM_COORDENADAS = {
   id: 'estacao-1',
   latitude: -23.1,
   longitude: -45.8,
+  chaveIngestaoHash: HASH_CHAVE_INGESTAO,
 };
 
 export const TIPO_CHUVA = '11111111-1111-4111-8111-111111111111';
@@ -20,6 +27,7 @@ export const ESTACAO_COM_TIPOS = {
   id: 'estacao-1',
   vid: VID_ESTACAO,
   nome: 'Estação Centro',
+  chaveIngestaoHash: HASH_CHAVE_INGESTAO,
   parametros: [
     {
       tipoParametro: {

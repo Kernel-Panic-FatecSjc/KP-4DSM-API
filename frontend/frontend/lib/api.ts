@@ -78,9 +78,15 @@ export interface EstacaoApi {
   latitude: number;
   longitude: number;
   statusOperacional: 'ATIVA' | 'INATIVA';
+  possuiChaveIngestao: boolean;
   sensores: { id: string; nome: string; unidade: string }[];
   criadoEm: string;
   atualizadoEm: string;
+}
+
+/** Resposta do cadastro: única vez em que a chave de ingestão aparece. */
+export interface EstacaoCriadaApi extends EstacaoApi {
+  chaveIngestao: string;
 }
 
 export interface AtualizarEstacaoPayload {

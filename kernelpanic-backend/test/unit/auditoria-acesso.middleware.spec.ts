@@ -9,6 +9,7 @@ describe('AuditoriaAcessoMiddleware', () => {
     const middleware = new AuditoriaAcessoMiddleware({ registrar } as unknown as AuditoriaService);
     const request = {
       path,
+      originalUrl: path,
       method: 'GET',
       ip: '203.0.113.42',
       socket: { remoteAddress: '203.0.113.42' },
@@ -49,6 +50,26 @@ describe('AuditoriaAcessoMiddleware', () => {
 
   it('ignora o tráfego frequente da ingestão ESP32', () => {
     const { registrar, next } = registrarAcesso('/ingestao/telemetria', 201);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(registrar).not.toHaveBeenCalled();
+  });
+
+  it('ignora a ingestão mesmo com o path cortado, como o Express o entrega ao middleware de forRoutes("*")', () => {
+    const registrar = jest.fn().mockResolvedValue(undefined);
+    const middleware = new AuditoriaAcessoMiddleware({ registrar } as unknown as AuditoriaService);
+    const request = {
+      path: '/',
+      originalUrl: '/ingestao/telemetria?vid=ESP32-00001',
+      method: 'POST',
+      ip: '203.0.113.42',
+      socket: { remoteAddress: '203.0.113.42' },
+    } as unknown as Request;
+    const response = Object.assign(new EventEmitter(), { statusCode: 202 }) as Response;
+    const next = jest.fn() as NextFunction;
+
+    middleware.use(request, response, next);
+    response.emit('finish');
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(registrar).not.toHaveBeenCalled();

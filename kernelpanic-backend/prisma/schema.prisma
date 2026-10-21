@@ -6,7 +6,7 @@
 generator client {
   provider        = "prisma-client"
   output          = "../src/generated/prisma"
-  previewFeatures = ["postgresqlExtensions"]
+  previewFeatures = ["postgresqlExtensions", "relationJoins"]
 }
 
 datasource db {
@@ -70,6 +70,9 @@ model Estacao {
   latitude          Float                    @default(0)
   longitude         Float                    @default(0)
   statusOperacional StatusOperacionalEstacao @default(ATIVA)
+  /// SHA-256 da chave que a estação manda no header da ingestão. A chave em si
+  /// só aparece uma vez, ao cadastrar ou regenerar; nula = estação sem chave.
+  chaveIngestaoHash String?
   criadoEm          DateTime                 @default(now())
   atualizadoEm      DateTime                 @updatedAt
 
@@ -114,7 +117,8 @@ model Parametro {
   @@map("parametros")
 }
 
-/// Leituras coletadas ao longo do tempo (série temporal).
+/// Leituras coletadas ao longo do tempo (série temporal). Imutável: trigger no banco
+/// barra update/delete, inclusive o cascade vindo de Estacao e Parametro.
 model Medida {
   id       String @id @default(uuid())
   unixtime BigInt
@@ -130,6 +134,9 @@ model Medida {
 
   @@unique([parametroId, unixtime])
   @@index([estacaoId, unixtime])
+  // Consulta por janela de tempo sem filtrar a estação (dashboard geral): sem
+  // este índice ela lê a tabela inteira e ordena (1,3 s com 10 milhões de linhas).
+  @@index([unixtime])
   @@map("medidas")
 }
 
@@ -166,8 +173,9 @@ model Alarme {
 }
 
 /// Payload bruto recebido diretamente do datalogger (ESP32), como chegou, antes de
-/// qualquer validação/normalização em Parametro/Medida. Imutável — preserva a
-/// procedência técnica do dado e o momento exato de recebimento (RF03/US04).
+/// qualquer validação/normalização em Parametro/Medida. Imutável (trigger no banco
+/// barra update/delete) — preserva a procedência técnica do dado e o momento exato
+/// de recebimento (RF03/US04).
 model LeituraBruta {
   id                  String                               @id @default(uuid())
   vidEstacao          String

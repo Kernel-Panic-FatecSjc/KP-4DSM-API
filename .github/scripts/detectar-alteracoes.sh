@@ -11,7 +11,7 @@
 #   backend_testes   testes unitários e funcionais da API
 #   banco            migrations, schema e seed
 #   frontend         lint, typecheck e build do Next.js
-#   frontend_testes  testes unitários e de integração do Next.js
+#   frontend_testes  testes unitários (Vitest) e funcionais (Playwright) do Next.js
 #
 # Regras, na ordem em que são avaliadas:
 #   1. Pastas de código contam com qualquer extensão. Fixture .json, .md ou
@@ -70,11 +70,14 @@ while IFS= read -r arquivo; do
       jobs=(backend backend_testes banco) ;;
 
     # ---------------- Frontend (Next.js) ----------------
-    $WEB/app/* | $WEB/components/* | $WEB/lib/* | $WEB/test/* | \
-      $WEB/package.json | $WEB/package-lock.json | $WEB/tsconfig.json | $WEB/vitest.config.mts)
+    # Os testes funcionais rodam sobre o build de produção, então o que muda o
+    # build (public/, next.config.ts, postcss) também liga os testes.
+    $WEB/app/* | $WEB/components/* | $WEB/lib/* | $WEB/test/* | $WEB/public/* | \
+      $WEB/package.json | $WEB/package-lock.json | $WEB/tsconfig.json | \
+      $WEB/next.config.ts | $WEB/postcss.config.mjs | $WEB/vitest.config.mts | $WEB/playwright.config.ts)
       jobs=(frontend frontend_testes) ;;
-    # Só o build e o lint usam.
-    $WEB/public/* | $WEB/next.config.ts | $WEB/postcss.config.mjs | $WEB/eslint.config.mjs)
+    # Só o lint usa.
+    $WEB/eslint.config.mjs)
       jobs=(frontend) ;;
     $WEB/*.md | $WEB/.gitignore)
       jobs=() ;;

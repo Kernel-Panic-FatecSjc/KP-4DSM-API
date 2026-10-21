@@ -13,7 +13,6 @@ import { type EstacaoComAlerta, NOME_TIPO_PARAMETRO_CARGA, prepararCenarioAlerta
  */
 
 const BASE_URL = process.env.INGESTAO_URL ?? `http://localhost:${process.env.PORT ?? 3001}`;
-const CHAVE_INGESTAO = process.env.INGESTAO_CHAVE_API ?? '';
 const NUM_ESTACOES = Number(process.env.NUM_ESTACOES ?? 200);
 const TAXA_POR_SEGUNDO = Number(process.env.TAXA_POR_SEGUNDO ?? 200);
 const DURACAO_SEGUNDOS = Number(process.env.DURACAO_SEGUNDOS ?? 10);
@@ -36,7 +35,7 @@ async function enviarLeitura(estacao: EstacaoComAlerta): Promise<boolean> {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      ...(CHAVE_INGESTAO ? { 'x-chave-estacao': CHAVE_INGESTAO } : {}),
+      'x-chave-estacao': estacao.chaveIngestao,
     },
     body: JSON.stringify({ vid: estacao.vid, leituras: { [NOME_TIPO_PARAMETRO_CARGA]: temperatura } }),
   });
