@@ -1,6 +1,10 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
-import { StatusContrato } from '../generated/prisma/client';
 import { gerarChaveIngestao } from '../ingestao/chave-ingestao';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtualizarEstacaoDto } from './dto/atualizar-estacao.dto';
@@ -11,7 +15,9 @@ const INCLUIR_SENSORES = {
   parametros: { include: { tipoParametro: true } },
 } satisfies Prisma.EstacaoInclude;
 
-type EstacaoComSensores = Prisma.EstacaoGetPayload<{ include: typeof INCLUIR_SENSORES }>;
+type EstacaoComSensores = Prisma.EstacaoGetPayload<{
+  include: typeof INCLUIR_SENSORES;
+}>;
 
 export interface EstacaoCriada {
   estacao: EstacaoComSensores;
@@ -28,7 +34,9 @@ export class EstacoesService {
     return this.prisma.estacao.findMany({
       where: {
         statusOperacional: query.status,
-        endereco: regiao ? { contains: regiao, mode: 'insensitive' } : undefined,
+        endereco: regiao
+          ? { contains: regiao, mode: 'insensitive' }
+          : undefined,
         parametros: query.tipoParametroId
           ? { some: { tipoParametroId: query.tipoParametroId } }
           : undefined,
@@ -43,23 +51,29 @@ export class EstacoesService {
     const tipoParametroIds = dto.tipoParametroIds ?? [];
     const identificadores = new Set(tipoParametroIds);
     if (identificadores.size !== tipoParametroIds.length) {
-      throw new BadRequestException('Não é permitido associar o mesmo sensor mais de uma vez');
+      throw new BadRequestException(
+        'Não é permitido associar o mesmo sensor mais de uma vez',
+      );
     }
 
     const [estacaoExistente, sensores] = await Promise.all([
       this.prisma.estacao.findUnique({ where: { vid: dto.vid } }),
-      this.prisma.tipoParametro.findMany({ where: { id: { in: tipoParametroIds } } }),
+      this.prisma.tipoParametro.findMany({
+        where: { id: { in: tipoParametroIds } },
+      }),
     ]);
 
     if (estacaoExistente) {
-      throw new ConflictException('Já existe uma estação com este identificador');
+      throw new ConflictException(
+        'Já existe uma estação com este identificador',
+      );
     }
 
     if (sensores.length !== tipoParametroIds.length) {
-      throw new BadRequestException('Um ou mais sensores selecionados não existem');
+      throw new BadRequestException(
+        'Um ou mais sensores selecionados não existem',
+      );
     }
-
-    if (dto.contratoId) await this.validarContratoAtivo(dto.contratoId);
 
     const { chave, hash } = gerarChaveIngestao();
     const estacao = await this.prisma.estacao.create({
@@ -71,9 +85,10 @@ export class EstacoesService {
         longitude: dto.longitude,
         chaveIngestaoHash: hash,
         usuarioId,
-        contratoId: dto.contratoId,
         parametros: {
-          create: tipoParametroIds.map((tipoParametroId) => ({ tipoParametroId })),
+          create: tipoParametroIds.map((tipoParametroId) => ({
+            tipoParametroId,
+          })),
         },
       },
       include: INCLUIR_SENSORES,
@@ -87,17 +102,26 @@ export class EstacoesService {
    * A nova é devolvida só desta vez; o banco guarda apenas o hash.
    */
   async regenerarChaveIngestao(id: string): Promise<string> {
-    const estacao = await this.prisma.estacao.findUnique({ where: { id }, select: { id: true } });
+    const estacao = await this.prisma.estacao.findUnique({
+      where: { id },
+      select: { id: true },
+    });
     if (!estacao) {
       throw new NotFoundException('Estação não encontrada');
     }
 
     const { chave, hash } = gerarChaveIngestao();
-    await this.prisma.estacao.update({ where: { id }, data: { chaveIngestaoHash: hash } });
+    await this.prisma.estacao.update({
+      where: { id },
+      data: { chaveIngestaoHash: hash },
+    });
     return chave;
   }
 
-  async atualizar(id: string, dto: AtualizarEstacaoDto): Promise<EstacaoComSensores> {
+  async atualizar(
+    id: string,
+    dto: AtualizarEstacaoDto,
+  ): Promise<EstacaoComSensores> {
     const estacao = await this.prisma.estacao.findUnique({
       where: { id },
       include: { parametros: { select: { id: true, tipoParametroId: true } } },
@@ -108,16 +132,21 @@ export class EstacoesService {
     }
 
     if (dto.vid && dto.vid !== estacao.vid) {
-      const emUso = await this.prisma.estacao.findUnique({ where: { vid: dto.vid } });
+      const emUso = await this.prisma.estacao.findUnique({
+        where: { vid: dto.vid },
+      });
       if (emUso) {
-        throw new ConflictException('Já existe uma estação com este identificador');
+        throw new ConflictException(
+          'Já existe uma estação com este identificador',
+        );
       }
     }
 
-    if (dto.contratoId) await this.validarContratoAtivo(dto.contratoId);
-
     const sensores = dto.tipoParametroIds
-      ? await this.planejarMudancaDeSensores(estacao.parametros, dto.tipoParametroIds)
+      ? await this.planejarMudancaDeSensores(
+          estacao.parametros,
+          dto.tipoParametroIds,
+        )
       : undefined;
 
     return this.prisma.estacao.update({
@@ -129,7 +158,6 @@ export class EstacoesService {
         latitude: dto.latitude,
         longitude: dto.longitude,
         statusOperacional: dto.statusOperacional,
-        contratoId: dto.contratoId,
         parametros: sensores,
       },
       include: INCLUIR_SENSORES,
@@ -155,7 +183,9 @@ export class EstacoesService {
   ): Promise<Prisma.ParametroUpdateManyWithoutEstacaoNestedInput> {
     const identificadores = new Set(desejados);
     if (identificadores.size !== desejados.length) {
-      throw new BadRequestException('Não é permitido associar o mesmo sensor mais de uma vez');
+      throw new BadRequestException(
+        'Não é permitido associar o mesmo sensor mais de uma vez',
+      );
     }
 
     const existentes = await this.prisma.tipoParametro.findMany({
@@ -163,12 +193,19 @@ export class EstacoesService {
       select: { id: true },
     });
     if (existentes.length !== desejados.length) {
-      throw new BadRequestException('Um ou mais sensores selecionados não existem');
+      throw new BadRequestException(
+        'Um ou mais sensores selecionados não existem',
+      );
     }
 
-    const aRemover = atuais.filter((parametro) => !identificadores.has(parametro.tipoParametroId));
+    const aRemover = atuais.filter(
+      (parametro) => !identificadores.has(parametro.tipoParametroId),
+    );
     const aAdicionar = desejados.filter(
-      (tipoParametroId) => !atuais.some((parametro) => parametro.tipoParametroId === tipoParametroId),
+      (tipoParametroId) =>
+        !atuais.some(
+          (parametro) => parametro.tipoParametroId === tipoParametroId,
+        ),
     );
 
     // Apagar um Parametro tentaria levar junto as Medida dele (onDelete:
@@ -176,7 +213,9 @@ export class EstacoesService {
     // checagem aqui responde 409 com mensagem clara antes de chegar ao banco.
     if (aRemover.length > 0) {
       const comMedidas = await this.prisma.medida.findFirst({
-        where: { parametroId: { in: aRemover.map((parametro) => parametro.id) } },
+        where: {
+          parametroId: { in: aRemover.map((parametro) => parametro.id) },
+        },
         select: { parametroId: true },
       });
       if (comMedidas) {
@@ -187,18 +226,11 @@ export class EstacoesService {
     }
 
     return {
-      deleteMany: aRemover.length > 0 ? { id: { in: aRemover.map(({ id }) => id) } } : undefined,
+      deleteMany:
+        aRemover.length > 0
+          ? { id: { in: aRemover.map(({ id }) => id) } }
+          : undefined,
       create: aAdicionar.map((tipoParametroId) => ({ tipoParametroId })),
     };
-  }
-
-  private async validarContratoAtivo(id: string): Promise<void> {
-    const contrato = await this.prisma.contrato.findUnique({
-      where: { id },
-      select: { id: true, status: true },
-    });
-    if (!contrato || contrato.status !== StatusContrato.ATIVO) {
-      throw new BadRequestException('A estacao deve ser vinculada a um contrato ativo');
-    }
   }
 }

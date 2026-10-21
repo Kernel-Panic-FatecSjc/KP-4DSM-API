@@ -54,31 +54,3 @@ export class ContratoRespostaDto {
     this.orgao = new OrgaoContratoRespostaDto(contrato.orgao);
   }
 }
-
-export class ContratoListagemRespostaDto extends ContratoRespostaDto {
-  @ApiProperty({ description: 'Quantidade de estações vinculadas ao contrato', minimum: 0 })
-  quantidadeEstacoes: number;
-
-  constructor(contrato: ContratoComOrgao, quantidadeEstacoes: number) {
-    super(contrato);
-    this.quantidadeEstacoes = quantidadeEstacoes;
-  }
-}
-
-export class ContratosPaginadosRespostaDto {
-  @ApiProperty({ type: ContratoListagemRespostaDto, isArray: true })
-  contratos: ContratoListagemRespostaDto[];
-  @ApiProperty({ minimum: 0 })
-  total: number;
-  @ApiProperty({ minimum: 1 })
-  pagina: number;
-  @ApiProperty({ minimum: 1, maximum: 100 })
-  tamanho: number;
-
-  constructor(contratos: ContratoListagemRespostaDto[], total: number, pagina: number, tamanho: number) {
-    this.contratos = contratos;
-    this.total = total;
-    this.pagina = pagina;
-    this.tamanho = tamanho;
-  }
-}

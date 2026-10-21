@@ -48,12 +48,11 @@ describe('ContratosService', () => {
   let service: ContratosService;
   const prismaMock = {
     contrato: {
-      findMany: jest.fn(),
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
     },
-    orgao: { findUnique: jest.fn() },
+    orgaoPublico: { findUnique: jest.fn() },
   };
 
   beforeEach(async () => {
@@ -72,7 +71,8 @@ describe('ContratosService', () => {
         Object.entries(data).filter(([, valor]) => valor !== undefined),
       ),
     }));
-    prismaMock.orgao.findUnique.mockResolvedValue(ORGAO);
+    prismaMock.orgaoPublico.findUnique.mockResolvedValue(ORGAO);
+    jest.useFakeTimers().setSystemTime(new Date('2026-01-01T12:00:00.000Z'));
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -83,6 +83,8 @@ describe('ContratosService', () => {
 
     service = module.get(ContratosService);
   });
+
+  afterEach(() => jest.useRealTimers());
 
   // buscarPorId e validarNumeroUnico usam o mesmo findUnique: o primeiro é por id, o segundo por número.
   function contratoExistente(sobrescrever: Partial<ContratoDeTeste> = {}) {
@@ -117,12 +119,41 @@ describe('ContratosService', () => {
       ).resolves.toBeDefined();
     });
 
+    it('interpreta data final sem horário como o fim daquele dia', async () => {
+      await service.criar({ ...DTO_CRIAR, fimVigencia: '2026-12-31' });
+      expect(
+        prismaMock.contrato.create.mock.calls[0][0].data.fimVigencia,
+      ).toEqual(new Date('2026-12-31T23:59:59.999Z'));
+    });
+
+    it('recusa criar ativo com vigência expirada', async () => {
+      await expect(
+        service.criar({
+          ...DTO_CRIAR,
+          fimVigencia: '2025-12-31',
+          status: StatusContrato.VIGENTE,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.contrato.create).not.toHaveBeenCalled();
+    });
+
     it('recusa fim da vigência anterior ao início', async () => {
       await expect(
         service.criar({
           ...DTO_CRIAR,
           inicioVigencia: '2026-05-02',
           fimVigencia: '2026-05-01',
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.contrato.create).not.toHaveBeenCalled();
+    });
+
+    it('recusa ativar contrato com vigência já expirada', async () => {
+      await expect(
+        service.criar({
+          ...DTO_CRIAR,
+          fimVigencia: '2025-12-31',
+          status: StatusContrato.VIGENTE,
         }),
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.contrato.create).not.toHaveBeenCalled();
@@ -155,7 +186,7 @@ describe('ContratosService', () => {
     });
 
     it('recusa órgão inexistente', async () => {
-      prismaMock.orgao.findUnique.mockResolvedValue(null);
+      prismaMock.orgaoPublico.findUnique.mockResolvedValue(null);
 
       await expect(service.criar(DTO_CRIAR)).rejects.toThrow(
         'Orgao nao encontrado',
@@ -163,18 +194,21 @@ describe('ContratosService', () => {
     });
 
     it('recusa órgão inativo', async () => {
-      prismaMock.orgao.findUnique.mockResolvedValue({ ...ORGAO, ativo: false });
+      prismaMock.orgaoPublico.findUnique.mockResolvedValue({
+        ...ORGAO,
+        ativo: false,
+      });
 
       await expect(service.criar(DTO_CRIAR)).rejects.toThrow('Orgao inativo');
     });
 
-    it('permite criar já ATIVO', async () => {
+    it('permite criar já VIGENTE quando a vigência ainda vale', async () => {
       const contrato = await service.criar({
         ...DTO_CRIAR,
-        status: StatusContrato.ATIVO,
+        status: StatusContrato.VIGENTE,
       });
 
-      expect(contrato.status).toBe(StatusContrato.ATIVO);
+      expect(contrato.status).toBe(StatusContrato.VIGENTE);
     });
 
     it('recusa criar direto como SUSPENSO (transição inexistente a partir de RASCUNHO)', async () => {
@@ -234,6 +268,18 @@ describe('ContratosService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
     });
 
+    it('recusa reativar contrato suspenso com vigência expirada', async () => {
+      contratoExistente({
+        status: StatusContrato.SUSPENSO,
+        fimVigencia: new Date('2025-12-31T23:59:59.999Z'),
+      });
+
+      await expect(
+        service.atualizar(CONTRATO.id, { status: StatusContrato.VIGENTE }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.contrato.update).not.toHaveBeenCalled();
+    });
+
     it('recusa trocar para número que já existe', async () => {
       prismaMock.contrato.findUnique.mockImplementation(({ where }) =>
         where.id ? CONTRATO : { ...CONTRATO, id: 'outro' },
@@ -256,7 +302,7 @@ describe('ContratosService', () => {
 
     it('recusa mover para órgão inativo', async () => {
       contratoExistente();
-      prismaMock.orgao.findUnique.mockResolvedValue({
+      prismaMock.orgaoPublico.findUnique.mockResolvedValue({
         ...ORGAO,
         id: 'orgao-2',
         ativo: false,
@@ -279,11 +325,11 @@ describe('ContratosService', () => {
     });
 
     it.each([
-      [StatusContrato.RASCUNHO, StatusContrato.ATIVO],
+      [StatusContrato.RASCUNHO, StatusContrato.VIGENTE],
       [StatusContrato.RASCUNHO, StatusContrato.ENCERRADO],
-      [StatusContrato.ATIVO, StatusContrato.SUSPENSO],
-      [StatusContrato.ATIVO, StatusContrato.ENCERRADO],
-      [StatusContrato.SUSPENSO, StatusContrato.ATIVO],
+      [StatusContrato.VIGENTE, StatusContrato.SUSPENSO],
+      [StatusContrato.VIGENTE, StatusContrato.ENCERRADO],
+      [StatusContrato.SUSPENSO, StatusContrato.VIGENTE],
       [StatusContrato.SUSPENSO, StatusContrato.ENCERRADO],
     ])('permite a transição %s -> %s', async (atual, novo) => {
       contratoExistente({ status: atual });
@@ -295,7 +341,7 @@ describe('ContratosService', () => {
 
     it.each([
       [StatusContrato.RASCUNHO, StatusContrato.SUSPENSO],
-      [StatusContrato.ATIVO, StatusContrato.RASCUNHO],
+      [StatusContrato.VIGENTE, StatusContrato.RASCUNHO],
       [StatusContrato.SUSPENSO, StatusContrato.RASCUNHO],
     ])('recusa a transição %s -> %s', async (atual, novo) => {
       contratoExistente({ status: atual });
@@ -307,7 +353,7 @@ describe('ContratosService', () => {
     });
 
     it('grava encerradoEm ao encerrar por edição', async () => {
-      contratoExistente({ status: StatusContrato.ATIVO });
+      contratoExistente({ status: StatusContrato.VIGENTE });
 
       await service.atualizar(CONTRATO.id, {
         status: StatusContrato.ENCERRADO,
@@ -338,7 +384,7 @@ describe('ContratosService', () => {
     });
 
     it('encerra sem excluir, gravando status e encerradoEm', async () => {
-      contratoExistente({ status: StatusContrato.ATIVO });
+      contratoExistente({ status: StatusContrato.VIGENTE });
 
       const contrato = await service.encerrar(CONTRATO.id);
 
@@ -359,7 +405,7 @@ describe('ContratosService', () => {
       await expect(service.encerrar(CONTRATO.id)).rejects.toBeInstanceOf(
         BadRequestException,
       );
-       expect(prismaMock.contrato.update).not.toHaveBeenCalled();
+      expect(prismaMock.contrato.update).not.toHaveBeenCalled();
     });
   });
 });

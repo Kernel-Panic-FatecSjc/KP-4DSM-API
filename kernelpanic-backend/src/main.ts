@@ -10,13 +10,19 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   configurarApp(app);
-  const documentacao = new DocumentBuilder()
-    .setTitle('Kernel Panic API')
-    .setDescription('API de monitoramento e gestão de contratos.')
-    .setVersion('1.0')
-    .addCookieAuth('access_token', { type: 'apiKey', in: 'cookie' })
-    .build();
-  SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, documentacao));
+  if (process.env.NODE_ENV !== 'production') {
+    const documentacao = new DocumentBuilder()
+      .setTitle('Kernel Panic API')
+      .setDescription('API de monitoramento e gestão de contratos.')
+      .setVersion('1.0')
+      .addCookieAuth('access_token', { type: 'apiKey', in: 'cookie' })
+      .build();
+    SwaggerModule.setup(
+      'api/docs',
+      app,
+      SwaggerModule.createDocument(app, documentacao),
+    );
+  }
 
   app.enableCors({
     origin: configService.get<string>('FRONTEND_URL', 'http://localhost:3000'),

@@ -1,4 +1,8 @@
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AtualizarEstacaoDto } from '../../../src/estacoes/dto/atualizar-estacao.dto';
 import { EstacoesService } from '../../../src/estacoes/estacoes.service';
@@ -22,11 +26,17 @@ describe('EstacoesService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    prismaMock.estacao.update.mockImplementation(({ data }) => ({ ...ESTACAO, ...data }));
+    prismaMock.estacao.update.mockImplementation(({ data }) => ({
+      ...ESTACAO,
+      ...data,
+    }));
     prismaMock.medida.findFirst.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [EstacoesService, { provide: PrismaService, useValue: prismaMock }],
+      providers: [
+        EstacoesService,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
     }).compile();
 
     service = module.get(EstacoesService);
@@ -41,7 +51,10 @@ describe('EstacoesService', () => {
       expect(prismaMock.estacao.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'estacao-1' },
-          data: expect.objectContaining({ nome: 'Estação Norte', endereco: undefined }),
+          data: expect.objectContaining({
+            nome: 'Estação Norte',
+            endereco: undefined,
+          }),
         }),
       );
     });
@@ -49,9 +62,9 @@ describe('EstacoesService', () => {
     it('lança NotFoundException quando a estação não existe', async () => {
       prismaMock.estacao.findUnique.mockResolvedValue(null);
 
-      await expect(service.atualizar('sumida', { nome: 'x' })).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        service.atualizar('sumida', { nome: 'x' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.estacao.update).not.toHaveBeenCalled();
     });
 
@@ -75,7 +88,9 @@ describe('EstacoesService', () => {
     });
 
     describe('mudança de sensores', () => {
-      const comSensores = (tipoParametroIds: string[]): AtualizarEstacaoDto => ({
+      const comSensores = (
+        tipoParametroIds: string[],
+      ): AtualizarEstacaoDto => ({
         tipoParametroIds,
       });
 
@@ -87,7 +102,10 @@ describe('EstacoesService', () => {
       });
 
       it('adiciona o sensor novo e preserva o que já estava', async () => {
-        await service.atualizar('estacao-1', comSensores([TIPO_CHUVA, TIPO_TEMPERATURA]));
+        await service.atualizar(
+          'estacao-1',
+          comSensores([TIPO_CHUVA, TIPO_TEMPERATURA]),
+        );
 
         const { data } = prismaMock.estacao.update.mock.calls[0][0];
         expect(data.parametros).toEqual({
@@ -107,7 +125,9 @@ describe('EstacoesService', () => {
       });
 
       it('recusa remover sensor que já possui medidas, para não apagar a série', async () => {
-        prismaMock.medida.findFirst.mockResolvedValue({ parametroId: 'parametro-chuva' });
+        prismaMock.medida.findFirst.mockResolvedValue({
+          parametroId: 'parametro-chuva',
+        });
 
         await expect(
           service.atualizar('estacao-1', comSensores([TIPO_TEMPERATURA])),
@@ -145,7 +165,9 @@ describe('EstacoesService', () => {
     it('lança NotFoundException quando a estação não existe', async () => {
       prismaMock.estacao.findUnique.mockResolvedValue(null);
 
-      await expect(service.inativar('sumida')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.inativar('sumida')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 
@@ -160,7 +182,9 @@ describe('EstacoesService', () => {
 
     beforeEach(() => {
       prismaMock.estacao.findUnique.mockResolvedValue(null);
-      prismaMock.estacao.create = jest.fn().mockImplementation(({ data }) => ({ id: 'nova', ...data }));
+      prismaMock.estacao.create = jest
+        .fn()
+        .mockImplementation(({ data }) => ({ id: 'nova', ...data }));
       prismaMock.tipoParametro.findMany.mockResolvedValue([]);
     });
 
@@ -183,7 +207,9 @@ describe('EstacoesService', () => {
 
       const { data } = prismaMock.estacao.create.mock.calls[0][0];
       expect(data.chaveIngestaoHash).not.toBe(chaveIngestao);
-      expect(chaveIngestaoConfere(chaveIngestao, data.chaveIngestaoHash)).toBe(true);
+      expect(chaveIngestaoConfere(chaveIngestao, data.chaveIngestaoHash)).toBe(
+        true,
+      );
     });
 
     it('continua recusando sensor inexistente quando algum é informado', async () => {
@@ -210,7 +236,9 @@ describe('EstacoesService', () => {
     it('lança NotFoundException quando a estação não existe', async () => {
       prismaMock.estacao.findUnique.mockResolvedValue(null);
 
-      await expect(service.regenerarChaveIngestao('sumida')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(
+        service.regenerarChaveIngestao('sumida'),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.estacao.update).not.toHaveBeenCalled();
     });
   });
