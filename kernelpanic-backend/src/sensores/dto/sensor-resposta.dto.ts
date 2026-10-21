@@ -7,6 +7,8 @@ export class SensorRespostaDto {
   fator: number;
   ganho: number;
   json: unknown;
+  valorMinimo: number | null;
+  valorMaximo: number | null;
   estacoesAssociadas?: number;
 
   constructor(sensor: TipoParametro & { _count?: { parametros: number } }) {
@@ -16,6 +18,8 @@ export class SensorRespostaDto {
     this.fator = sensor.fator;
     this.ganho = sensor.ganho;
     this.json = sensor.json;
+    this.valorMinimo = sensor.valorMinimo;
+    this.valorMaximo = sensor.valorMaximo;
     this.estacoesAssociadas = sensor._count?.parametros;
   }
 }

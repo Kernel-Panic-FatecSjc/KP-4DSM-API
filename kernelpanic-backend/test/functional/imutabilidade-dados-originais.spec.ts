@@ -79,6 +79,50 @@ describe('Imutabilidade dos dados originais (funcional)', () => {
     });
   });
 
+  describe('leituras_erro', () => {
+    const novoErro = () => ({
+      id: randomUUID(),
+      leituraBrutaId,
+      vidEstacao: `${PREFIXO_TESTE}erro`,
+      nomeSensor: 'temperatura',
+      parametroId: null,
+      valor: 150,
+      unixtime: 1_760_000_000,
+      motivo: 'ACIMA_DO_MAXIMO' as const,
+      valorMinimo: -40,
+      valorMaximo: 60,
+    });
+
+    it('grava a leitura com a faixa vigente, e regravar o mesmo lote não duplica', async () => {
+      const registro = novoErro();
+      const telemetria = app.get(TelemetriaService);
+
+      await expect(telemetria.registrarLeiturasErro([registro])).resolves.toBe(1);
+      await expect(telemetria.registrarLeiturasErro([registro])).resolves.toBe(0);
+
+      const gravadas = await prisma.leituraErro.findMany({ where: { id: registro.id } });
+      expect(gravadas).toHaveLength(1);
+      expect(gravadas[0]).toMatchObject({
+        valor: 150,
+        motivo: 'ACIMA_DO_MAXIMO',
+        valorMinimo: -40,
+        valorMaximo: 60,
+      });
+    });
+
+    it('recusa UPDATE e DELETE com mensagem clara', async () => {
+      const registro = novoErro();
+      await app.get(TelemetriaService).registrarLeiturasErro([registro]);
+
+      await expect(
+        prisma.leituraErro.update({ where: { id: registro.id }, data: { valor: 1 } }),
+      ).rejects.toThrow('Leituras com erro são imutáveis');
+      await expect(prisma.leituraErro.delete({ where: { id: registro.id } })).rejects.toThrow(
+        'Leituras com erro são imutáveis',
+      );
+    });
+  });
+
   describe('medidas', () => {
     it('recusa UPDATE com mensagem clara', async () => {
       await expect(
