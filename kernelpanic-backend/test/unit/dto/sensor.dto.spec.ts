@@ -38,6 +38,18 @@ describe('CriarSensorDto', () => {
     expect(camposComErro(CriarSensorDto, { ...NOVO_SENSOR, fator: -0.5, ganho: -32 })).toHaveLength(0);
   });
 
+  it('aceita a faixa física opcional, inclusive um limite só e valores negativos', () => {
+    expect(camposComErro(CriarSensorDto, { ...NOVO_SENSOR, valorMinimo: -40, valorMaximo: 60 })).toHaveLength(0);
+    expect(camposComErro(CriarSensorDto, { ...NOVO_SENSOR, valorMinimo: 0 })).toHaveLength(0);
+    expect(camposComErro(CriarSensorDto, { ...NOVO_SENSOR, valorMaximo: 100 })).toHaveLength(0);
+  });
+
+  it('rejeita limite da faixa não numérico, NaN ou infinito', () => {
+    expect(camposComErro(CriarSensorDto, { ...NOVO_SENSOR, valorMinimo: '0' })).toEqual(['valorMinimo']);
+    expect(camposComErro(CriarSensorDto, { ...NOVO_SENSOR, valorMaximo: Number.NaN })).toEqual(['valorMaximo']);
+    expect(camposComErro(CriarSensorDto, { ...NOVO_SENSOR, valorMaximo: Infinity })).toEqual(['valorMaximo']);
+  });
+
   it('rejeita fator ou ganho não numérico, NaN ou infinito', () => {
     expect(camposComErro(CriarSensorDto, { ...NOVO_SENSOR, fator: '1' })).toEqual(['fator']);
     expect(camposComErro(CriarSensorDto, { ...NOVO_SENSOR, ganho: Number.NaN })).toEqual(['ganho']);
@@ -55,5 +67,10 @@ describe('AtualizarSensorDto', () => {
     expect(camposComErro(AtualizarSensorDto, { nome: '  ' })).toEqual(['nome']);
     expect(camposComErro(AtualizarSensorDto, { unidade: 'xyz' })).toEqual(['unidade']);
     expect(camposComErro(AtualizarSensorDto, { fator: 0 })).toEqual(['fator']);
+    expect(camposComErro(AtualizarSensorDto, { valorMaximo: 'alto' })).toEqual(['valorMaximo']);
+  });
+
+  it('aceita null para limpar um limite da faixa', () => {
+    expect(camposComErro(AtualizarSensorDto, { valorMinimo: null, valorMaximo: null })).toHaveLength(0);
   });
 });

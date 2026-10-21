@@ -19,12 +19,14 @@ describe('Ingestão (funcional)', () => {
   const estacao = { findUnique: jest.fn() };
   const executeRawUnsafe = jest.fn();
   const logAuditoria = { create: jest.fn() };
+  const leituraErro = { createMany: jest.fn() };
 
   beforeAll(async () => {
     app = await criarAppDeTeste({
       prismaMock: {
         estacao,
         logAuditoria,
+        leituraErro,
         $executeRawUnsafe: executeRawUnsafe,
         $connect: jest.fn(),
         $disconnect: jest.fn(),
@@ -41,6 +43,7 @@ describe('Ingestão (funcional)', () => {
     jest.clearAllMocks();
     estacao.findUnique.mockResolvedValue(ESTACAO_COM_COORDENADAS);
     executeRawUnsafe.mockResolvedValue(1);
+    leituraErro.createMany.mockResolvedValue({ count: 0 });
   });
 
   afterAll(async () => {
@@ -81,6 +84,36 @@ describe('Ingestão (funcional)', () => {
     await new Promise((resolve) => setImmediate(resolve));
 
     expect(logAuditoria.create).not.toHaveBeenCalled();
+  });
+
+  it('aceita com 202 o pacote com valor fora da faixa: guarda o bruto e registra o erro, sem medida', async () => {
+    estacao.findUnique.mockResolvedValue({
+      ...ESTACAO_COM_COORDENADAS,
+      parametros: [{ id: 'parametro-temp', tipoParametro: { nome: 'temperatura', valorMinimo: -40, valorMaximo: 60 } }],
+    });
+
+    const resposta = await postar({
+      vid: VID_ESTACAO,
+      unixtime: 1_760_000_000,
+      leituras: { temperatura: 150 },
+    }).expect(202);
+    await ingestaoService.flush();
+
+    expect(executeRawUnsafe).toHaveBeenCalledTimes(1);
+    expect(executeRawUnsafe.mock.calls[0]).toContain(resposta.body.leituraBrutaId);
+    expect(leituraErro.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          leituraBrutaId: resposta.body.leituraBrutaId,
+          nomeSensor: 'temperatura',
+          motivo: 'ACIMA_DO_MAXIMO',
+          valorMinimo: -40,
+          valorMaximo: 60,
+          unixtime: 1_760_000_000n,
+        }),
+      ],
+      skipDuplicates: true,
+    });
   });
 
   it('descarta campos desconhecidos do payload (whitelist)', async () => {

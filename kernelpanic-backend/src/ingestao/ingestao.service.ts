@@ -8,11 +8,18 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { MotivoLeituraErro } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EstacaoParametrosRespostaDto } from './dto/estacao-parametros-resposta.dto';
 import { IngestaoRespostaDto } from './dto/ingestao-resposta.dto';
 import { IngerirTelemetriaDto } from './dto/ingerir-telemetria.dto';
-import { LeituraBrutaParaGravar, MedidaParaGravar, TelemetriaService } from './telemetria.service';
+import { motivoForaDaFaixa } from './faixa-fisica';
+import {
+  LeituraBrutaParaGravar,
+  LeituraErroParaGravar,
+  MedidaParaGravar,
+  TelemetriaService,
+} from './telemetria.service';
 
 // Parte de um lote que falhou ao gravar e volta para a próxima tentativa.
 interface LoteComFalha<T> {
@@ -39,10 +46,13 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   // leituras de uma vez.
   private loteBrutas: LeituraBrutaParaGravar[] = [];
   private loteMedidas: MedidaParaGravar[] = [];
+  // Leituras recebidas que não viraram medida (fora da faixa ou sem parâmetro).
+  private loteErros: LeituraErroParaGravar[] = [];
   // Lotes que falharam ao gravar: entram de novo no próximo flush até
   // esgotar as tentativas, para não perder leitura já respondida com 202.
   private falhasBrutas: LoteComFalha<LeituraBrutaParaGravar>[] = [];
   private falhasMedidas: LoteComFalha<MedidaParaGravar>[] = [];
+  private falhasErros: LoteComFalha<LeituraErroParaGravar>[] = [];
   // Encadeia os flushes (timer, lote cheio, encerramento) para que dois não
   // peguem as mesmas falhas ao mesmo tempo. Fica no máximo um esperando: com
   // o banco lento, o lote cheio pediria um flush por requisição, e cada um
@@ -50,7 +60,11 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   private flushEmAndamento: Promise<void> = Promise.resolve();
   private flushNaFila?: Promise<void>;
   // O que está sendo gravado agora, para o log caso o encerramento estoure o prazo.
-  private emGravacao?: { brutas: LeituraBrutaParaGravar[]; medidas: MedidaParaGravar[] };
+  private emGravacao?: {
+    brutas: LeituraBrutaParaGravar[];
+    medidas: MedidaParaGravar[];
+    erros: LeituraErroParaGravar[];
+  };
   private encerrando = false;
   private timer?: NodeJS.Timeout;
   private readonly tamanhoLoteMaximo: number;
@@ -101,11 +115,13 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   private descartarNoEncerramento(): void {
     const brutas = this.emGravacao?.brutas ?? this.falhasBrutas.flatMap((lote) => lote.itens);
     const medidas = this.emGravacao?.medidas ?? this.falhasMedidas.flatMap((lote) => lote.itens);
+    const erros = this.emGravacao?.erros ?? this.falhasErros.flatMap((lote) => lote.itens);
     const motivo = this.emGravacao
       ? `encerramento sem concluir a gravação em ${this.prazoEncerramentoMs} ms (podem ter sido gravados)`
       : 'encerramento com falhas ainda pendentes';
     this.registrarDescarte('leitura(s) bruta(s)', [...brutas, ...this.loteBrutas], motivo);
     this.registrarDescarte('medida(s)', [...medidas, ...this.loteMedidas], motivo);
+    this.registrarDescarte('leitura(s) com erro', [...erros, ...this.loteErros], motivo);
   }
 
   async ingerir(payload: IngerirTelemetriaDto): Promise<IngestaoRespostaDto> {
@@ -119,7 +135,12 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
         id: true,
         latitude: true,
         longitude: true,
-        parametros: { select: { id: true, tipoParametro: { select: { nome: true } } } },
+        parametros: {
+          select: {
+            id: true,
+            tipoParametro: { select: { nome: true, valorMinimo: true, valorMaximo: true } },
+          },
+        },
       },
     });
 
@@ -149,9 +170,13 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
       unixtimeDispositivo,
     });
 
-    this.enfileirarMedidas(estacao, payload.leituras, unixtimeDispositivo);
+    this.enfileirarMedidas(estacao, payload.leituras, unixtimeDispositivo, leituraBrutaId, payload.vid);
 
-    if (this.loteBrutas.length >= this.tamanhoLoteMaximo || this.loteMedidas.length >= this.tamanhoLoteMaximo) {
+    if (
+      this.loteBrutas.length >= this.tamanhoLoteMaximo ||
+      this.loteMedidas.length >= this.tamanhoLoteMaximo ||
+      this.loteErros.length >= this.tamanhoLoteMaximo
+    ) {
       void this.flush();
     }
 
@@ -164,20 +189,51 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   }
 
   private enfileirarMedidas(
-    estacao: { id: string; parametros?: { id: string; tipoParametro: { nome: string } }[] },
+    estacao: {
+      id: string;
+      parametros?: {
+        id: string;
+        tipoParametro: { nome: string; valorMinimo?: number | null; valorMaximo?: number | null };
+      }[];
+    },
     leituras: Record<string, number>,
     unixtime: number,
+    leituraBrutaId: string,
+    vidEstacao: string,
   ): void {
     // O nome do sensor no payload casa com o "nome" do tipoParametro
     // configurado para a estação (é o mesmo mapa que /parametros expõe para
-    // o datalogger aprender). Leituras sem tipoParametro correspondente são
-    // descartadas aqui — já foram preservadas intactas em leituras_brutas.
-    const mapaParametros = new Map((estacao.parametros ?? []).map((p) => [p.tipoParametro.nome, p.id]));
+    // o datalogger aprender). A leitura sem parâmetro correspondente, ou fora
+    // da faixa física do sensor, não vira medida: fica registrada em
+    // leituras_erro, e o pacote segue intacto em leituras_brutas.
+    const mapaParametros = new Map((estacao.parametros ?? []).map((p) => [p.tipoParametro.nome, p]));
 
-    for (const [nome, valor] of Object.entries(leituras)) {
-      const parametroId = mapaParametros.get(nome);
-      if (!parametroId) continue;
-      this.loteMedidas.push({ parametroId, estacaoId: estacao.id, valor, unixtime });
+    for (const [nomeSensor, valor] of Object.entries(leituras)) {
+      const parametro = mapaParametros.get(nomeSensor);
+      const valorMinimo = parametro?.tipoParametro.valorMinimo ?? null;
+      const valorMaximo = parametro?.tipoParametro.valorMaximo ?? null;
+
+      const motivo = parametro
+        ? motivoForaDaFaixa(valor, valorMinimo, valorMaximo)
+        : MotivoLeituraErro.SENSOR_NAO_CONFIGURADO;
+
+      if (parametro && !motivo) {
+        this.loteMedidas.push({ parametroId: parametro.id, estacaoId: estacao.id, valor, unixtime });
+        continue;
+      }
+
+      this.loteErros.push({
+        id: randomUUID(),
+        leituraBrutaId,
+        vidEstacao,
+        nomeSensor,
+        parametroId: parametro?.id ?? null,
+        valor,
+        unixtime,
+        motivo: motivo ?? MotivoLeituraErro.SENSOR_NAO_CONFIGURADO,
+        valorMinimo,
+        valorMaximo,
+      });
     }
   }
 
@@ -197,19 +253,25 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   private async gravarLotes(): Promise<void> {
     const brutas = this.loteBrutas;
     const medidas = this.loteMedidas;
+    const erros = this.loteErros;
     this.loteBrutas = [];
     this.loteMedidas = [];
+    this.loteErros = [];
     this.emGravacao = {
       brutas: [...this.falhasBrutas.flatMap((lote) => lote.itens), ...brutas],
       medidas: [...this.falhasMedidas.flatMap((lote) => lote.itens), ...medidas],
+      erros: [...this.falhasErros.flatMap((lote) => lote.itens), ...erros],
     };
 
-    [this.falhasBrutas, this.falhasMedidas] = await Promise.all([
+    [this.falhasBrutas, this.falhasMedidas, this.falhasErros] = await Promise.all([
       this.gravarComNovaTentativa('leitura(s) bruta(s)', brutas, this.falhasBrutas, (itens) =>
         this.telemetria.registrarLeiturasBrutas(itens),
       ),
       this.gravarComNovaTentativa('medida(s)', medidas, this.falhasMedidas, (itens) =>
         this.telemetria.registrarMedidas(itens),
+      ),
+      this.gravarComNovaTentativa('leitura(s) com erro', erros, this.falhasErros, (itens) =>
+        this.telemetria.registrarLeiturasErro(itens),
       ),
     ]);
     this.emGravacao = undefined;
@@ -276,7 +338,7 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   }
 
   private temFalhasPendentes(): boolean {
-    return this.falhasBrutas.length > 0 || this.falhasMedidas.length > 0;
+    return this.falhasBrutas.length > 0 || this.falhasMedidas.length > 0 || this.falhasErros.length > 0;
   }
 
   async listarParametros(vid: string): Promise<EstacaoParametrosRespostaDto> {

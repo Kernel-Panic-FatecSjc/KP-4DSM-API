@@ -15,7 +15,11 @@ import {
 describe('IngestaoService', () => {
   let service: IngestaoService;
   const prismaMock = { estacao: { findUnique: jest.fn() } };
-  const telemetriaMock = { registrarLeiturasBrutas: jest.fn(), registrarMedidas: jest.fn() };
+  const telemetriaMock = {
+    registrarLeiturasBrutas: jest.fn(),
+    registrarMedidas: jest.fn(),
+    registrarLeiturasErro: jest.fn(),
+  };
   const configMock = { get: jest.fn() };
   const REGEX_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -132,6 +136,106 @@ describe('IngestaoService', () => {
           unixtime: 1_760_000_000,
         },
       ]);
+    });
+
+    describe('faixa física e leituras com erro', () => {
+      const estacaoComFaixa = (valorMinimo: number | null, valorMaximo: number | null) => ({
+        ...ESTACAO_COM_COORDENADAS,
+        parametros: [{ id: 'parametro-temp', tipoParametro: { nome: 'temperatura', valorMinimo, valorMaximo } }],
+      });
+      const ingerirTemperatura = (valor: number) =>
+        service.ingerir({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: { temperatura: valor } });
+
+      it('grava como medida o valor dentro da faixa e o igual a cada limite', async () => {
+        prismaMock.estacao.findUnique.mockResolvedValue(estacaoComFaixa(-40, 60));
+
+        await ingerirTemperatura(25);
+        await ingerirTemperatura(-40);
+        await ingerirTemperatura(60);
+        await service.flush();
+
+        expect(telemetriaMock.registrarMedidas).toHaveBeenCalledWith(
+          [25, -40, 60].map((valor) => expect.objectContaining({ parametroId: 'parametro-temp', valor })),
+        );
+        expect(telemetriaMock.registrarLeiturasErro).not.toHaveBeenCalled();
+      });
+
+      it.each([
+        [150, 'ACIMA_DO_MAXIMO'],
+        [-40.5, 'ABAIXO_DO_MINIMO'],
+      ])('não gera medida para %s e o registra em leituras_erro como %s, preservando o pacote', async (valor, motivo) => {
+        prismaMock.estacao.findUnique.mockResolvedValue(estacaoComFaixa(-40, 60));
+
+        const resposta = await ingerirTemperatura(valor);
+        await service.flush();
+
+        expect(resposta).toMatchObject({ sensoresRecebidos: 1 });
+        expect(telemetriaMock.registrarMedidas).not.toHaveBeenCalled();
+        expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledWith([
+          expect.objectContaining({ id: resposta.leituraBrutaId, payload: { temperatura: valor } }),
+        ]);
+        expect(telemetriaMock.registrarLeiturasErro).toHaveBeenCalledWith([
+          {
+            id: expect.stringMatching(REGEX_UUID),
+            leituraBrutaId: resposta.leituraBrutaId,
+            vidEstacao: VID_ESTACAO,
+            nomeSensor: 'temperatura',
+            parametroId: 'parametro-temp',
+            valor,
+            unixtime: 1_760_000_000,
+            motivo,
+            valorMinimo: -40,
+            valorMaximo: 60,
+          },
+        ]);
+      });
+
+      it('registra o sensor sem parâmetro na estação e segue gravando os outros', async () => {
+        prismaMock.estacao.findUnique.mockResolvedValue(estacaoComFaixa(null, null));
+
+        const resposta = await service.ingerir({
+          vid: VID_ESTACAO,
+          unixtime: 1_760_000_000,
+          leituras: { temperatura: 25, sensorDesconhecido: 7 },
+        });
+        await service.flush();
+
+        expect(telemetriaMock.registrarMedidas).toHaveBeenCalledWith([
+          expect.objectContaining({ parametroId: 'parametro-temp', valor: 25 }),
+        ]);
+        expect(telemetriaMock.registrarLeiturasErro).toHaveBeenCalledWith([
+          expect.objectContaining({
+            leituraBrutaId: resposta.leituraBrutaId,
+            nomeSensor: 'sensorDesconhecido',
+            parametroId: null,
+            valor: 7,
+            motivo: 'SENSOR_NAO_CONFIGURADO',
+            valorMinimo: null,
+            valorMaximo: null,
+          }),
+        ]);
+      });
+
+      it('não checa faixa quando o parâmetro não tem limites', async () => {
+        prismaMock.estacao.findUnique.mockResolvedValue(estacaoComFaixa(null, null));
+
+        await ingerirTemperatura(1e6);
+        await service.flush();
+
+        expect(telemetriaMock.registrarMedidas).toHaveBeenCalledWith([expect.objectContaining({ valor: 1e6 })]);
+        expect(telemetriaMock.registrarLeiturasErro).not.toHaveBeenCalled();
+      });
+
+      it('dá a cada leitura com erro um id próprio, para regravar o lote sem duplicar', async () => {
+        prismaMock.estacao.findUnique.mockResolvedValue(estacaoComFaixa(0, 10));
+
+        await ingerirTemperatura(99);
+        await ingerirTemperatura(99);
+        await service.flush();
+
+        const [erros] = telemetriaMock.registrarLeiturasErro.mock.calls[0];
+        expect(new Set(erros.map((e: { id: string }) => e.id)).size).toBe(2);
+      });
     });
 
     it('reenvio do buffer (US03): dois ingerir() com mesmo unixtime fazem flush chamar registrarMedidas com ambas as medidas — skipDuplicates no banco descarta a duplicata', async () => {
