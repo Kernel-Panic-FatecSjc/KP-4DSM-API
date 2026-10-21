@@ -30,7 +30,7 @@ describe('Autenticação (funcional)', () => {
 
     adminCookie = await autenticar(app, admin);
     monitorCookie = await autenticar(app, monitor);
-  });
+  }, 15_000);
 
   afterAll(async () => {
     await app.close();

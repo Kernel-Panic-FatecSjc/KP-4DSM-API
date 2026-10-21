@@ -150,7 +150,7 @@ describe('Contratos (funcional)', () => {
       .set('Cookie', adminCookie)
       .send({
         nome: 'Prefeitura',
-        cnpj: '12345678000190',
+        cnpj: '12345678000195',
         esfera: 'MUNICIPAL',
         municipio: 'São José dos Campos',
         uf: 'SP',
