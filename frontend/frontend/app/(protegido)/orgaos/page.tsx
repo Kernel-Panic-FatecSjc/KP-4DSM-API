@@ -1,12 +1,13 @@
 'use client';
 
-import { Pencil, Plus, Trash2, X } from 'lucide-react';
-import { useMemo, useState, type FormEvent } from 'react';
+import { Pencil, Plus, X } from 'lucide-react';
+import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { DataTable, type Column } from '@/components/DataTable';
 import { PageHeading } from '@/components/PageHeading';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { cnpjValido, formatarCnpj, gerarCnpj, limparCnpj } from '@/lib/cnpj';
 
 const ITENS_POR_PAGINA = 5;
 
@@ -21,42 +22,6 @@ interface Orgao {
 }
 
 type FormularioOrgao = Omit<Orgao, 'id'>;
-
-function calcularDigitoCnpj(digitos: string): string {
-  const pesos = digitos.length === 12
-    ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
-    : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-  const soma = [...digitos].reduce(
-    (total, digito, indice) => total + Number(digito) * pesos[indice],
-    0,
-  );
-  const resto = soma % 11;
-  return String(resto < 2 ? 0 : 11 - resto);
-}
-
-function gerarCnpj(base: string): string {
-  const primeiro = calcularDigitoCnpj(base);
-  const segundo = calcularDigitoCnpj(`${base}${primeiro}`);
-  return `${base}${primeiro}${segundo}`;
-}
-
-function formatarCnpj(valor: string): string {
-  const digitos = valor.replace(/\D/g, '').slice(0, 14);
-  return digitos
-    .replace(/^(\d{2})(\d)/, '$1.$2')
-    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/\.(\d{3})(\d)/, '.$1/$2')
-    .replace(/(\d{4})(\d)/, '$1-$2');
-}
-
-function cnpjValido(valor: string): boolean {
-  const digitos = valor.replace(/\D/g, '');
-  if (digitos.length !== 14 || /^(\d)\1{13}$/.test(digitos)) return false;
-  const base = digitos.slice(0, 12);
-  const primeiro = calcularDigitoCnpj(base);
-  const segundo = calcularDigitoCnpj(`${base}${primeiro}`);
-  return digitos === `${base}${primeiro}${segundo}`;
-}
 
 const ORGAOS_INICIAIS: Orgao[] = [
   {
@@ -101,6 +66,33 @@ const CORES_STATUS: Record<Status, string> = {
   DESATIVADO: 'bg-muted border-border text-muted-foreground',
 };
 
+const SELETOR_FOCAVEL =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/**
+ * Teclado dentro de um diálogo (RNF11): Esc fecha e o Tab circula pelos
+ * controles do próprio diálogo, sem passar para a página atrás dele.
+ */
+function tratarTecladoNoDialogo(evento: KeyboardEvent<HTMLElement>, fechar: () => void) {
+  if (evento.key === 'Escape') {
+    evento.stopPropagation();
+    fechar();
+    return;
+  }
+  if (evento.key !== 'Tab') return;
+
+  const focaveis = evento.currentTarget.querySelectorAll<HTMLElement>(SELETOR_FOCAVEL);
+  const primeiro = focaveis[0];
+  const ultimo = focaveis[focaveis.length - 1];
+  if (evento.shiftKey && document.activeElement === primeiro) {
+    evento.preventDefault();
+    ultimo.focus();
+  } else if (!evento.shiftKey && document.activeElement === ultimo) {
+    evento.preventDefault();
+    primeiro.focus();
+  }
+}
+
 export default function OrgaosPage() {
   const [orgaos, setOrgaos] = useState<Orgao[]>(ORGAOS_INICIAIS);
   const [busca, setBusca] = useState('');
@@ -112,10 +104,13 @@ export default function OrgaosPage() {
     useState<FormularioOrgao | null>(null);
   const [formulario, setFormulario] = useState<FormularioOrgao>(FORMULARIO_INICIAL);
   const [erroFormulario, setErroFormulario] = useState<string | null>(null);
+  // Ao fechar o diálogo, o foco volta para o botão que o abriu.
+  const gatilhoDoModal = useRef<HTMLElement | null>(null);
+  const botaoSalvar = useRef<HTMLButtonElement>(null);
 
   const orgaosFiltrados = useMemo(() => {
     const termo = busca.trim().toLocaleLowerCase('pt-BR');
-    const cnpjTermo = termo.replace(/\D/g, '');
+    const cnpjTermo = limparCnpj(termo);
     return orgaos.filter((orgao) => {
       const correspondeBusca =
         !termo ||
@@ -142,7 +137,13 @@ export default function OrgaosPage() {
     [orgaos],
   );
 
+  function lembrarGatilhoDoModal() {
+    gatilhoDoModal.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
+
   function abrirCadastro() {
+    lembrarGatilhoDoModal();
     setOrgaoEditando(null);
     setFormulario(FORMULARIO_INICIAL);
     setErroFormulario(null);
@@ -150,6 +151,7 @@ export default function OrgaosPage() {
   }
 
   function abrirEdicao(orgao: Orgao) {
+    lembrarGatilhoDoModal();
     setOrgaoEditando(orgao);
     setFormulario({
       nome: orgao.nome,
@@ -163,7 +165,7 @@ export default function OrgaosPage() {
   function salvarOrgao(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     const nome = formulario.nome.trim();
-    const cnpj = formulario.cnpj.replace(/\D/g, '');
+    const cnpj = limparCnpj(formulario.cnpj);
 
     if (!nome || !cnpj) {
       setErroFormulario('Preencha todos os campos para salvar o órgão.');
@@ -203,10 +205,7 @@ export default function OrgaosPage() {
       setPagina(1);
     }
 
-    setModalAberto(false);
-    setOrgaoEditando(null);
-    setDadosParaDesativar(null);
-    setErroFormulario(null);
+    fecharModal();
   }
 
   function confirmarDesativacao() {
@@ -214,22 +213,25 @@ export default function OrgaosPage() {
     aplicarOrgao(dadosParaDesativar);
   }
 
+  function voltarDaConfirmacao() {
+    setDadosParaDesativar(null);
+    botaoSalvar.current?.focus();
+  }
+
   function fecharModal() {
     setModalAberto(false);
+    setOrgaoEditando(null);
     setDadosParaDesativar(null);
     setErroFormulario(null);
+    gatilhoDoModal.current?.focus();
+    gatilhoDoModal.current = null;
   }
 
   const colunas: Column<Orgao>[] = [
     {
       header: 'Órgão público',
       key: 'nome',
-      render: (_, orgao) => (
-        <div>
-          <p className="font-medium">{orgao.nome}</p>
-          <p className="font-mono text-xs text-muted-foreground">{orgao.id}</p>
-        </div>
-      ),
+      render: (_, orgao) => <span className="font-medium">{orgao.nome}</span>,
     },
     {
       header: 'CNPJ',
@@ -354,6 +356,7 @@ export default function OrgaosPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <form
             onSubmit={salvarOrgao}
+            onKeyDown={(evento) => tratarTecladoNoDialogo(evento, fecharModal)}
             className="w-full max-w-xl rounded-xl bg-card p-6 shadow-xl"
             role="dialog"
             aria-modal="true"
@@ -404,7 +407,7 @@ export default function OrgaosPage() {
                   <Input
                     id="cnpjOrgao"
                     required
-                    inputMode="numeric"
+                    autoCapitalize="characters"
                     autoComplete="off"
                     maxLength={18}
                     placeholder="00.000.000/0000-00"
@@ -418,7 +421,7 @@ export default function OrgaosPage() {
                     }
                   />
                   <p id="ajudaCnpjOrgao" className="text-xs text-muted-foreground">
-                    O CNPJ será validado pelos dígitos verificadores antes de salvar.
+                    Numérico ou alfanumérico, validado pelos dígitos verificadores antes de salvar.
                   </p>
                 </div>
                 <div className="flex flex-col gap-1">
@@ -455,7 +458,7 @@ export default function OrgaosPage() {
               <Button type="button" variant="outline" onClick={fecharModal}>
                 Cancelar
               </Button>
-              <Button type="submit">
+              <Button ref={botaoSalvar} type="submit">
                 {orgaoEditando ? 'Salvar alterações' : 'Cadastrar órgão'}
               </Button>
             </div>
@@ -470,6 +473,7 @@ export default function OrgaosPage() {
             role="alertdialog"
             aria-modal="true"
             aria-labelledby="titulo-confirmacao-desativacao"
+            onKeyDown={(evento) => tratarTecladoNoDialogo(evento, voltarDaConfirmacao)}
           >
             <h2 id="titulo-confirmacao-desativacao" className="text-lg font-semibold">
               Confirmar desativação do órgão?
@@ -479,11 +483,7 @@ export default function OrgaosPage() {
               continuar?
             </p>
             <div className="mt-6 flex justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setDadosParaDesativar(null)}
-              >
+              <Button type="button" variant="outline" autoFocus onClick={voltarDaConfirmacao}>
                 Voltar
               </Button>
               <Button
