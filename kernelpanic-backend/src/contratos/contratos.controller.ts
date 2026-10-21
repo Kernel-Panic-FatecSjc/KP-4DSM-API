@@ -5,6 +5,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -27,8 +28,13 @@ import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorato
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { camposInformados } from '../auditoria/campos-informados';
 import { AtualizarContratoDto } from './dto/atualizar-contrato.dto';
-import { ContratoRespostaDto } from './dto/contrato-resposta.dto';
+import {
+  ContratoListagemRespostaDto,
+  ContratoRespostaDto,
+  ContratosPaginadosRespostaDto,
+} from './dto/contrato-listagem-resposta.dto';
 import { CriarContratoDto } from './dto/criar-contrato.dto';
+import { ListarContratosQueryDto } from './dto/listar-contratos-query.dto';
 import { ContratosService } from './contratos.service';
 
 @Controller('contratos')
@@ -43,6 +49,42 @@ export class ContratosController {
     private readonly contratosService: ContratosService,
     private readonly auditoriaService: AuditoriaService,
   ) {}
+
+  @Get()
+  @ApiOperation({
+    summary: 'Listar contratos',
+    description:
+      'Lista contratos com paginação, filtros por órgão e status e busca por número, objeto ou nome do órgão.',
+  })
+  @ApiOkResponse({ type: ContratosPaginadosRespostaDto })
+  @ApiBadRequestResponse({
+    description: 'Filtros ou parâmetros de paginação inválidos',
+  })
+  async listar(
+    @Query() query: ListarContratosQueryDto,
+    @UsuarioAutenticado() usuario: PayloadJwt,
+  ): Promise<ContratosPaginadosRespostaDto> {
+    const { contratos, total, pagina, tamanho } =
+      await this.contratosService.listar(query);
+    await this.auditoriaService.registrar({
+      acao: 'contratos.consultar',
+      entidade: 'Contrato',
+      usuarioId: usuario.sub,
+      detalhes: { ...query },
+    });
+    return new ContratosPaginadosRespostaDto(
+      contratos.map(
+        (contrato) =>
+          new ContratoListagemRespostaDto(
+            contrato,
+            contrato.quantidadeEstacoes,
+          ),
+      ),
+      total,
+      pagina,
+      tamanho,
+    );
+  }
 
   @Get(':id')
   @ApiOperation({ summary: 'Consultar contrato por ID' })
