@@ -54,7 +54,7 @@ describe('Saúde (funcional)', () => {
       .expect(503);
   });
 
-  it('deve retornar 503 quando o último flush da ingestão falhar', async () => {
+    it('deve voltar a retornar 200 quando o flush se recuperar após uma falha', async () => {
     await ingestaoService.ingerir({
       vid: VID_ESTACAO,
       unixtime: 1_760_000_000,
@@ -64,16 +64,25 @@ describe('Saúde (funcional)', () => {
     });
 
     executeRawUnsafe.mockRejectedValueOnce(
-      new Error('Falha ao gravar leituras'),
+      new Error('Falha temporária ao gravar leituras'),
     );
 
     await ingestaoService.flush();
 
-    expect(executeRawUnsafe).toHaveBeenCalled();
     expect(ingestaoService.obterEstadoFlush()).toBe('falha');
 
     await request(app.getHttpServer())
       .get('/saude')
       .expect(503);
+
+    executeRawUnsafe.mockResolvedValueOnce(1);
+
+    await ingestaoService.flush();
+
+    expect(ingestaoService.obterEstadoFlush()).toBe('ok');
+
+    await request(app.getHttpServer())
+      .get('/saude')
+      .expect(200);
   });
 });

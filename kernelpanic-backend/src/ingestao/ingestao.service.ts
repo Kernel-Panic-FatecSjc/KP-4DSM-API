@@ -21,6 +21,7 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   private readonly tamanhoLoteMaximo: number;
   private readonly intervaloFlushMs: number;
   private estadoFlush: 'ok' | 'falha' = 'ok';
+  private flushEmAndamento: Promise<void> | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -110,8 +111,21 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
 
   /** Grava os dois lotes acumulados. Público para permitir flush manual (testes, shutdown). */
   async flush(): Promise<void> {
+    if (this.flushEmAndamento) {
+      return this.flushEmAndamento;
+    }
+
+    this.flushEmAndamento = this.executarFlush();
+
+    try {
+      await this.flushEmAndamento;
+    } finally {
+      this.flushEmAndamento = null;
+    }
+  }
+
+  private async executarFlush(): Promise<void> {
     if (this.loteBrutas.length === 0 && this.loteMedidas.length === 0) {
-      this.estadoFlush = 'ok';
       return;
     }
 
@@ -120,21 +134,36 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
     this.loteBrutas = [];
     this.loteMedidas = [];
 
-    try {
-      await Promise.all([
-        this.telemetria.registrarLeiturasBrutas(brutas),
-        this.telemetria.registrarMedidas(medidas),
-      ]);
+    const [resultadoBrutas, resultadoMedidas] = await Promise.allSettled([
+      this.telemetria.registrarLeiturasBrutas(brutas),
+      this.telemetria.registrarMedidas(medidas),
+    ]);
 
+    const falhaBrutas = resultadoBrutas.status === 'rejected';
+    const falhaMedidas = resultadoMedidas.status === 'rejected';
+
+    if (!falhaBrutas && !falhaMedidas) {
       this.estadoFlush = 'ok';
-    } catch (erro) {
-      this.estadoFlush = 'falha';
-
-      this.logger.error(
-        `Falha ao gravar lote (${brutas.length} leitura(s) bruta(s), ${medidas.length} medida(s))`,
-        erro as Error,
-      );
+      return;
     }
+
+    if (falhaBrutas) {
+      this.loteBrutas.unshift(...brutas);
+    }
+
+    if (falhaMedidas) {
+      this.loteMedidas.unshift(...medidas);
+    }
+
+    this.estadoFlush = 'falha';
+
+    const erroBrutas = falhaBrutas ? resultadoBrutas.reason : undefined;
+    const erroMedidas = falhaMedidas ? resultadoMedidas.reason : undefined;
+
+    this.logger.error(
+      `Falha ao gravar lote (${brutas.length} leitura(s) bruta(s), ${medidas.length} medida(s))`,
+      erroBrutas ?? erroMedidas,
+    );
   }
 
   async listarParametros(vid: string): Promise<EstacaoParametrosRespostaDto> {

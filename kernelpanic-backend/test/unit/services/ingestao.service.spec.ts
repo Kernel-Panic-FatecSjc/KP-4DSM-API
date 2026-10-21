@@ -152,6 +152,41 @@ describe('IngestaoService', () => {
         { parametroId: 'parametro-temp', estacaoId: ESTACAO_COM_COORDENADAS.id, valor: 25, unixtime: 1_760_000_000 },
       ]);
     });
+
+    it('mantém o lote no buffer após falha para permitir uma nova tentativa no próximo flush', async () => {
+      prismaMock.estacao.findUnique.mockResolvedValue(ESTACAO_COM_COORDENADAS);
+
+      const resposta = await service.ingerir({
+        vid: VID_ESTACAO,
+        unixtime: 1_760_000_000,
+        leituras: LEITURAS,
+      });
+
+      const erro = new Error('Falha temporária no banco');
+      telemetriaMock.registrarLeiturasBrutas.mockRejectedValueOnce(erro);
+
+      await service.flush();
+
+      expect(service.obterEstadoFlush()).toBe('falha');
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(1);
+
+      telemetriaMock.registrarLeiturasBrutas.mockResolvedValueOnce(1);
+
+      await service.flush();
+
+      expect(service.obterEstadoFlush()).toBe('ok');
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledTimes(2);
+      expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenLastCalledWith([
+        {
+          id: resposta.leituraBrutaId,
+          vidEstacao: VID_ESTACAO,
+          payload: LEITURAS,
+          latitude: -23.1,
+          longitude: -45.8,
+          unixtimeDispositivo: 1_760_000_000,
+        },
+      ]);
+    });
   });
 
   describe('listarParametros', () => {
