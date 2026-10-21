@@ -109,8 +109,12 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
   }
 
   async ingerir(payload: IngerirTelemetriaDto): Promise<IngestaoRespostaDto> {
+    // 'join': uma consulta só. O padrão do Prisma busca a estação, os parâmetros
+    // e os tipos em consultas separadas, e numa rota de milhares de req/s isso
+    // era o grosso do CPU da API (ver docs/teste-de-carga-ingestao.md).
     const estacao = await this.prisma.estacao.findUnique({
       where: { vid: payload.vid },
+      relationLoadStrategy: 'join',
       select: {
         id: true,
         latitude: true,

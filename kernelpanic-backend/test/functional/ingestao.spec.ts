@@ -18,11 +18,13 @@ describe('Ingestão (funcional)', () => {
   let ingestaoService: IngestaoService;
   const estacao = { findUnique: jest.fn() };
   const executeRawUnsafe = jest.fn();
+  const logAuditoria = { create: jest.fn() };
 
   beforeAll(async () => {
     app = await criarAppDeTeste({
       prismaMock: {
         estacao,
+        logAuditoria,
         $executeRawUnsafe: executeRawUnsafe,
         $connect: jest.fn(),
         $disconnect: jest.fn(),
@@ -70,6 +72,15 @@ describe('Ingestão (funcional)', () => {
     expect(executeRawUnsafe).not.toHaveBeenCalled();
     await ingestaoService.flush();
     expect(executeRawUnsafe).toHaveBeenCalledTimes(1);
+  });
+
+  it('não gera linha de auditoria de acesso a cada telemetria recebida', async () => {
+    await postar({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS }).expect(202);
+    await ingestaoService.flush();
+    // o middleware registra no evento "finish" da resposta, depois de o cliente receber
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(logAuditoria.create).not.toHaveBeenCalled();
   });
 
   it('descarta campos desconhecidos do payload (whitelist)', async () => {
