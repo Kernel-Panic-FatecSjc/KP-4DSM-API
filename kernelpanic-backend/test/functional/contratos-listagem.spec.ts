@@ -98,7 +98,6 @@ describe('Listagem de contratos (funcional)', () => {
       data: expect.objectContaining({ acao: 'contratos.consultar' }),
     });
   });
-  });
 
   it('documenta a rota de listagem no Swagger', async () => {
     const resposta = await request(app.getHttpServer()).get('/docs-json').expect(200);

@@ -46,7 +46,7 @@ export class ContratoListagemRespostaDto {
     criadoEm: Date;
     atualizadoEm: Date;
     encerradoEm: Date | null;
-    orgao: { id: string; nome: string; cnpj: string | null };
+    orgao: ConstructorParameters<typeof OrgaoContratoRespostaDto>[0];
     quantidadeEstacoes: number;
   }) {
     this.id = contrato.id;
