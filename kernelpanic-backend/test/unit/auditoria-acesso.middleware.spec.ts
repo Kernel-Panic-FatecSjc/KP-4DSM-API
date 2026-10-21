@@ -55,6 +55,13 @@ describe('AuditoriaAcessoMiddleware', () => {
     expect(registrar).not.toHaveBeenCalled();
   });
 
+  it('ignora o /saude do monitoramento, que chama de poucos em poucos segundos', () => {
+    const { registrar, next } = registrarAcesso('/saude', 200);
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(registrar).not.toHaveBeenCalled();
+  });
+
   it('ignora a ingestão mesmo com o path cortado, como o Express o entrega ao middleware de forRoutes("*")', () => {
     const registrar = jest.fn().mockResolvedValue(undefined);
     const middleware = new AuditoriaAcessoMiddleware({ registrar } as unknown as AuditoriaService);

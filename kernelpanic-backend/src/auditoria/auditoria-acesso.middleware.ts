@@ -6,6 +6,8 @@ type RequisicaoComUsuario = Request & {
   user?: { id?: string; sub?: string };
 };
 
+const ROTAS_SEM_AUDITORIA = ['/ingestao', '/saude'];
+
 @Injectable()
 export class AuditoriaAcessoMiddleware implements NestMiddleware {
   private readonly logger = new Logger(AuditoriaAcessoMiddleware.name);
@@ -15,8 +17,9 @@ export class AuditoriaAcessoMiddleware implements NestMiddleware {
   use(request: RequisicaoComUsuario, response: Response, next: NextFunction): void {
     // originalUrl, e não path: com forRoutes('*') o Express corta o prefixo que
     // casou, então request.path chega aqui como '/' e este desvio nunca disparava
-    // (cada POST do datalogger gerava uma linha de auditoria).
-    if (request.originalUrl.startsWith('/ingestao')) {
+    // (cada POST do datalogger gerava uma linha de auditoria). O /saude entra
+    // pelo mesmo motivo: o monitoramento chama de poucos em poucos segundos.
+    if (ROTAS_SEM_AUDITORIA.some((rota) => request.originalUrl.startsWith(rota))) {
       next();
       return;
     }
