@@ -7,6 +7,7 @@ import { PageHeading } from '@/components/PageHeading';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { cnpjValido, formatarCnpj, gerarCnpj, limparCnpj } from '@/lib/cnpj';
 
 const ITENS_POR_PAGINA = 5;
 
@@ -39,42 +40,6 @@ const ESTACOES_DISPONIVEIS: EstacaoMock[] = [
   { id: 'estacao-cacapava', nome: 'Centro - Caçapava', codigo: 'CCV-001' },
   { id: 'estacao-paraibuna', nome: 'Centro - Paraibuna', codigo: 'PBN-001' },
 ];
-
-function calcularDigitoCnpj(digitos: string): string {
-  const pesos = digitos.length === 12
-    ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
-    : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-  const soma = [...digitos].reduce(
-    (total, digito, indice) => total + Number(digito) * pesos[indice],
-    0,
-  );
-  const resto = soma % 11;
-  return String(resto < 2 ? 0 : 11 - resto);
-}
-
-function gerarCnpj(base: string): string {
-  const primeiro = calcularDigitoCnpj(base);
-  const segundo = calcularDigitoCnpj(`${base}${primeiro}`);
-  return `${base}${primeiro}${segundo}`;
-}
-
-function formatarCnpj(valor: string): string {
-  const digitos = valor.replace(/\D/g, '').slice(0, 14);
-  return digitos
-    .replace(/^(\d{2})(\d)/, '$1.$2')
-    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/\.(\d{3})(\d)/, '.$1/$2')
-    .replace(/(\d{4})(\d)/, '$1-$2');
-}
-
-function cnpjValido(valor: string): boolean {
-  const digitos = valor.replace(/\D/g, '');
-  if (digitos.length !== 14 || /^(\d)\1{13}$/.test(digitos)) return false;
-  const base = digitos.slice(0, 12);
-  const primeiro = calcularDigitoCnpj(base);
-  const segundo = calcularDigitoCnpj(`${base}${primeiro}`);
-  return digitos === `${base}${primeiro}${segundo}`;
-}
 
 const CONTRATOS_INICIAIS: Contrato[] = [
   {
@@ -221,7 +186,7 @@ export default function ContratosPage() {
 
   const contratosFiltrados = useMemo(() => {
     const termo = busca.trim().toLocaleLowerCase('pt-BR');
-    const cnpjTermo = termo.replace(/\D/g, '');
+    const cnpjTermo = limparCnpj(termo);
     return contratos.filter((contrato) => {
       const correspondeBusca =
         !termo ||
@@ -275,7 +240,7 @@ export default function ContratosPage() {
     evento.preventDefault();
     const numero = formulario.numero.trim();
     const orgao = formulario.orgao.trim();
-    const cnpj = formulario.cnpj.replace(/\D/g, '');
+    const cnpj = limparCnpj(formulario.cnpj);
 
     if (!numero || !orgao || !cnpj || !formulario.inicioVigencia || !formulario.fimVigencia) {
       setErroFormulario('Preencha todos os campos para salvar o contrato.');
@@ -616,7 +581,7 @@ export default function ContratosPage() {
                 <Input
                   id="cnpjContrato"
                   required
-                  inputMode="numeric"
+                  autoCapitalize="characters"
                   autoComplete="off"
                   maxLength={18}
                   placeholder="00.000.000/0000-00"
