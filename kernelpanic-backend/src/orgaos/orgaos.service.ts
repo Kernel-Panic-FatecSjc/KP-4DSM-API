@@ -42,8 +42,11 @@ export class OrgaosService {
   }
 
   async criar(dto: CriarOrgaoDto) {
-    const cnpj = dto.cnpj.replace(/\D/g, '');
-    if (await this.prisma.orgaoPublico.findUnique({ where: { cnpj } })) {
+    const cnpj = dto.cnpj?.replace(/\D/g, '');
+    if (
+      cnpj &&
+      (await this.prisma.orgaoPublico.findUnique({ where: { cnpj } }))
+    ) {
       throw new ConflictException('Já existe um órgão com este CNPJ');
     }
     try {

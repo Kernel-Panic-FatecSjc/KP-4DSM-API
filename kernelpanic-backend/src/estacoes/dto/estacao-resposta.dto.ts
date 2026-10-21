@@ -1,20 +1,32 @@
 import type { Prisma } from '../../generated/prisma/client';
+import { ApiProperty } from '@nestjs/swagger';
 
 type EstacaoComSensores = Prisma.EstacaoGetPayload<{
   include: { parametros: { include: { tipoParametro: true } } };
 }>;
 
 export class EstacaoRespostaDto {
+  @ApiProperty({ format: 'uuid' })
   id: string;
+  @ApiProperty()
   nome: string;
+  @ApiProperty()
   endereco: string;
+  @ApiProperty()
   vid: string;
+  @ApiProperty()
   latitude: number;
+  @ApiProperty()
   longitude: number;
+  @ApiProperty({ enum: ['ATIVA', 'INATIVA'] })
   statusOperacional: string;
+  @ApiProperty()
   possuiChaveIngestao: boolean;
+  @ApiProperty({ type: 'array', items: { type: 'object' } })
   sensores: Array<{ id: string; nome: string; unidade: string }>;
+  @ApiProperty({ format: 'date-time' })
   criadoEm: Date;
+  @ApiProperty({ format: 'date-time' })
   atualizadoEm: Date;
 
   constructor(estacao: EstacaoComSensores) {
