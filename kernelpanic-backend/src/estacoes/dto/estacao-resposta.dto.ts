@@ -2,7 +2,10 @@ import type { Prisma } from '../../generated/prisma/client';
 import { ApiProperty } from '@nestjs/swagger';
 
 type EstacaoComSensores = Prisma.EstacaoGetPayload<{
-  include: { parametros: { include: { tipoParametro: true } } };
+  include: {
+    parametros: { include: { tipoParametro: true } };
+    contrato: { select: { id: true; numero: true } };
+  };
 }>;
 
 export class EstacaoRespostaDto {
@@ -24,6 +27,12 @@ export class EstacaoRespostaDto {
   possuiChaveIngestao: boolean;
   @ApiProperty({ type: 'array', items: { type: 'object' } })
   sensores: Array<{ id: string; nome: string; unidade: string }>;
+  @ApiProperty({
+    nullable: true,
+    description: 'Contrato ao qual a estação está vinculada, se houver',
+    example: { id: 'uuid', numero: 'CTR-2026-001' },
+  })
+  contrato: { id: string; numero: string } | null;
   @ApiProperty({ format: 'date-time' })
   criadoEm: Date;
   @ApiProperty({ format: 'date-time' })
@@ -43,6 +52,7 @@ export class EstacaoRespostaDto {
       nome: tipoParametro.nome,
       unidade: tipoParametro.unidade,
     }));
+    this.contrato = estacao.contrato ?? null;
     this.criadoEm = estacao.criadoEm;
     this.atualizadoEm = estacao.atualizadoEm;
   }

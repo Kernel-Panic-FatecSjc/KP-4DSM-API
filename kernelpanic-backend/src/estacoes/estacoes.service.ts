@@ -13,6 +13,7 @@ import { ListarEstacoesQueryDto } from './dto/listar-estacoes-query.dto';
 
 const INCLUIR_SENSORES = {
   parametros: { include: { tipoParametro: true } },
+  contrato: { select: { id: true, numero: true } },
 } satisfies Prisma.EstacaoInclude;
 
 type EstacaoComSensores = Prisma.EstacaoGetPayload<{
@@ -37,6 +38,7 @@ export class EstacoesService {
         endereco: regiao
           ? { contains: regiao, mode: 'insensitive' }
           : undefined,
+        contratoId: query.contratoId,
         parametros: query.tipoParametroId
           ? { some: { tipoParametroId: query.tipoParametroId } }
           : undefined,
@@ -44,6 +46,18 @@ export class EstacoesService {
       include: INCLUIR_SENSORES,
       orderBy: { nome: 'asc' },
     });
+  }
+
+  async listarPorContrato(contratoId: string): Promise<EstacaoComSensores[]> {
+    const contrato = await this.prisma.contrato.findUnique({
+      where: { id: contratoId },
+      select: { id: true },
+    });
+    if (!contrato) {
+      throw new NotFoundException('Contrato não encontrado');
+    }
+
+    return this.listar({ contratoId });
   }
 
   /** Cadastra a estação já com a chave de ingestão, devolvida só desta vez. */
