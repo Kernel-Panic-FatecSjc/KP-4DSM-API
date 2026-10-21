@@ -9,6 +9,11 @@ import { StatusContrato } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtualizarContratoDto } from './dto/atualizar-contrato.dto';
 import { CriarContratoDto } from './dto/criar-contrato.dto';
+import {
+  ListarContratosQueryDto,
+  PAGINA_PADRAO,
+  TAMANHO_PADRAO,
+} from './dto/listar-contratos-query.dto';
 
 const INCLUIR_ORGAO = { orgao: true } satisfies Prisma.ContratoInclude;
 const TRANSICOES_PERMITIDAS: Record<StatusContrato, StatusContrato[]> = {
@@ -34,9 +39,80 @@ function violouUnicidade(erro: unknown): boolean {
   );
 }
 
+export type ContratoListado = ContratoComOrgao & {
+  quantidadeEstacoes: number;
+};
+
+export interface ContratosPaginados {
+  contratos: ContratoListado[];
+  total: number;
+  pagina: number;
+  tamanho: number;
+}
+
 @Injectable()
 export class ContratosService {
   constructor(private readonly prisma: PrismaService) {}
+
+  async listar(query: ListarContratosQueryDto): Promise<ContratosPaginados> {
+    const busca = query.busca?.trim();
+    const pagina = query.pagina ?? PAGINA_PADRAO;
+    const tamanho = query.tamanho ?? TAMANHO_PADRAO;
+    const where: Prisma.ContratoWhereInput = {
+      status: query.status,
+      orgaoId: query.orgaoId,
+      OR: busca
+        ? [
+            { numero: { contains: busca, mode: 'insensitive' } },
+            { objeto: { contains: busca, mode: 'insensitive' } },
+            { orgao: { nome: { contains: busca, mode: 'insensitive' } } },
+          ]
+        : undefined,
+    };
+
+    const [contratos, total] = await this.prisma.$transaction([
+      this.prisma.contrato.findMany({
+        where,
+        include: INCLUIR_ORGAO,
+        orderBy: [{ criadoEm: 'desc' }, { id: 'asc' }],
+        skip: (pagina - 1) * tamanho,
+        take: tamanho,
+      }),
+      this.prisma.contrato.count({ where }),
+    ]);
+
+    const estacoesPorContrato = await this.contarEstacoesVinculadas(
+      contratos.map((contrato) => contrato.id),
+    );
+
+    return {
+      contratos: contratos.map((contrato) => ({
+        ...contrato,
+        quantidadeEstacoes: estacoesPorContrato.get(contrato.id) ?? 0,
+      })),
+      total,
+      pagina,
+      tamanho,
+    };
+  }
+
+  private async contarEstacoesVinculadas(
+    contratoIds: string[],
+  ): Promise<Map<string, number>> {
+    if (contratoIds.length === 0) return new Map();
+
+    const grupos = await this.prisma.estacao.groupBy({
+      by: ['contratoId'],
+      where: { contratoId: { in: contratoIds } },
+      _count: { _all: true },
+    });
+
+    return new Map(
+      grupos
+        .filter((grupo) => grupo.contratoId !== null)
+        .map((grupo) => [grupo.contratoId as string, grupo._count._all]),
+    );
+  }
 
   async buscarPorId(id: string): Promise<ContratoComOrgao> {
     const contrato = await this.prisma.contrato.findUnique({
