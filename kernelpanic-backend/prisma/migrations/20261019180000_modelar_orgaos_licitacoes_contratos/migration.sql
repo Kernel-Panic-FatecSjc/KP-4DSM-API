@@ -17,7 +17,6 @@ CREATE TYPE "ModalidadeLicitacao" AS ENUM (
 
 CREATE TYPE "StatusContrato" AS ENUM (
     'RASCUNHO',
-    'ATIVO',
     'VIGENTE',
     'SUSPENSO',
     'ENCERRADO'
