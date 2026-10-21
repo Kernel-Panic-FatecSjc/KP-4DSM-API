@@ -51,15 +51,8 @@ export class ContratosController {
   @ApiNotFoundResponse({ description: 'Contrato não encontrado' })
   async buscarPorId(
     @Param('id') id: string,
-    @UsuarioAutenticado() usuario: PayloadJwt,
   ): Promise<ContratoRespostaDto> {
     const contrato = await this.contratosService.buscarPorId(id);
-    await this.auditoriaService.registrar({
-      acao: 'contratos.consultar',
-      entidade: 'Contrato',
-      entidadeId: id,
-      usuarioId: usuario.sub,
-    });
     return new ContratoRespostaDto(contrato);
   }
 
