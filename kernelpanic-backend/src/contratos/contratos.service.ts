@@ -9,23 +9,12 @@ import { StatusContrato } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtualizarContratoDto } from './dto/atualizar-contrato.dto';
 import { CriarContratoDto } from './dto/criar-contrato.dto';
-import {
-  ListarContratosQueryDto,
-  PAGINA_PADRAO,
-  TAMANHO_PADRAO,
-} from './dto/listar-contratos-query.dto';
 
 const INCLUIR_ORGAO = { orgao: true } satisfies Prisma.ContratoInclude;
-const INCLUIR_ESTACOES_SENSORES = {
-  parametros: { include: { tipoParametro: true } },
-} satisfies Prisma.EstacaoInclude;
-type EstacaoDoContrato = Prisma.EstacaoGetPayload<{
-  include: typeof INCLUIR_ESTACOES_SENSORES;
-}>;
 const TRANSICOES_PERMITIDAS: Record<StatusContrato, StatusContrato[]> = {
-  RASCUNHO: [StatusContrato.ATIVO, StatusContrato.ENCERRADO],
-  ATIVO: [StatusContrato.SUSPENSO, StatusContrato.ENCERRADO],
-  SUSPENSO: [StatusContrato.ATIVO, StatusContrato.ENCERRADO],
+  RASCUNHO: [StatusContrato.VIGENTE, StatusContrato.ENCERRADO],
+  VIGENTE: [StatusContrato.SUSPENSO, StatusContrato.ENCERRADO],
+  SUSPENSO: [StatusContrato.VIGENTE, StatusContrato.ENCERRADO],
   ENCERRADO: [],
 };
 const MENSAGEM_NUMERO_DUPLICADO = 'Ja existe um contrato com este numero';
@@ -33,17 +22,6 @@ const MENSAGEM_NUMERO_DUPLICADO = 'Ja existe um contrato com este numero';
 type ContratoComOrgao = Prisma.ContratoGetPayload<{
   include: typeof INCLUIR_ORGAO;
 }>;
-
-export type ContratoListado = ContratoComOrgao & {
-  quantidadeEstacoes: number;
-};
-
-export interface ContratosPaginados {
-  contratos: ContratoListado[];
-  total: number;
-  pagina: number;
-  tamanho: number;
-}
 
 // P2002 = violação de unicidade. A checagem prévia de número não cobre duas
 // requisições simultâneas; a constraint do banco é quem garante, e aqui o erro
@@ -59,61 +37,6 @@ function violouUnicidade(erro: unknown): boolean {
 @Injectable()
 export class ContratosService {
   constructor(private readonly prisma: PrismaService) {}
-
-  async listar(query: ListarContratosQueryDto): Promise<ContratosPaginados> {
-    const busca = query.busca?.trim();
-    const pagina = query.pagina ?? PAGINA_PADRAO;
-    const tamanho = query.tamanho ?? TAMANHO_PADRAO;
-
-    const where: Prisma.ContratoWhereInput = {
-      status: query.status,
-      orgaoId: query.orgaoId,
-      OR: busca
-        ? [
-            { numero: { contains: busca, mode: 'insensitive' } },
-            { objeto: { contains: busca, mode: 'insensitive' } },
-            { orgao: { nome: { contains: busca, mode: 'insensitive' } } },
-          ]
-        : undefined,
-    };
-
-    // Mesmo where na listagem e na contagem para o total refletir os filtros.
-    // O desempate por id mantem a ordem estavel entre paginas.
-    const [contratos, total] = await this.prisma.$transaction([
-      this.prisma.contrato.findMany({
-        where,
-        include: INCLUIR_ORGAO,
-        orderBy: [{ criadoEm: 'desc' }, { id: 'asc' }],
-        skip: (pagina - 1) * tamanho,
-        take: tamanho,
-      }),
-      this.prisma.contrato.count({ where }),
-    ]);
-
-    const estacoesPorContrato = await this.contarEstacoesVinculadas(
-      contratos.map((contrato) => contrato.id),
-    );
-
-    return {
-      contratos: contratos.map((contrato) => ({
-        ...contrato,
-        quantidadeEstacoes: estacoesPorContrato.get(contrato.id) ?? 0,
-      })),
-      total,
-      pagina,
-      tamanho,
-    };
-  }
-
-  async listarEstacoes(id: string): Promise<EstacaoDoContrato[]> {
-    await this.buscarPorId(id);
-
-    return this.prisma.estacao.findMany({
-      where: { contratoId: id },
-      include: INCLUIR_ESTACOES_SENSORES,
-      orderBy: [{ nome: 'asc' }, { id: 'asc' }],
-    });
-  }
 
   async buscarPorId(id: string): Promise<ContratoComOrgao> {
     const contrato = await this.prisma.contrato.findUnique({
@@ -134,6 +57,9 @@ export class ContratosService {
     this.validarVigencia(dto.inicioVigencia, dto.fimVigencia);
     // Todo contrato nasce como rascunho: o status inicial segue o mesmo mapa de transições.
     this.validarTransicao(StatusContrato.RASCUNHO, status);
+    if (status === StatusContrato.VIGENTE) {
+      this.validarPrazoParaAtivacao(dto.fimVigencia);
+    }
     await this.validarOrgaoAtivo(dto.orgaoId);
     await this.validarNumeroUnico(dto.numero);
 
@@ -142,8 +68,8 @@ export class ContratosService {
         data: {
           numero: dto.numero,
           objeto: dto.objeto,
-          inicioVigencia: new Date(dto.inicioVigencia),
-          fimVigencia: new Date(dto.fimVigencia),
+          inicioVigencia: new Date(this.normalizarData(dto.inicioVigencia)),
+          fimVigencia: new Date(this.normalizarData(dto.fimVigencia, true)),
           status,
           orgaoId: dto.orgaoId,
           encerradoEm:
@@ -177,6 +103,9 @@ export class ContratosService {
 
     if (dto.status && dto.status !== contrato.status) {
       this.validarTransicao(contrato.status, dto.status);
+      if (dto.status === StatusContrato.VIGENTE) {
+        this.validarPrazoParaAtivacao(fimVigencia);
+      }
     }
 
     if (dto.orgaoId && dto.orgaoId !== contrato.orgaoId) {
@@ -194,9 +123,11 @@ export class ContratosService {
           numero: dto.numero,
           objeto: dto.objeto,
           inicioVigencia: dto.inicioVigencia
-            ? new Date(dto.inicioVigencia)
+            ? new Date(this.normalizarData(dto.inicioVigencia))
             : undefined,
-          fimVigencia: dto.fimVigencia ? new Date(dto.fimVigencia) : undefined,
+          fimVigencia: dto.fimVigencia
+            ? new Date(this.normalizarData(dto.fimVigencia, true))
+            : undefined,
           status: dto.status,
           orgaoId: dto.orgaoId,
           encerradoEm:
@@ -232,32 +163,37 @@ export class ContratosService {
     });
   }
 
-  private async contarEstacoesVinculadas(
-    contratoIds: string[],
-  ): Promise<Map<string, number>> {
-    if (contratoIds.length === 0) {
-      return new Map();
-    }
-
-    const grupos = await this.prisma.estacao.groupBy({
-      by: ['contratoId'],
-      where: { contratoId: { in: contratoIds } },
-      _count: { _all: true },
-    });
-
-    return new Map(
-      grupos
-        .filter((grupo) => grupo.contratoId !== null)
-        .map((grupo) => [grupo.contratoId as string, grupo._count._all]),
-    );
-  }
-
   private validarVigencia(inicio: string, fim: string): void {
-    if (new Date(fim).getTime() < new Date(inicio).getTime()) {
+    const inicioVigencia = new Date(this.normalizarData(inicio));
+    const fimVigencia = new Date(this.normalizarData(fim, true));
+    if (fimVigencia.getTime() < inicioVigencia.getTime()) {
       throw new BadRequestException(
         'Fim da vigencia deve ser maior ou igual ao inicio',
       );
     }
+  }
+
+  private validarPrazoParaAtivacao(fim: string | Date): void {
+    const fimVigencia =
+      fim instanceof Date ? fim : new Date(this.normalizarData(fim, true));
+    if (fimVigencia.getTime() < Date.now()) {
+      throw new BadRequestException(
+        'Contrato com vigencia expirada nao pode ser ativado',
+      );
+    }
+  }
+
+  private normalizarData(valor: string, fimDoDia = false): string {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(valor)) {
+      return `${valor}T${fimDoDia ? '23:59:59.999' : '00:00:00.000'}Z`;
+    }
+    if (
+      /^\d{4}-\d{2}-\d{2}T/.test(valor) &&
+      !/(?:Z|[+-]\d{2}:\d{2})$/i.test(valor)
+    ) {
+      return `${valor}Z`;
+    }
+    return valor;
   }
 
   private async validarNumeroUnico(numero: string): Promise<void> {
@@ -270,7 +206,7 @@ export class ContratosService {
   }
 
   private async validarOrgaoAtivo(orgaoId: string): Promise<void> {
-    const orgao = await this.prisma.orgao.findUnique({
+    const orgao = await this.prisma.orgaoPublico.findUnique({
       where: { id: orgaoId },
     });
     if (!orgao) {

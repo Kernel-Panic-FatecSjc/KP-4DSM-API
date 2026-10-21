@@ -20,8 +20,6 @@ export class EstacaoRespostaDto {
   longitude: number;
   @ApiProperty({ enum: ['ATIVA', 'INATIVA'] })
   statusOperacional: string;
-  @ApiProperty({ format: 'uuid', nullable: true })
-  contratoId: string | null;
   @ApiProperty()
   possuiChaveIngestao: boolean;
   @ApiProperty({ type: 'array', items: { type: 'object' } })
@@ -39,7 +37,6 @@ export class EstacaoRespostaDto {
     this.latitude = estacao.latitude;
     this.longitude = estacao.longitude;
     this.statusOperacional = estacao.statusOperacional;
-    this.contratoId = estacao.contratoId;
     this.possuiChaveIngestao = Boolean(estacao.chaveIngestaoHash);
     this.sensores = estacao.parametros.map(({ tipoParametro }) => ({
       id: tipoParametro.id,
