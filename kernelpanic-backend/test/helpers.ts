@@ -1,8 +1,8 @@
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModuleBuilder } from '@nestjs/testing';
-import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { configurarApp } from '../src/configurar-app';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 export interface OpcoesAppDeTeste {
@@ -17,8 +17,7 @@ export async function criarAppDeTeste(opcoes: OpcoesAppDeTeste = {}): Promise<IN
   }
 
   const app = (await builder.compile()).createNestApplication();
-  app.use(cookieParser());
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  configurarApp(app);
   await app.init();
 
   return app;
