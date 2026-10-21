@@ -345,6 +345,11 @@ export class IngestaoService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  /** 'falha' enquanto algum lote que falhou ao gravar ainda aguarda nova tentativa (usado pelo /saude). */
+  obterEstadoFlush(): 'ok' | 'falha' {
+    return this.temFalhasPendentes() ? 'falha' : 'ok';
+  }
+
   private temFalhasPendentes(): boolean {
     return this.falhasBrutas.length > 0 || this.falhasMedidas.length > 0 || this.falhasErros.length > 0;
   }

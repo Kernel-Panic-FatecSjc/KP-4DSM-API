@@ -16,6 +16,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { RegiaoModule } from './regiao/regiao.module';
 import { SensoresModule } from './sensores/sensores.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
+import { SaudeModule } from './saude/saude.module';
 import { OrgaosModule } from './orgaos/orgaos.module';
 
 @Module({
@@ -32,6 +33,7 @@ import { OrgaosModule } from './orgaos/orgaos.module';
     DashboardModule,
     EstacoesModule,
     IngestaoModule,
+    SaudeModule,
     OrgaosModule,
     LeiturasBrutasModule,
     SensoresModule,

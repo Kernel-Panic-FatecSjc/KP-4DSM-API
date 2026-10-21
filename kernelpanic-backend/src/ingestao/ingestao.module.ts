@@ -6,6 +6,6 @@ import { TelemetriaService } from './telemetria.service';
 @Module({
   controllers: [IngestaoController],
   providers: [IngestaoService, TelemetriaService],
-  exports: [TelemetriaService],
+  exports: [TelemetriaService, IngestaoService],
 })
 export class IngestaoModule {}
