@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { MotivoLeituraErro } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface LeituraBrutaParaGravar {
@@ -15,6 +16,20 @@ export interface MedidaParaGravar {
   estacaoId: string;
   valor: number;
   unixtime: number;
+}
+
+export interface LeituraErroParaGravar {
+  id: string;
+  leituraBrutaId: string;
+  vidEstacao: string;
+  nomeSensor: string;
+  /** Nulo quando o sensor não tem parâmetro configurado na estação. */
+  parametroId: string | null;
+  valor: number;
+  unixtime: number;
+  motivo: MotivoLeituraErro;
+  valorMinimo: number | null;
+  valorMaximo: number | null;
 }
 
 // Postgres aceita no máximo 65535 parâmetros por query; controla o tamanho
@@ -50,11 +65,31 @@ export class TelemetriaService {
   }
 
   /**
+   * Grava as leituras que não viraram medida (valor fora da faixa, sensor sem
+   * parâmetro). O id vem pronto de quem chamou, então regravar o lote depois
+   * de uma falha não duplica: skipDuplicates vira ON CONFLICT DO NOTHING.
+   */
+  async registrarLeiturasErro(erros: LeituraErroParaGravar[]): Promise<number> {
+    if (erros.length === 0) return 0;
+
+    const { count } = await this.prisma.leituraErro.createMany({
+      data: erros.map((erro) => ({ ...erro, unixtime: BigInt(erro.unixtime) })),
+      skipDuplicates: true,
+    });
+
+    return count;
+  }
+
+  /**
    * Grava um lote de leituras brutas num único INSERT multi-linha. Raw SQL
    * (em vez de createMany) porque "localizacao" é geometry do PostGIS —
    * tipo que o Prisma marca como Unsupported e não sabe gravar sozinho. O id
    * já vem pronto de quem chamou (gerado na hora da requisição), porque a
    * gravação em si só acontece no próximo flush do lote.
+   *
+   * `ON CONFLICT (id) DO NOTHING` deixa regravar o lote sem erro quando o
+   * IngestaoService tenta de novo depois de uma falha (ex.: um sub-lote
+   * gravou e o seguinte não).
    */
   async registrarLeiturasBrutas(leituras: LeituraBrutaParaGravar[]): Promise<number> {
     let total = 0;
@@ -83,7 +118,8 @@ export class TelemetriaService {
 
     return this.prisma.$executeRawUnsafe(
       `INSERT INTO leituras_brutas (id, "vidEstacao", payload, localizacao, "unixtimeDispositivo")
-       VALUES ${linhas.join(', ')}`,
+       VALUES ${linhas.join(', ')}
+       ON CONFLICT (id) DO NOTHING`,
       ...valores,
     );
   }

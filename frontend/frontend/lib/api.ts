@@ -115,6 +115,8 @@ export interface SensorApi {
   unidade: string;
   fator: number;
   ganho: number;
+  valorMinimo: number | null;
+  valorMaximo: number | null;
   estacoesAssociadas: number;
 }
 
@@ -129,6 +131,8 @@ export interface SensorPayload {
   unidade: string;
   fator: number;
   ganho: number;
+  valorMinimo: number | null;
+  valorMaximo: number | null;
 }
 
 export type SeveridadeAlerta ='ATENCAO' | 'ALERTA' | 'EMERGENCIA';

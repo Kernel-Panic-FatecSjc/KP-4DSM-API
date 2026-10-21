@@ -6,7 +6,14 @@ import { criarAppDeTeste } from '../helpers';
 const USUARIO = { id: 'usuario-1', email: 'user@teste.com', tipo: 'ADMINISTRADOR', ativo: true };
 
 const NOVO_SENSOR = { nome: 'Pluviômetro', unidade: 'mm', fator: 1, ganho: 0.2 };
-const SENSOR = { id: 'sensor-1', ...NOVO_SENSOR, json: null, _count: { parametros: 0 } };
+const SENSOR = {
+  id: 'sensor-1',
+  ...NOVO_SENSOR,
+  json: null,
+  valorMinimo: null,
+  valorMaximo: null,
+  _count: { parametros: 0 },
+};
 
 describe('Cadastro de sensores (funcional)', () => {
   let app: INestApplication;
@@ -59,6 +66,8 @@ describe('Cadastro de sensores (funcional)', () => {
         fator: 1,
         ganho: 0.2,
         json: null,
+        valorMinimo: null,
+        valorMaximo: null,
         estacoesAssociadas: 0,
       },
     ]);
@@ -103,6 +112,29 @@ describe('Cadastro de sensores (funcional)', () => {
         usuarioId: USUARIO.id,
       }),
     });
+  });
+
+  it('cadastra o sensor com a faixa física e a devolve na resposta', async () => {
+    tipoParametro.create.mockImplementation(({ data }) => ({ ...SENSOR, ...data }));
+
+    const resposta = await request(app.getHttpServer())
+      .post('/sensores')
+      .set('Cookie', cookie)
+      .send({ ...NOVO_SENSOR, valorMinimo: 0, valorMaximo: 500 })
+      .expect(201);
+
+    expect(resposta.body).toMatchObject({ valorMinimo: 0, valorMaximo: 500 });
+  });
+
+  it('rejeita faixa com mínimo maior que o máximo, ou limite não numérico, com 400', async () => {
+    const postar = (payload: object) =>
+      request(app.getHttpServer()).post('/sensores').set('Cookie', cookie).send(payload);
+
+    const invertida = await postar({ ...NOVO_SENSOR, valorMinimo: 10, valorMaximo: 1 }).expect(400);
+    expect(invertida.body.message).toContain('valorMinimo não pode ser maior que valorMaximo');
+    await postar({ ...NOVO_SENSOR, valorMaximo: 'alto' }).expect(400);
+
+    expect(tipoParametro.create).not.toHaveBeenCalled();
   });
 
   it('rejeita cadastro inválido com 400 sem persistir nem auditar', async () => {
