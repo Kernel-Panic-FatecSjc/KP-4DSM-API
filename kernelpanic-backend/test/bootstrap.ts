@@ -16,8 +16,11 @@ const PADROES_DE_TESTE: Record<string, string> = {
   ALARMES_TEMPO_REAL: 'false',
 };
 
+// Atribui, em vez de só preencher o que falta: o .env de desenvolvimento
+// (copiado do .env.example) já define estes valores, e o limite de login de 5
+// por minuto dele fazia os testes de autenticação levarem 429.
 for (const [chave, valor] of Object.entries(PADROES_DE_TESTE)) {
-  process.env[chave] ??= valor;
+  process.env[chave] = valor;
 }
 
 process.env.DATABASE_URL = obterUrlBancoDeTeste();
