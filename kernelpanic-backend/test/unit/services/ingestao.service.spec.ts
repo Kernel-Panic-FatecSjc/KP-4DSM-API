@@ -238,6 +238,51 @@ describe('IngestaoService', () => {
       });
     });
 
+    describe('estação inativa', () => {
+      const comParametro = (statusOperacional?: string) => ({
+        ...ESTACAO_COM_COORDENADAS,
+        statusOperacional,
+        parametros: [{ id: 'parametro-temp', tipoParametro: { nome: 'temperatura' } }],
+      });
+
+      it('guarda o pacote em leituras_brutas, não gera medida e avisa o datalogger', async () => {
+        prismaMock.estacao.findUnique.mockResolvedValue(comParametro('INATIVA'));
+
+        const resposta = await service.ingerir({
+          vid: VID_ESTACAO,
+          unixtime: 1_760_000_000,
+          leituras: { temperatura: 25 },
+        });
+        await service.flush();
+
+        expect(resposta).toMatchObject({ estacaoInativa: true, sensoresRecebidos: 1 });
+        expect(telemetriaMock.registrarLeiturasBrutas).toHaveBeenCalledWith([
+          expect.objectContaining({
+            id: resposta.leituraBrutaId,
+            vidEstacao: VID_ESTACAO,
+            payload: { temperatura: 25 },
+          }),
+        ]);
+        expect(telemetriaMock.registrarMedidas).not.toHaveBeenCalled();
+      });
+
+      it.each(['ATIVA', undefined])('estação com status %s grava a medida e responde estacaoInativa false', async (status) => {
+        prismaMock.estacao.findUnique.mockResolvedValue(comParametro(status));
+
+        const resposta = await service.ingerir({
+          vid: VID_ESTACAO,
+          unixtime: 1_760_000_000,
+          leituras: { temperatura: 25 },
+        });
+        await service.flush();
+
+        expect(resposta.estacaoInativa).toBe(false);
+        expect(telemetriaMock.registrarMedidas).toHaveBeenCalledWith([
+          expect.objectContaining({ parametroId: 'parametro-temp', valor: 25 }),
+        ]);
+      });
+    });
+
     it('reenvio do buffer (US03): dois ingerir() com mesmo unixtime fazem flush chamar registrarMedidas com ambas as medidas — skipDuplicates no banco descarta a duplicata', async () => {
       // Simula o cenário: ESP32 envia, API aceita, resposta não chega → reenvio.
       // O IngestaoService acumula as duas entradas no buffer antes do flush.
