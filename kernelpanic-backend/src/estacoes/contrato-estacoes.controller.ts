@@ -1,26 +1,24 @@
-import { Controller, Get, NotFoundException, Param, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiNotFoundResponse, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
-import type { Prisma } from '../generated/prisma/client';
+import { Controller, Get, Param, UseGuards } from '@nestjs/common';
+import {
+  ApiCookieAuth,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
-import type { PayloadJwt } from '../autenticacao/payload-jwt.interface';
-import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
-import { AuditoriaService } from '../auditoria/auditoria.service';
-import { PrismaService } from '../prisma/prisma.service';
 import { EstacaoRespostaDto } from './dto/estacao-resposta.dto';
+import { EstacoesService } from './estacoes.service';
 
-const INCLUIR_SENSORES = {
-  parametros: { include: { tipoParametro: true } },
-} satisfies Prisma.EstacaoInclude;
-
+// Sem auditoria explícita: o middleware de acesso já registra todo GET.
 @ApiTags('contratos')
-@ApiBearerAuth()
+@ApiCookieAuth()
+@ApiUnauthorizedResponse({ description: 'Cookie de sessão ausente ou inválido' })
 @Controller()
 @UseGuards(GuardaJwt)
 export class ContratoEstacoesController {
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly auditoriaService: AuditoriaService,
-  ) {}
+  constructor(private readonly estacoesService: EstacoesService) {}
 
   @Get('contratos/:id/estacoes')
   @ApiOperation({
@@ -29,29 +27,8 @@ export class ContratoEstacoesController {
   })
   @ApiOkResponse({ type: EstacaoRespostaDto, isArray: true })
   @ApiNotFoundResponse({ description: 'Contrato não encontrado' })
-  async listar(
-    @Param('id') contratoId: string,
-    @UsuarioAutenticado() usuario: PayloadJwt,
-  ): Promise<EstacaoRespostaDto[]> {
-    const contrato = await this.prisma.contrato.findUnique({
-      where: { id: contratoId },
-      select: { id: true },
-    });
-    if (!contrato) {
-      throw new NotFoundException('Contrato não encontrado');
-    }
-
-    const estacoes = await this.prisma.estacao.findMany({
-      where: { contratoId },
-      include: INCLUIR_SENSORES,
-      orderBy: [{ nome: 'asc' }, { id: 'asc' }],
-    });
-    await this.auditoriaService.registrar({
-      acao: 'contratos.estacoes.consultar',
-      entidade: 'Contrato',
-      entidadeId: contratoId,
-      usuarioId: usuario.sub,
-    });
+  async listar(@Param('id') contratoId: string): Promise<EstacaoRespostaDto[]> {
+    const estacoes = await this.estacoesService.listarPorContrato(contratoId);
     return estacoes.map((estacao) => new EstacaoRespostaDto(estacao));
   }
 }

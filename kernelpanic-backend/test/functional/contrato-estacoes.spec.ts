@@ -6,6 +6,7 @@ import { criarAppDeTeste } from '../helpers';
 
 const USUARIO = { id: 'usuario-1', email: 'admin@teste.com', tipo: 'ADMINISTRADOR', ativo: true };
 const CONTRATO_ID = 'contrato-1';
+const UUID_CONTRATO = '5705ca34-b812-41ed-a05f-3245b2e8ffa4';
 
 describe('Hierarquia de contrato, estações e sensores (funcional)', () => {
   let app: INestApplication;
@@ -38,7 +39,7 @@ describe('Hierarquia de contrato, estações e sensores (funcional)', () => {
 
   afterAll(async () => app.close());
 
-  it('retorna estações e sensores vinculados, ordenados, e registra consulta na auditoria', async () => {
+  it('retorna estações e sensores vinculados, ordenados, com o contrato, sem auditoria duplicada do GET', async () => {
     const resposta = await request(app.getHttpServer())
       .get(`/contratos/${CONTRATO_ID}/estacoes`)
       .set('Cookie', cookie)
@@ -48,20 +49,33 @@ describe('Hierarquia de contrato, estações e sensores (funcional)', () => {
     expect(resposta.body[0]).toMatchObject({
       id: ESTACAO_COM_SENSORES.id,
       sensores: [{ nome: 'Pluviômetro', unidade: 'mm' }],
+      contrato: null,
     });
     expect(estacao.findMany).toHaveBeenCalledWith({
       where: { contratoId: CONTRATO_ID },
-      include: { parametros: { include: { tipoParametro: true } } },
-      orderBy: [{ nome: 'asc' }, { id: 'asc' }],
+      include: expect.objectContaining({ contrato: { select: { id: true, numero: true } } }),
+      orderBy: { nome: 'asc' },
     });
-    expect(logAuditoria.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        acao: 'contratos.estacoes.consultar',
-        entidade: 'Contrato',
-        entidadeId: CONTRATO_ID,
-        usuarioId: USUARIO.id,
+    expect(logAuditoria.create).not.toHaveBeenCalledWith({
+      data: expect.objectContaining({ acao: 'contratos.estacoes.consultar' }),
+    });
+  });
+
+  it('filtra GET /estacoes por contratoId e rejeita id inválido', async () => {
+    await request(app.getHttpServer())
+      .get(`/estacoes?contratoId=${UUID_CONTRATO}`)
+      .set('Cookie', cookie)
+      .expect(200);
+    expect(estacao.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ contratoId: UUID_CONTRATO }),
       }),
-    });
+    );
+
+    await request(app.getHttpServer())
+      .get('/estacoes?contratoId=nao-e-uuid')
+      .set('Cookie', cookie)
+      .expect(400);
   });
 
   it('retorna lista vazia para contrato sem estações', async () => {
