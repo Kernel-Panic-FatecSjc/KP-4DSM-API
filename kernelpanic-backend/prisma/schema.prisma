@@ -45,6 +45,30 @@ enum StatusOperacionalEstacao {
   INATIVA
 }
 
+enum EsferaOrgao {
+  MUNICIPAL
+  ESTADUAL
+  FEDERAL
+}
+
+enum ModalidadeLicitacao {
+  PREGAO
+  CONCORRENCIA
+  CONCURSO
+  LEILAO
+  DIALOGO_COMPETITIVO
+  DISPENSA
+  INEXIGIBILIDADE
+  OUTRA
+}
+
+enum StatusContrato {
+  RASCUNHO
+  VIGENTE
+  SUSPENSO
+  ENCERRADO
+}
+
 model Usuario {
   id           String      @id @default(uuid())
   nome         String
@@ -59,6 +83,65 @@ model Usuario {
   logsAuditoria LogAuditoria[]
 
   @@map("usuarios")
+}
+
+/// Órgão público contratante.
+model OrgaoPublico {
+  id           String      @id @default(uuid())
+  nome         String
+  cnpj         String?     @unique
+  esfera       EsferaOrgao
+  municipio    String
+  uf           String      @db.Char(2)
+  ativo        Boolean     @default(true)
+  criadoEm     DateTime    @default(now())
+  atualizadoEm DateTime    @updatedAt
+
+  contratos Contrato[]
+
+  @@map("orgaos_publicos")
+}
+
+/// Processo licitatório. Uma licitação pode estar relacionada a vários contratos.
+/// O contrato pode existir sem licitação vinculada, quando aplicável.
+model Licitacao {
+  id             String              @id @default(uuid())
+  numeroProcesso String              @unique
+  modalidade     ModalidadeLicitacao
+  objeto         String?
+  criadoEm       DateTime            @default(now())
+  atualizadoEm   DateTime            @updatedAt
+
+  contratos Contrato[]
+
+  @@index([modalidade])
+  @@map("licitacoes")
+}
+
+/// Contratos relacionados a um órgão público e, opcionalmente, a uma licitação.
+model Contrato {
+  id             String         @id @default(uuid())
+  numero         String         @unique
+  objeto         String
+  inicioVigencia DateTime
+  fimVigencia    DateTime
+  status         StatusContrato @default(RASCUNHO)
+  criadoEm       DateTime       @default(now())
+  atualizadoEm   DateTime       @updatedAt
+  encerradoEm    DateTime?
+
+  orgaoId String
+  orgao   OrgaoPublico @relation(fields: [orgaoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  licitacaoId String?
+  licitacao   Licitacao? @relation(fields: [licitacaoId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  estacoes Estacao[]
+
+  @@index([orgaoId])
+  @@index([status])
+  @@index([licitacaoId])
+  @@map("contratos")
 }
 
 /// Estações físicas de coleta.
@@ -79,9 +162,13 @@ model Estacao {
   usuarioId String
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
 
+  contratoId String?
+  contrato   Contrato? @relation(fields: [contratoId], references: [id], onDelete: SetNull)
+
   parametros Parametro[]
   medidas    Medida[]
 
+  @@index([contratoId])
   @@map("estacoes")
 }
 
@@ -103,7 +190,7 @@ model TipoParametro {
   @@map("tipos_parametro")
 }
 
-/// Associa uma estação aos tipos de parâmetros que ela suporta (configuração de sensores por estação).
+/// Associa uma estação aos tipos de parâmetros que ela suporta.
 model Parametro {
   id       String   @id @default(uuid())
   criadoEm DateTime @default(now())
@@ -144,7 +231,7 @@ model Medida {
   @@map("medidas")
 }
 
-/// Regras de limite e condições lógicas atreladas a um parâmetro (ex.: valor > 30).
+/// Regras de limite e condições lógicas vinculadas a um parâmetro.
 model Alerta {
   id          String           @id @default(uuid())
   operador    OperadorAlerta
@@ -161,7 +248,7 @@ model Alerta {
   @@map("alertas")
 }
 
-/// Histórico de ocorrências: relaciona uma medida que violou uma regra ao alerta correspondente.
+/// Histórico de ocorrências que relaciona uma medida ao alerta correspondente.
 model Alarme {
   id          String       @id @default(uuid())
   disparadoEm DateTime     @default(now())
