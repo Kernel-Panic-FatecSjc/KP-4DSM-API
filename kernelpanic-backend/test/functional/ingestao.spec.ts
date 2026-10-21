@@ -18,12 +18,14 @@ describe('Ingestão (funcional)', () => {
   let ingestaoService: IngestaoService;
   const estacao = { findUnique: jest.fn() };
   const executeRawUnsafe = jest.fn();
+  const logAuditoria = { create: jest.fn() };
   const leituraErro = { createMany: jest.fn() };
 
   beforeAll(async () => {
     app = await criarAppDeTeste({
       prismaMock: {
         estacao,
+        logAuditoria,
         leituraErro,
         $executeRawUnsafe: executeRawUnsafe,
         $connect: jest.fn(),
@@ -73,6 +75,15 @@ describe('Ingestão (funcional)', () => {
     expect(executeRawUnsafe).not.toHaveBeenCalled();
     await ingestaoService.flush();
     expect(executeRawUnsafe).toHaveBeenCalledTimes(1);
+  });
+
+  it('não gera linha de auditoria de acesso a cada telemetria recebida', async () => {
+    await postar({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS }).expect(202);
+    await ingestaoService.flush();
+    // o middleware registra no evento "finish" da resposta, depois de o cliente receber
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(logAuditoria.create).not.toHaveBeenCalled();
   });
 
   it('aceita com 202 o pacote com valor fora da faixa: guarda o bruto e registra o erro, sem medida', async () => {
@@ -164,6 +175,23 @@ describe('Ingestão (funcional)', () => {
 
     await ingestaoService.flush();
     expect(executeRawUnsafe).not.toHaveBeenCalled();
+  });
+
+  it('grava na tentativa seguinte as leituras de um flush que falhou no banco', async () => {
+    executeRawUnsafe.mockRejectedValueOnce(new Error('conexão com o banco perdida'));
+
+    const primeira = await postar({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS }).expect(202);
+    await ingestaoService.flush();
+    expect(executeRawUnsafe).toHaveBeenCalledTimes(1);
+
+    const segunda = await postar({ vid: VID_ESTACAO, unixtime: 1_760_000_060, leituras: LEITURAS }).expect(202);
+    await ingestaoService.flush();
+
+    expect(executeRawUnsafe).toHaveBeenCalledTimes(2);
+    const valoresGravados = executeRawUnsafe.mock.calls[1].slice(1);
+    expect(valoresGravados).toEqual(
+      expect.arrayContaining([primeira.body.leituraBrutaId, segunda.body.leituraBrutaId]),
+    );
   });
 
   it('expõe a configuração de sensores da estação para o datalogger', async () => {

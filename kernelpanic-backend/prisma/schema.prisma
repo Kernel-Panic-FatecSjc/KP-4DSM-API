@@ -6,7 +6,7 @@
 generator client {
   provider        = "prisma-client"
   output          = "../src/generated/prisma"
-  previewFeatures = ["postgresqlExtensions"]
+  previewFeatures = ["postgresqlExtensions", "relationJoins"]
 }
 
 datasource db {
@@ -138,6 +138,9 @@ model Medida {
 
   @@unique([parametroId, unixtime])
   @@index([estacaoId, unixtime])
+  // Consulta por janela de tempo sem filtrar a estação (dashboard geral): sem
+  // este índice ela lê a tabela inteira e ordena (1,3 s com 10 milhões de linhas).
+  @@index([unixtime])
   @@map("medidas")
 }
 

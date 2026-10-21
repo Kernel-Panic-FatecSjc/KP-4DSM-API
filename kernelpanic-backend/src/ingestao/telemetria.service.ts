@@ -86,6 +86,10 @@ export class TelemetriaService {
    * tipo que o Prisma marca como Unsupported e não sabe gravar sozinho. O id
    * já vem pronto de quem chamou (gerado na hora da requisição), porque a
    * gravação em si só acontece no próximo flush do lote.
+   *
+   * `ON CONFLICT (id) DO NOTHING` deixa regravar o lote sem erro quando o
+   * IngestaoService tenta de novo depois de uma falha (ex.: um sub-lote
+   * gravou e o seguinte não).
    */
   async registrarLeiturasBrutas(leituras: LeituraBrutaParaGravar[]): Promise<number> {
     let total = 0;
@@ -114,7 +118,8 @@ export class TelemetriaService {
 
     return this.prisma.$executeRawUnsafe(
       `INSERT INTO leituras_brutas (id, "vidEstacao", payload, localizacao, "unixtimeDispositivo")
-       VALUES ${linhas.join(', ')}`,
+       VALUES ${linhas.join(', ')}
+       ON CONFLICT (id) DO NOTHING`,
       ...valores,
     );
   }
