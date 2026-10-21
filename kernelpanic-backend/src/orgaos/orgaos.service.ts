@@ -15,6 +15,10 @@ export class OrgaosService {
 
   listar(query: ListarOrgaosQueryDto) {
     const busca = query.busca?.trim();
+    const termoCnpj =
+      busca && /^[\d./\-\s]+$/.test(busca)
+        ? busca.replace(/\D/g, '')
+        : undefined;
     return this.prisma.orgaoPublico.findMany({
       where: {
         esfera: query.esfera,
@@ -22,12 +26,7 @@ export class OrgaosService {
         OR: busca
           ? [
               { nome: { contains: busca, mode: 'insensitive' } },
-              {
-                cnpj: {
-                  contains: busca.replace(/\D/g, '') || busca,
-                  mode: 'insensitive',
-                },
-              },
+              ...(termoCnpj ? [{ cnpj: { contains: termoCnpj } }] : []),
               { municipio: { contains: busca, mode: 'insensitive' } },
             ]
           : undefined,

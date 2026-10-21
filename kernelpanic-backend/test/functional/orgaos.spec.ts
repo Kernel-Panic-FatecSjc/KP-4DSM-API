@@ -85,18 +85,15 @@ describe('Órgãos contratantes (funcional)', () => {
     expect(resposta.body.paths).toHaveProperty('/orgaos/{id}');
   });
 
-  it('lista e consulta órgãos para usuário autenticado, registrando auditoria', async () => {
+  it('lista e consulta órgãos para usuário autenticado sem duplicar auditoria de leitura', async () => {
     await request(app.getHttpServer())
       .get('/orgaos?ativo=true')
       .set('Cookie', cookieMonitor)
       .expect(200)
       .expect(({ body }) => expect(body).toHaveLength(1));
-    expect(logAuditoria.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        acao: 'orgaos.consultar',
-        usuarioId: MONITOR.id,
-      }),
-    });
+    expect(
+      logAuditoria.create.mock.calls.map(([{ data }]) => data.acao),
+    ).not.toContain('orgaos.consultar');
 
     orgaoPublico.findUnique.mockResolvedValue(ORGAO);
     await request(app.getHttpServer())
@@ -106,6 +103,20 @@ describe('Órgãos contratantes (funcional)', () => {
       .expect(({ body }) =>
         expect(body).toMatchObject({ id: ORGAO.id, cnpj: ORGAO.cnpj }),
       );
+    expect(
+      logAuditoria.create.mock.calls.map(([{ data }]) => data.acao),
+    ).not.toContain('orgaos.consultar');
+  });
+
+  it('não inclui CNPJ na busca de termo textual que contém dígito', async () => {
+    await request(app.getHttpServer())
+      .get('/orgaos?busca=Escola%205')
+      .set('Cookie', cookieAdmin)
+      .expect(200);
+    expect(orgaoPublico.findMany.mock.calls[0][0].where.OR).toEqual([
+      { nome: { contains: 'Escola 5', mode: 'insensitive' } },
+      { municipio: { contains: 'Escola 5', mode: 'insensitive' } },
+    ]);
   });
 
   it('exige autenticação para consulta e escrita', async () => {

@@ -17,8 +17,8 @@ import {
 } from '@nestjs/swagger';
 import { GuardaAdministrador } from '../autenticacao/guarda-administrador.guard';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
-import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
 import type { PayloadJwt } from '../autenticacao/payload-jwt.interface';
+import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { camposInformados } from '../auditoria/campos-informados';
 import { AtualizarOrgaoDto } from './dto/atualizar-orgao.dto';
@@ -40,34 +40,16 @@ export class OrgaosController {
   @Get()
   @ApiOperation({ summary: 'Lista órgãos contratantes' })
   @ApiResponse({ status: 200, type: OrgaoRespostaDto, isArray: true })
-  async listar(
-    @Query() query: ListarOrgaosQueryDto,
-    @UsuarioAutenticado() usuario: PayloadJwt,
-  ) {
+  async listar(@Query() query: ListarOrgaosQueryDto) {
     const orgaos = await this.orgaosService.listar(query);
-    await this.auditoriaService.registrar({
-      acao: 'orgaos.consultar',
-      entidade: 'OrgaoPublico',
-      usuarioId: usuario.sub,
-      detalhes: { ...query },
-    });
     return orgaos.map((orgao) => new OrgaoRespostaDto(orgao));
   }
 
   @Get(':id')
   @ApiOperation({ summary: 'Consulta um órgão contratante' })
   @ApiResponse({ status: 200, type: OrgaoRespostaDto })
-  async consultar(
-    @Param('id') id: string,
-    @UsuarioAutenticado() usuario: PayloadJwt,
-  ) {
+  async consultar(@Param('id') id: string) {
     const orgao = await this.orgaosService.consultar(id);
-    await this.auditoriaService.registrar({
-      acao: 'orgaos.consultar',
-      entidade: 'OrgaoPublico',
-      entidadeId: id,
-      usuarioId: usuario.sub,
-    });
     return new OrgaoRespostaDto(orgao);
   }
 

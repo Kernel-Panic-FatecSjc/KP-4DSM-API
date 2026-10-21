@@ -51,6 +51,21 @@ describe('OrgaosService', () => {
     );
   });
 
+  it('só pesquisa no CNPJ quando o termo contém apenas dígitos e pontuação', async () => {
+    await service.listar({ busca: 'Escola 5' });
+    const textoLivre =
+      prismaMock.orgaoPublico.findMany.mock.calls[0][0].where.OR;
+    expect(textoLivre).toEqual([
+      { nome: { contains: 'Escola 5', mode: 'insensitive' } },
+      { municipio: { contains: 'Escola 5', mode: 'insensitive' } },
+    ]);
+
+    await service.listar({ busca: '11.222.333/0001-81' });
+    const buscaCnpj =
+      prismaMock.orgaoPublico.findMany.mock.calls[1][0].where.OR;
+    expect(buscaCnpj).toContainEqual({ cnpj: { contains: '11222333000181' } });
+  });
+
   it('consulta por ID e retorna 404 quando não encontra', async () => {
     prismaMock.orgaoPublico.findUnique
       .mockResolvedValueOnce(ORGAO)
