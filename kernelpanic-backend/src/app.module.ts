@@ -17,6 +17,7 @@ import { RegiaoModule } from './regiao/regiao.module';
 import { SensoresModule } from './sensores/sensores.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { SaudeModule } from './saude/saude.module';
+import { OrgaosModule } from './orgaos/orgaos.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { SaudeModule } from './saude/saude.module';
     EstacoesModule,
     IngestaoModule,
     SaudeModule,
+    OrgaosModule,
     LeiturasBrutasModule,
     SensoresModule,
   ],
