@@ -19,7 +19,10 @@ export async function api<T>(caminho: string, opcoes: RequestInit = {}): Promise
   const corpo = await resposta.json().catch(() => null);
 
   if (!resposta.ok) {
-    throw new ErroApi(resposta.status, corpo?.message ?? 'Erro inesperado');
+    const mensagem = Array.isArray(corpo?.message)
+      ? corpo.message.join(', ')
+      : corpo?.message ?? 'Erro inesperado';
+    throw new ErroApi(resposta.status, mensagem);
   }
 
   return corpo as T;
@@ -239,3 +242,28 @@ export interface DashboardDados {
   };
   series: DashboardSerie[];
 }
+
+export type EsferaOrgaoApi = 'MUNICIPAL' | 'ESTADUAL' | 'FEDERAL';
+
+export interface OrgaoApi {
+  id: string;
+  nome: string;
+  cnpj: string | null;
+  esfera: EsferaOrgaoApi;
+  municipio: string;
+  uf: string;
+  ativo: boolean;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+export interface CriarOrgaoPayload {
+  nome: string;
+  cnpj?: string | null;
+  esfera: EsferaOrgaoApi;
+  municipio: string;
+  uf: string;
+  ativo?: boolean;
+}
+
+export type AtualizarOrgaoPayload = Partial<CriarOrgaoPayload>;

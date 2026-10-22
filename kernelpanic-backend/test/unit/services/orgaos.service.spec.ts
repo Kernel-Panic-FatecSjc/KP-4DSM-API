@@ -64,6 +64,20 @@ describe('OrgaosService', () => {
     const buscaCnpj =
       prismaMock.orgaoPublico.findMany.mock.calls[1][0].where.OR;
     expect(buscaCnpj).toContainEqual({ cnpj: { contains: '11222333000181' } });
+
+    await service.listar({ busca: '12.ABC.345/01DE' });
+    const buscaCnpjAlfanumerico =
+      prismaMock.orgaoPublico.findMany.mock.calls[2][0].where.OR;
+    expect(buscaCnpjAlfanumerico).toContainEqual({
+      cnpj: { contains: '12ABC34501DE' },
+    });
+
+    await service.listar({ busca: 'ABC345' });
+    const buscaPorTrechoAlfanumerico =
+      prismaMock.orgaoPublico.findMany.mock.calls[3][0].where.OR;
+    expect(buscaPorTrechoAlfanumerico).toContainEqual({
+      cnpj: { contains: 'ABC345' },
+    });
   });
 
   it('consulta por ID e retorna 404 quando não encontra', async () => {
@@ -94,6 +108,34 @@ describe('OrgaosService', () => {
         municipio: ORGAO.municipio,
         uf: 'SP',
       },
+    });
+  });
+
+  it('preserva letras de CNPJ alfanumérico ao cadastrar', async () => {
+    prismaMock.orgaoPublico.findUnique.mockResolvedValue(null);
+    prismaMock.orgaoPublico.create.mockResolvedValue({
+      ...ORGAO,
+      cnpj: '12ABC34501DE35',
+      ativo: false,
+    });
+
+    await service.criar({
+      nome: ORGAO.nome,
+      cnpj: '12.ABC.345/01DE-35',
+      esfera: 'MUNICIPAL',
+      municipio: ORGAO.municipio,
+      uf: 'sp',
+      ativo: false,
+    });
+
+    expect(prismaMock.orgaoPublico.findUnique).toHaveBeenCalledWith({
+      where: { cnpj: '12ABC34501DE35' },
+    });
+    expect(prismaMock.orgaoPublico.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        cnpj: '12ABC34501DE35',
+        ativo: false,
+      }),
     });
   });
 
@@ -139,6 +181,36 @@ describe('OrgaosService', () => {
     expect(prismaMock.orgaoPublico.update).toHaveBeenCalledWith({
       where: { id: ORGAO.id },
       data: { nome: 'Prefeitura Nova', cnpj: undefined, uf: undefined },
+    });
+
+    it('permite reativar um órgão por atualização', async () => {
+      prismaMock.orgaoPublico.findUnique.mockResolvedValue({
+        ...ORGAO,
+        ativo: false,
+      });
+      prismaMock.orgaoPublico.update.mockResolvedValue({
+        ...ORGAO,
+        ativo: true,
+      });
+
+      await service.atualizar(ORGAO.id, { ativo: true });
+
+      expect(prismaMock.orgaoPublico.update).toHaveBeenCalledWith({
+        where: { id: ORGAO.id },
+        data: { ativo: true, cnpj: undefined, uf: undefined },
+      });
+    });
+
+    it('permite remover um CNPJ opcional', async () => {
+      prismaMock.orgaoPublico.findUnique.mockResolvedValue(ORGAO);
+      prismaMock.orgaoPublico.update.mockResolvedValue({ ...ORGAO, cnpj: null });
+
+      await service.atualizar(ORGAO.id, { cnpj: null });
+
+      expect(prismaMock.orgaoPublico.update).toHaveBeenCalledWith({
+        where: { id: ORGAO.id },
+        data: { cnpj: null, uf: undefined },
+      });
     });
 
     prismaMock.orgaoPublico.findUnique

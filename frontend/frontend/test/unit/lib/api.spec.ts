@@ -37,6 +37,15 @@ describe('api', () => {
     expect(erro).toMatchObject({ status: 401, message: 'Credenciais inválidas' });
   });
 
+  it('junta mensagens de validação devolvidas como lista', async () => {
+    mockarFetch(responde(400, { message: ['UF inválida', 'Nome obrigatório'] }));
+
+    await expect(api('/orgaos')).rejects.toMatchObject({
+      status: 400,
+      message: 'UF inválida, Nome obrigatório',
+    });
+  });
+
   it('usa uma mensagem padrão quando o erro não vem em JSON', async () => {
     mockarFetch(() => Promise.resolve(new Response('<html>Bad Gateway</html>', { status: 502 })));
 

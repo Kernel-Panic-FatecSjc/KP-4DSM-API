@@ -1,58 +1,51 @@
 'use client';
 
 import { Pencil, Plus, X } from 'lucide-react';
-import { useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from 'react';
+import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/DataTable';
 import { PageHeading } from '@/components/PageHeading';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { cnpjValido, formatarCnpj, gerarCnpj, limparCnpj } from '@/lib/cnpj';
+import {
+  api,
+  ErroApi,
+  type CriarOrgaoPayload,
+  type EsferaOrgaoApi,
+  type OrgaoApi,
+  type Usuario,
+} from '@/lib/api';
+import { cnpjValido, formatarCnpj, limparCnpj } from '@/lib/cnpj';
 
 const ITENS_POR_PAGINA = 5;
 
 type Status = 'ATIVO' | 'DESATIVADO';
 type FiltroStatus = Status | 'TODOS';
 
-interface Orgao {
-  id: string;
-  nome: string;
+type Orgao = OrgaoApi;
+
+interface FormularioOrgao extends Omit<CriarOrgaoPayload, 'ativo'> {
   cnpj: string;
   status: Status;
 }
 
-type FormularioOrgao = Omit<Orgao, 'id'>;
-
-const ORGAOS_INICIAIS: Orgao[] = [
-  {
-    id: 'orgao-1',
-    nome: 'Defesa Civil de São José dos Campos',
-    cnpj: gerarCnpj('123456780001'),
-    status: 'ATIVO',
-  },
-  {
-    id: 'orgao-2',
-    nome: 'Prefeitura Municipal de Jacareí',
-    cnpj: gerarCnpj('234567890001'),
-    status: 'ATIVO',
-  },
-  {
-    id: 'orgao-3',
-    nome: 'Coordenadoria Estadual de Proteção e Defesa Civil',
-    cnpj: gerarCnpj('345678900001'),
-    status: 'DESATIVADO',
-  },
-  {
-    id: 'orgao-4',
-    nome: 'Defesa Civil de Taubaté',
-    cnpj: gerarCnpj('456789010001'),
-    status: 'DESATIVADO',
-  },
-];
+type DadosOrgao = Omit<FormularioOrgao, 'status'> & { status: Status };
 
 const FORMULARIO_INICIAL: FormularioOrgao = {
   nome: '',
   cnpj: '',
+  esfera: 'MUNICIPAL',
+  municipio: '',
+  uf: '',
   status: 'ATIVO',
 };
 
@@ -94,7 +87,12 @@ function tratarTecladoNoDialogo(evento: KeyboardEvent<HTMLElement>, fechar: () =
 }
 
 export default function OrgaosPage() {
-  const [orgaos, setOrgaos] = useState<Orgao[]>(ORGAOS_INICIAIS);
+  const router = useRouter();
+  const [orgaos, setOrgaos] = useState<Orgao[]>([]);
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [erroPagina, setErroPagina] = useState<string | null>(null);
+  const [ehAdministrador, setEhAdministrador] = useState(false);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<FiltroStatus>('TODOS');
   const [pagina, setPagina] = useState(1);
@@ -108,6 +106,32 @@ export default function OrgaosPage() {
   const gatilhoDoModal = useRef<HTMLElement | null>(null);
   const botaoSalvar = useRef<HTMLButtonElement>(null);
 
+  const carregarDados = useCallback(async () => {
+    try {
+      const [orgaosResposta, perfil] = await Promise.all([
+        api<OrgaoApi[]>('/orgaos'),
+        api<Usuario>('/autenticacao/perfil'),
+      ]);
+      setOrgaos(orgaosResposta);
+      setEhAdministrador(perfil.tipo === 'ADMINISTRADOR');
+      setErroPagina(null);
+    } catch (erro: unknown) {
+      if (erro instanceof ErroApi && erro.status === 401) {
+        router.push('/login?proximo=/orgaos');
+        return;
+      }
+      setErroPagina(
+        erro instanceof Error ? erro.message : 'Não foi possível carregar os órgãos públicos.',
+      );
+    } finally {
+      setCarregando(false);
+    }
+  }, [router]);
+
+  useEffect(() => {
+    queueMicrotask(() => void carregarDados());
+  }, [carregarDados]);
+
   const orgaosFiltrados = useMemo(() => {
     const termo = busca.trim().toLocaleLowerCase('pt-BR');
     const cnpjTermo = limparCnpj(termo);
@@ -115,8 +139,10 @@ export default function OrgaosPage() {
       const correspondeBusca =
         !termo ||
         orgao.nome.toLocaleLowerCase('pt-BR').includes(termo) ||
-        (cnpjTermo !== '' && orgao.cnpj.includes(cnpjTermo));
-      const correspondeStatus = filtroStatus === 'TODOS' || orgao.status === filtroStatus;
+        orgao.municipio.toLocaleLowerCase('pt-BR').includes(termo) ||
+        (cnpjTermo !== '' && (orgao.cnpj ?? '').includes(cnpjTermo));
+      const status: Status = orgao.ativo ? 'ATIVO' : 'DESATIVADO';
+      const correspondeStatus = filtroStatus === 'TODOS' || status === filtroStatus;
       return correspondeBusca && correspondeStatus;
     });
   }, [busca, orgaos, filtroStatus]);
@@ -131,8 +157,8 @@ export default function OrgaosPage() {
   const estatisticas = useMemo(
     () => ({
       total: orgaos.length,
-      ativos: orgaos.filter((orgao) => orgao.status === 'ATIVO').length,
-      desativados: orgaos.filter((orgao) => orgao.status === 'DESATIVADO').length,
+      ativos: orgaos.filter((orgao) => orgao.ativo).length,
+      desativados: orgaos.filter((orgao) => !orgao.ativo).length,
     }),
     [orgaos],
   );
@@ -155,8 +181,11 @@ export default function OrgaosPage() {
     setOrgaoEditando(orgao);
     setFormulario({
       nome: orgao.nome,
-      cnpj: formatarCnpj(orgao.cnpj),
-      status: orgao.status,
+      cnpj: formatarCnpj(orgao.cnpj ?? ''),
+      esfera: orgao.esfera,
+      municipio: orgao.municipio,
+      uf: orgao.uf,
+      status: orgao.ativo ? 'ATIVO' : 'DESATIVADO',
     });
     setErroFormulario(null);
     setModalAberto(true);
@@ -166,51 +195,94 @@ export default function OrgaosPage() {
     evento.preventDefault();
     const nome = formulario.nome.trim();
     const cnpj = limparCnpj(formulario.cnpj);
+    const municipio = formulario.municipio.trim();
+    const uf = formulario.uf.trim().toUpperCase();
 
-    if (!nome || !cnpj) {
-      setErroFormulario('Preencha todos os campos para salvar o órgão.');
+    if (!nome || !municipio || !uf) {
+      setErroFormulario('Preencha nome, município e UF para salvar o órgão.');
       return;
     }
 
-    if (!cnpjValido(cnpj)) {
+    if (cnpj && !cnpjValido(cnpj)) {
       setErroFormulario('Informe um CNPJ válido, incluindo os dígitos verificadores.');
       return;
     }
 
-    const cnpjDuplicado = orgaos.some(
-      (orgao) => orgao.cnpj === cnpj && orgao.id !== orgaoEditando?.id,
-    );
+    const cnpjDuplicado =
+      Boolean(cnpj) &&
+      orgaos.some(
+        (orgao) => orgao.cnpj === cnpj && orgao.id !== orgaoEditando?.id,
+      );
     if (cnpjDuplicado) {
       setErroFormulario('Já existe um órgão cadastrado com esse CNPJ.');
       return;
     }
 
-    const dados = { nome, cnpj, status: formulario.status };
-    if (dados.status === 'DESATIVADO' && orgaoEditando?.status !== 'DESATIVADO') {
+    const dados = {
+      nome,
+      cnpj,
+      esfera: formulario.esfera,
+      municipio,
+      uf,
+      status: formulario.status,
+    };
+    if (dados.status === 'DESATIVADO' && orgaoEditando?.ativo) {
       setDadosParaDesativar(dados);
       return;
     }
-    aplicarOrgao(dados);
+    void aplicarOrgao(dados);
   }
 
-  function aplicarOrgao(dados: FormularioOrgao) {
-    if (orgaoEditando) {
-      setOrgaos((atuais) =>
-        atuais.map((orgao) =>
-          orgao.id === orgaoEditando.id ? { ...orgao, ...dados } : orgao,
-        ),
+  async function aplicarOrgao(dados: DadosOrgao) {
+    const { status, ...dadosOrgao } = dados;
+    const payload: CriarOrgaoPayload = {
+      ...dadosOrgao,
+      ...(dadosOrgao.cnpj
+        ? { cnpj: dadosOrgao.cnpj }
+        : orgaoEditando?.cnpj
+          ? { cnpj: null }
+          : {}),
+    };
+    setSalvando(true);
+    setErroFormulario(null);
+    try {
+      if (orgaoEditando) {
+        await api<OrgaoApi>(`/orgaos/${orgaoEditando.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            ...payload,
+            ...(status === 'ATIVO' && !orgaoEditando.ativo ? { ativo: true } : {}),
+          }),
+        });
+        if (status === 'DESATIVADO' && orgaoEditando.ativo) {
+          await api<OrgaoApi>(`/orgaos/${orgaoEditando.id}`, { method: 'DELETE' });
+        }
+      } else {
+        await api<OrgaoApi>('/orgaos', {
+          method: 'POST',
+          body: JSON.stringify({ ...payload, ativo: status === 'ATIVO' }),
+        });
+        setPagina(1);
+      }
+      fecharModal();
+      await carregarDados();
+    } catch (erro: unknown) {
+      if (erro instanceof ErroApi && erro.status === 401) {
+        router.push('/login?proximo=/orgaos');
+        return;
+      }
+      setErroFormulario(
+        erro instanceof Error ? erro.message : 'Não foi possível salvar o órgão.',
       );
-    } else {
-      setOrgaos((atuais) => [{ id: `orgao-${Date.now()}`, ...dados }, ...atuais]);
-      setPagina(1);
+      await carregarDados();
+    } finally {
+      setSalvando(false);
     }
-
-    fecharModal();
   }
 
   function confirmarDesativacao() {
     if (!dadosParaDesativar) return;
-    aplicarOrgao(dadosParaDesativar);
+    void aplicarOrgao(dadosParaDesativar);
   }
 
   function voltarDaConfirmacao() {
@@ -231,25 +303,32 @@ export default function OrgaosPage() {
     {
       header: 'Órgão público',
       key: 'nome',
-      render: (_, orgao) => <span className="font-medium">{orgao.nome}</span>,
+      render: (_, orgao) => (
+        <div>
+          <p className="font-medium">{orgao.nome}</p>
+          <p className="text-xs text-muted-foreground">
+            {orgao.esfera} · {orgao.municipio}/{orgao.uf}
+          </p>
+        </div>
+      ),
     },
     {
       header: 'CNPJ',
       key: 'cnpj',
       render: (cnpj) => (
         <span className="whitespace-nowrap font-mono text-xs">
-          {formatarCnpj(String(cnpj))}
+          {cnpj ? formatarCnpj(String(cnpj)) : 'Não informado'}
         </span>
       ),
     },
     {
       header: 'Status',
-      key: 'status',
+      key: 'ativo',
       render: (_, orgao) => (
         <span
-          className={`inline-block rounded-full border px-2.5 py-1 text-xs font-semibold ${CORES_STATUS[orgao.status]}`}
+          className={`inline-block rounded-full border px-2.5 py-1 text-xs font-semibold ${CORES_STATUS[orgao.ativo ? 'ATIVO' : 'DESATIVADO']}`}
         >
-          {ROTULOS_STATUS[orgao.status]}
+          {ROTULOS_STATUS[orgao.ativo ? 'ATIVO' : 'DESATIVADO']}
         </span>
       ),
     },
@@ -257,7 +336,7 @@ export default function OrgaosPage() {
       header: 'Ações',
       key: 'id',
       render: (_, orgao) => (
-        <div className="flex gap-3">
+        ehAdministrador ? (
           <button
             type="button"
             onClick={() => abrirEdicao(orgao)}
@@ -266,7 +345,9 @@ export default function OrgaosPage() {
             <Pencil className="size-3" />
             Editar
           </button>
-        </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">Somente leitura</span>
+        )
       ),
     },
   ];
@@ -277,12 +358,34 @@ export default function OrgaosPage() {
         title="Órgãos públicos"
         description="Cadastre e gerencie os órgãos públicos atendidos."
         action={
-          <Button type="button" onClick={abrirCadastro}>
-            <Plus />
-            Novo órgão
-          </Button>
+          ehAdministrador ? (
+            <Button type="button" onClick={abrirCadastro}>
+              <Plus />
+              Novo órgão
+            </Button>
+          ) : undefined
         }
       />
+
+      {erroPagina && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+        >
+          <span>{erroPagina}</span>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setCarregando(true);
+              void carregarDados();
+            }}
+          >
+            Tentar novamente
+          </Button>
+        </div>
+      )}
 
       <section className="grid gap-3 sm:grid-cols-3" aria-label="Resumo de órgãos públicos">
         <article className="rounded-lg border border-border bg-card px-4 py-4">
@@ -349,6 +452,7 @@ export default function OrgaosPage() {
         currentPage={paginaAtual}
         totalPages={totalPaginas}
         onPageChange={setPagina}
+        isLoading={carregando}
         rowKey="id"
       />
 
@@ -374,6 +478,7 @@ export default function OrgaosPage() {
               <button
                 type="button"
                 onClick={fecharModal}
+                disabled={salvando}
                 className="rounded-md p-2 hover:bg-muted"
                 aria-label="Fechar modal"
               >
@@ -406,7 +511,6 @@ export default function OrgaosPage() {
                   </label>
                   <Input
                     id="cnpjOrgao"
-                    required
                     autoCapitalize="characters"
                     autoComplete="off"
                     maxLength={18}
@@ -423,6 +527,61 @@ export default function OrgaosPage() {
                   <p id="ajudaCnpjOrgao" className="text-xs text-muted-foreground">
                     Numérico ou alfanumérico, validado pelos dígitos verificadores antes de salvar.
                   </p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="esferaOrgao" className="text-sm font-medium">
+                    Esfera
+                  </label>
+                  <Select
+                    id="esferaOrgao"
+                    value={formulario.esfera}
+                    onChange={(evento) =>
+                      setFormulario((atual) => ({
+                        ...atual,
+                        esfera: evento.target.value as EsferaOrgaoApi,
+                      }))
+                    }
+                  >
+                    <option value="MUNICIPAL">Municipal</option>
+                    <option value="ESTADUAL">Estadual</option>
+                    <option value="FEDERAL">Federal</option>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="municipioOrgao" className="text-sm font-medium">
+                    Município
+                  </label>
+                  <Input
+                    id="municipioOrgao"
+                    required
+                    maxLength={160}
+                    value={formulario.municipio}
+                    onChange={(evento) =>
+                      setFormulario((atual) => ({
+                        ...atual,
+                        municipio: evento.target.value,
+                      }))
+                    }
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="ufOrgao" className="text-sm font-medium">
+                    UF
+                  </label>
+                  <Input
+                    id="ufOrgao"
+                    required
+                    minLength={2}
+                    maxLength={2}
+                    autoCapitalize="characters"
+                    value={formulario.uf}
+                    onChange={(evento) =>
+                      setFormulario((atual) => ({
+                        ...atual,
+                        uf: evento.target.value.toUpperCase(),
+                      }))
+                    }
+                  />
                 </div>
                 <div className="flex flex-col gap-1">
                   <label htmlFor="statusModalOrgao" className="text-sm font-medium">
@@ -455,11 +614,20 @@ export default function OrgaosPage() {
             </div>
 
             <div className="mt-6 flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={fecharModal}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={salvando}
+                onClick={fecharModal}
+              >
                 Cancelar
               </Button>
-              <Button ref={botaoSalvar} type="submit">
-                {orgaoEditando ? 'Salvar alterações' : 'Cadastrar órgão'}
+              <Button ref={botaoSalvar} type="submit" disabled={salvando}>
+                {salvando
+                  ? 'Salvando...'
+                  : orgaoEditando
+                    ? 'Salvar alterações'
+                    : 'Cadastrar órgão'}
               </Button>
             </div>
           </form>
@@ -482,16 +650,28 @@ export default function OrgaosPage() {
               <strong>{dadosParaDesativar.nome}</strong> será marcado como desativado. Deseja
               continuar?
             </p>
+            {erroFormulario && (
+              <p role="alert" className="mt-3 text-sm text-destructive">
+                {erroFormulario}
+              </p>
+            )}
             <div className="mt-6 flex justify-end gap-3">
-              <Button type="button" variant="outline" autoFocus onClick={voltarDaConfirmacao}>
+              <Button
+                type="button"
+                variant="outline"
+                autoFocus
+                disabled={salvando}
+                onClick={voltarDaConfirmacao}
+              >
                 Voltar
               </Button>
               <Button
                 type="button"
                 onClick={confirmarDesativacao}
+                disabled={salvando}
                 className="bg-warning text-warning-foreground hover:opacity-90"
               >
-                Desativar órgão
+                {salvando ? 'Salvando...' : 'Desativar órgão'}
               </Button>
             </div>
           </div>
