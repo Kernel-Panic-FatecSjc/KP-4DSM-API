@@ -173,7 +173,7 @@ export class EstacoesService {
       }
 
       const resultado = await tx.estacao.updateMany({
-        where: { id: estacaoId, contratoId },
+        where: { id: estacao.id, contratoId },
         data: { contratoId: null },
       });
       if (resultado.count !== 1) {
