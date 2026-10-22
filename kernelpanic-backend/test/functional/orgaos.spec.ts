@@ -145,6 +145,35 @@ describe('Órgãos contratantes (funcional)', () => {
     });
   });
 
+  it('cadastra órgão inativo e normaliza CNPJ alfanumérico', async () => {
+    await request(app.getHttpServer())
+      .post('/orgaos')
+      .set('Cookie', cookieAdmin)
+      .send({ ...NOVO, cnpj: '12.ABC.345/01DE-35', ativo: false })
+      .expect(201)
+      .expect(({ body }) =>
+        expect(body).toMatchObject({ cnpj: '12ABC34501DE35', ativo: false }),
+      );
+    expect(orgaoPublico.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        cnpj: '12ABC34501DE35',
+        ativo: false,
+      }),
+    });
+  });
+
+  it('cadastra órgão sem CNPJ', async () => {
+    await request(app.getHttpServer())
+      .post('/orgaos')
+      .set('Cookie', cookieAdmin)
+      .send({ ...NOVO, cnpj: null })
+      .expect(201)
+      .expect(({ body }) => expect(body).toMatchObject({ cnpj: null }));
+    expect(orgaoPublico.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ cnpj: null }),
+    });
+  });
+
   it('rejeita CNPJ inválido e duplicado sem persistir', async () => {
     await request(app.getHttpServer())
       .post('/orgaos')

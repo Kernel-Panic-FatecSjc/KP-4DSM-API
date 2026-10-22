@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsNotEmpty,
   IsOptional,
@@ -12,6 +13,11 @@ import { IsCnpj } from './cnpj.validator';
 
 export class AtualizarOrgaoDto {
   @IsOptional()
+  @IsBoolean()
+  @ApiPropertyOptional({ description: 'Reativa ou desativa o órgão' })
+  ativo?: boolean;
+
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   @ApiPropertyOptional()
@@ -20,8 +26,8 @@ export class AtualizarOrgaoDto {
   @IsOptional()
   @IsString()
   @IsCnpj({ message: 'cnpj deve ser válido' })
-  @ApiPropertyOptional({ example: '11.222.333/0001-81' })
-  cnpj?: string;
+  @ApiPropertyOptional({ example: '11.222.333/0001-81', nullable: true })
+  cnpj?: string | null;
 
   @IsOptional()
   @IsEnum(EsferaOrgao)
