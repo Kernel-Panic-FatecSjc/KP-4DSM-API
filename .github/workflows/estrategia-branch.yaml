@@ -20,8 +20,6 @@ concurrency:
 jobs:
   estrategia:
     name: Estratégia de branch
-    # Editar a descrição do PR não muda nada que este check lê: só o título e o
-    # destino contam.
     if: github.event.action != 'edited' || github.event.changes.title || github.event.changes.base
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -74,14 +72,6 @@ jobs:
             erro "A branch (${id_branch:-sem ID}) e o título (${id_titulo:-sem ID}) devem ter o mesmo SCRUM-{ID}."
           fi
 
-          # Commits de merge ficam de fora: a mensagem é gerada pelo Git/GitHub.
-          # Commit de outra tarefa é aviso, não erro: a rastreabilidade pede o ID
-          # da tarefa, mas um ajuste pontual de outra tarefa pode acontecer.
-          # TODO: BASE_SHA..HEAD pode ficar desatualizado. BASE_SHA vem do evento do
-          # PR e HEAD é o merge com a main atual, então commits que entraram na main
-          # depois da base aparecem aqui como se fossem do PR (falso erro/aviso).
-          # Trocar por origin/<base_ref>..<head.sha do PR>, que só conta os commits do
-          # próprio PR. O mesmo vale para rastreabilidade-requisito.yaml.
           while IFS= read -r assunto; do
             [ -z "$assunto" ] && continue
             if ! printf '%s' "$assunto" | grep -qE "$PADRAO_COMMIT"; then
