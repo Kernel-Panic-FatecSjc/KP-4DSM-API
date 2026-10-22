@@ -5,6 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
+import {
+  StatusContrato,
+  StatusOperacionalEstacao,
+} from '../generated/prisma/client';
 import { gerarChaveIngestao } from '../ingestao/chave-ingestao';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtualizarEstacaoDto } from './dto/atualizar-estacao.dto';
@@ -58,6 +62,126 @@ export class EstacoesService {
     }
 
     return this.listar({ contratoId });
+  }
+
+  async vincularAoContrato(
+    contratoId: string,
+    estacaoIds: string[],
+  ): Promise<number> {
+    if (new Set(estacaoIds).size !== estacaoIds.length) {
+      throw new BadRequestException(
+        'Não é permitido informar a mesma estação mais de uma vez',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const contrato = await tx.contrato.findUnique({
+        where: { id: contratoId },
+        select: { id: true, status: true },
+      });
+      if (!contrato) {
+        throw new NotFoundException('Contrato não encontrado');
+      }
+      if (contrato.status !== StatusContrato.VIGENTE) {
+        throw new BadRequestException(
+          'Só é possível vincular estações a um contrato vigente',
+        );
+      }
+
+      const estacoes = await tx.estacao.findMany({
+        where: { id: { in: estacaoIds } },
+        select: { id: true, statusOperacional: true, contratoId: true },
+      });
+      if (estacoes.length !== estacaoIds.length) {
+        throw new NotFoundException(
+          'Uma ou mais estações não foram encontradas',
+        );
+      }
+      if (
+        estacoes.some(
+          (estacao) =>
+            estacao.statusOperacional !== StatusOperacionalEstacao.ATIVA,
+        )
+      ) {
+        throw new BadRequestException('Só é possível vincular estações ativas');
+      }
+      if (
+        estacoes.some(
+          (estacao) =>
+            estacao.contratoId !== null && estacao.contratoId !== contratoId,
+        )
+      ) {
+        throw new ConflictException(
+          'Uma ou mais estações já estão vinculadas a outro contrato',
+        );
+      }
+
+      const idsParaVincular = estacoes
+        .filter((estacao) => estacao.contratoId === null)
+        .map((estacao) => estacao.id);
+      if (idsParaVincular.length === 0) {
+        return estacaoIds.length;
+      }
+
+      const resultado = await tx.estacao.updateMany({
+        where: {
+          id: { in: idsParaVincular },
+          contratoId: null,
+          statusOperacional: StatusOperacionalEstacao.ATIVA,
+        },
+        data: { contratoId },
+      });
+      if (resultado.count !== idsParaVincular.length) {
+        throw new ConflictException(
+          'Uma ou mais estações foram alteradas durante a vinculação',
+        );
+      }
+
+      return estacaoIds.length;
+    });
+  }
+
+  async desvincularDoContrato(
+    contratoId: string,
+    estacaoId: string,
+  ): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      const contrato = await tx.contrato.findUnique({
+        where: { id: contratoId },
+        select: { id: true },
+      });
+      if (!contrato) {
+        throw new NotFoundException('Contrato não encontrado');
+      }
+
+      const estacao = await tx.estacao.findUnique({
+        where: { id: estacaoId },
+        select: { id: true, contratoId: true },
+      });
+      if (!estacao) {
+        throw new NotFoundException('Estação não encontrada');
+      }
+      if (estacao.contratoId !== contratoId) {
+        if (estacao.contratoId !== null) {
+          throw new ConflictException(
+            'A estação está vinculada a outro contrato',
+          );
+        }
+        throw new NotFoundException(
+          'A estação não está vinculada a este contrato',
+        );
+      }
+
+      const resultado = await tx.estacao.updateMany({
+        where: { id: estacaoId, contratoId },
+        data: { contratoId: null },
+      });
+      if (resultado.count !== 1) {
+        throw new ConflictException(
+          'O vínculo da estação foi alterado durante a operação',
+        );
+      }
+    });
   }
 
   /** Cadastra a estação já com a chave de ingestão, devolvida só desta vez. */
