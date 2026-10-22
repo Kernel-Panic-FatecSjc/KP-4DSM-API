@@ -43,8 +43,6 @@ jobs:
 
   publicar:
     name: Publicar em staging
-    # Sem fork (o token não escreve nele) e sem rascunho. Rotulado por outra
-    # pessoa, ou push novo num PR que já tem o label.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository &&
       !github.event.pull_request.draft &&
