@@ -3,6 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { criarAppDeTeste } from '../helpers';
 
+
 const ADMIN = {
   id: 'admin-1',
   email: 'admin@teste.com',
@@ -29,6 +30,7 @@ const NOVO = {
   uf: 'sp',
 };
 
+
 describe('Órgãos contratantes (funcional)', () => {
   let app: INestApplication;
   let cookieAdmin: string;
@@ -41,6 +43,7 @@ describe('Órgãos contratantes (funcional)', () => {
     update: jest.fn(),
   };
   const logAuditoria = { create: jest.fn() };
+
 
   beforeAll(async () => {
     app = await criarAppDeTeste({
@@ -56,6 +59,7 @@ describe('Órgãos contratantes (funcional)', () => {
     cookieAdmin = `access_token=${jwt.sign({ sub: ADMIN.id, email: ADMIN.email })}`;
     cookieMonitor = `access_token=${jwt.sign({ sub: MONITOR.id, email: MONITOR.email })}`;
   });
+
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -75,7 +79,9 @@ describe('Órgãos contratantes (funcional)', () => {
     logAuditoria.create.mockResolvedValue({});
   });
 
+
   afterAll(async () => app.close());
+
 
   it('publica as rotas de órgãos no documento Swagger', async () => {
     const resposta = await request(app.getHttpServer())
@@ -84,6 +90,7 @@ describe('Órgãos contratantes (funcional)', () => {
     expect(resposta.body.paths).toHaveProperty('/orgaos');
     expect(resposta.body.paths).toHaveProperty('/orgaos/{id}');
   });
+
 
   it('lista e consulta órgãos para usuário autenticado sem duplicar auditoria de leitura', async () => {
     await request(app.getHttpServer())
@@ -94,6 +101,7 @@ describe('Órgãos contratantes (funcional)', () => {
     expect(
       logAuditoria.create.mock.calls.map(([{ data }]) => data.acao),
     ).not.toContain('orgaos.consultar');
+
 
     orgaoPublico.findUnique.mockResolvedValue(ORGAO);
     await request(app.getHttpServer())
@@ -108,6 +116,7 @@ describe('Órgãos contratantes (funcional)', () => {
     ).not.toContain('orgaos.consultar');
   });
 
+
   it('não inclui CNPJ na busca de termo textual que contém dígito', async () => {
     await request(app.getHttpServer())
       .get('/orgaos?busca=Escola%205')
@@ -119,10 +128,12 @@ describe('Órgãos contratantes (funcional)', () => {
     ]);
   });
 
+
   it('exige autenticação para consulta e escrita', async () => {
     await request(app.getHttpServer()).get('/orgaos').expect(401);
     await request(app.getHttpServer()).post('/orgaos').send(NOVO).expect(401);
   });
+
 
   it('cadastra como administrador, normaliza valores e audita', async () => {
     await request(app.getHttpServer())
@@ -145,6 +156,38 @@ describe('Órgãos contratantes (funcional)', () => {
     });
   });
 
+
+  it('cadastra órgão inativo e normaliza CNPJ alfanumérico', async () => {
+    await request(app.getHttpServer())
+      .post('/orgaos')
+      .set('Cookie', cookieAdmin)
+      .send({ ...NOVO, cnpj: '12.ABC.345/01DE-35', ativo: false })
+      .expect(201)
+      .expect(({ body }) =>
+        expect(body).toMatchObject({ cnpj: '12ABC34501DE35', ativo: false }),
+      );
+    expect(orgaoPublico.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        cnpj: '12ABC34501DE35',
+        ativo: false,
+      }),
+    });
+  });
+
+
+  it('cadastra órgão sem CNPJ', async () => {
+    await request(app.getHttpServer())
+      .post('/orgaos')
+      .set('Cookie', cookieAdmin)
+      .send({ ...NOVO, cnpj: null })
+      .expect(201)
+      .expect(({ body }) => expect(body).toMatchObject({ cnpj: null }));
+    expect(orgaoPublico.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ cnpj: null }),
+    });
+  });
+
+
   it('rejeita CNPJ inválido e duplicado sem persistir', async () => {
     await request(app.getHttpServer())
       .post('/orgaos')
@@ -165,6 +208,7 @@ describe('Órgãos contratantes (funcional)', () => {
     ).toBe(false);
   });
 
+
   it('restringe cadastro, edição e inativação ao administrador', async () => {
     await request(app.getHttpServer())
       .post('/orgaos')
@@ -184,6 +228,7 @@ describe('Órgãos contratantes (funcional)', () => {
     expect(orgaoPublico.update).not.toHaveBeenCalled();
   });
 
+
   it('edita e audita os campos alterados', async () => {
     orgaoPublico.findUnique.mockResolvedValue(ORGAO);
     await request(app.getHttpServer())
@@ -199,6 +244,7 @@ describe('Órgãos contratantes (funcional)', () => {
       }),
     });
   });
+
 
   it('inativa logicamente, mantém o órgão e audita', async () => {
     orgaoPublico.findUnique.mockResolvedValue(ORGAO);

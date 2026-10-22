@@ -1,9 +1,36 @@
 import type { Page } from '@playwright/test';
+import type { OrgaoApi } from '@/lib/api';
+import { gerarCnpj } from '@/lib/cnpj';
 import { ADMIN } from './support/dados';
 import { expect, logarComo, test } from './support/teste';
 
-// A tela ainda não chama a API de órgãos: começa com quatro órgãos de exemplo
-// (dois ativos e dois desativados) e guarda as mudanças só na memória da página.
+function criarOrgao(
+  id: string,
+  nome: string,
+  cnpj: string,
+  ativo: boolean,
+  municipio: string,
+  esfera: OrgaoApi['esfera'] = 'MUNICIPAL',
+): OrgaoApi {
+  return {
+    id,
+    nome,
+    cnpj,
+    esfera,
+    municipio,
+    uf: 'SP',
+    ativo,
+    criadoEm: '2026-01-01T00:00:00.000Z',
+    atualizadoEm: '2026-01-01T00:00:00.000Z',
+  };
+}
+
+const ORGAOS_INICIAIS: OrgaoApi[] = [
+  criarOrgao('orgao-1', 'Defesa Civil de São José dos Campos', gerarCnpj('123456780001'), true, 'São José dos Campos'),
+  criarOrgao('orgao-2', 'Prefeitura Municipal de Jacareí', gerarCnpj('234567890001'), true, 'Jacareí'),
+  criarOrgao('orgao-3', 'Coordenadoria Estadual de Proteção e Defesa Civil', gerarCnpj('345678900001'), false, 'São Paulo', 'ESTADUAL'),
+  criarOrgao('orgao-4', 'Defesa Civil de Taubaté', gerarCnpj('456789010001'), false, 'Taubaté'),
+];
 
 async function conferirTotais(page: Page, total: number, ativos: number, desativados: number) {
   await expect(page.getByText('Total de órgãos').locator('..')).toContainText(String(total));
@@ -16,10 +43,50 @@ async function abrirCadastro(page: Page) {
   return page.getByRole('dialog', { name: 'Cadastrar órgão' });
 }
 
+async function preencherObrigatorios(
+  dialogo: ReturnType<Page['getByRole']>,
+  nome: string,
+  cnpj: string,
+) {
+  await dialogo.getByLabel('Nome do órgão').fill(nome);
+  await dialogo.getByLabel('CNPJ').fill(cnpj);
+  await dialogo.getByLabel('Município').fill('São José dos Campos');
+  await dialogo.getByLabel('UF').fill('SP');
+}
+
 test.describe('Órgãos públicos', () => {
   test.beforeEach(async ({ page, api }) => {
     logarComo(api, ADMIN);
+    let orgaos = [...ORGAOS_INICIAIS];
+    let proximoId = 5;
+    api.responder('GET /orgaos', () => ({ body: orgaos }));
+    api.responder('POST /orgaos', ({ corpo }) => {
+      const dados = corpo as Partial<OrgaoApi>;
+      const criado = criarOrgao(
+        `orgao-${proximoId++}`,
+        dados.nome ?? '',
+        dados.cnpj ?? '',
+        dados.ativo ?? true,
+        dados.municipio ?? '',
+        dados.esfera ?? 'MUNICIPAL',
+      );
+      orgaos = [{ ...criado, ...dados }, ...orgaos];
+      return { status: 201, body: criado };
+    });
+    api.responder('PATCH /orgaos/:id', ({ params, corpo }) => {
+      orgaos = orgaos.map((orgao) =>
+        orgao.id === params.id ? { ...orgao, ...(corpo as Partial<OrgaoApi>) } : orgao,
+      );
+      return { body: orgaos.find((orgao) => orgao.id === params.id) };
+    });
+    api.responder('DELETE /orgaos/:id', ({ params }) => {
+      orgaos = orgaos.map((orgao) =>
+        orgao.id === params.id ? { ...orgao, ativo: false } : orgao,
+      );
+      return { body: orgaos.find((orgao) => orgao.id === params.id) };
+    });
     await page.goto('/orgaos');
+    await expect(page.getByRole('button', { name: 'Novo órgão' })).toBeVisible();
   });
 
   test('lista os órgãos com o CNPJ formatado e os totais', async ({ page }) => {
@@ -54,7 +121,7 @@ test.describe('Órgãos públicos', () => {
   test('cadastra um órgão com CNPJ alfanumérico', async ({ page }) => {
     const dialogo = await abrirCadastro(page);
 
-    await dialogo.getByLabel('Nome do órgão').fill('Defesa Civil de Caçapava');
+    await preencherObrigatorios(dialogo, 'Defesa Civil de Caçapava', '');
     // O campo põe a máscara e as letras em maiúsculas enquanto digita.
     await dialogo.getByLabel('CNPJ').pressSequentially('12abc34501de35');
     await expect(dialogo.getByLabel('CNPJ')).toHaveValue('12.ABC.345/01DE-35');
@@ -69,14 +136,12 @@ test.describe('Órgãos públicos', () => {
 
   test('pagina de cinco em cinco órgãos', async ({ page }) => {
     const dialogo = await abrirCadastro(page);
-    await dialogo.getByLabel('Nome do órgão').fill('Defesa Civil de Caçapava');
-    await dialogo.getByLabel('CNPJ').fill('11.222.333/0001-81');
+    await preencherObrigatorios(dialogo, 'Defesa Civil de Caçapava', '11.222.333/0001-81');
     await dialogo.getByRole('button', { name: 'Cadastrar órgão' }).click();
     await expect(dialogo).toHaveCount(0);
-    await abrirCadastro(page);
-    await dialogo.getByLabel('Nome do órgão').fill('Prefeitura Municipal de Paraibuna');
-    await dialogo.getByLabel('CNPJ').fill('98.765.432/0001-98');
-    await dialogo.getByRole('button', { name: 'Cadastrar órgão' }).click();
+    const segundoDialogo = await abrirCadastro(page);
+    await preencherObrigatorios(segundoDialogo, 'Prefeitura Municipal de Paraibuna', '98.765.432/0001-98');
+    await segundoDialogo.getByRole('button', { name: 'Cadastrar órgão' }).click();
 
     await expect(page.getByText('Página 1 de 2')).toBeVisible();
     // O cadastro mais recente entra no topo.
@@ -92,13 +157,13 @@ test.describe('Órgãos públicos', () => {
 
   test('recusa CNPJ inválido e CNPJ já cadastrado', async ({ page }) => {
     const dialogo = await abrirCadastro(page);
-    await dialogo.getByLabel('Nome do órgão').fill('Órgão de teste');
+    await preencherObrigatorios(dialogo, 'Órgão de teste', '');
 
     await dialogo.getByLabel('CNPJ').fill('11.222.333/0001-82');
     await dialogo.getByRole('button', { name: 'Cadastrar órgão' }).click();
     await expect(dialogo.getByRole('alert')).toHaveText('Informe um CNPJ válido, incluindo os dígitos verificadores.');
 
-    await dialogo.getByLabel('CNPJ').fill('12.345.678/0001-95');
+    await dialogo.getByLabel('CNPJ').fill('23.456.789/0001-95');
     await dialogo.getByRole('button', { name: 'Cadastrar órgão' }).click();
     await expect(dialogo.getByRole('alert')).toHaveText('Já existe um órgão cadastrado com esse CNPJ.');
 
