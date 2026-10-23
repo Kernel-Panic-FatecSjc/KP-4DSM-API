@@ -2,6 +2,7 @@
 
 import { Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/DataTable';
 import { PageHeading } from '@/components/PageHeading';
 import { Button } from '@/components/ui/button';
@@ -173,6 +174,8 @@ function formatarData(data: string): string {
 }
 
 export default function ContratosPage() {
+  const router = useRouter();
+
   const [contratos, setContratos] = useState<Contrato[]>(CONTRATOS_INICIAIS);
   const [busca, setBusca] = useState('');
   const [filtroStatus, setFiltroStatus] = useState<StatusContrato | 'TODOS'>('TODOS');
@@ -386,12 +389,21 @@ export default function ContratosPage() {
         <div className="flex gap-3">
           <button
             type="button"
+            onClick={() => router.push(`/contratos/${contrato.id}`)}
+            className="inline-flex items-center gap-1 text-xs font-medium text-aqua hover:underline"
+          >
+            Detalhes
+          </button>
+
+          <button
+            type="button"
             onClick={() => abrirEdicao(contrato)}
             className="inline-flex items-center gap-1 text-xs font-medium text-aqua hover:underline"
           >
             <Pencil className="size-3" />
             Editar
           </button>
+
           <button
             type="button"
             onClick={() => setContratoExcluindo(contrato)}
