@@ -36,6 +36,10 @@ type Estacao = {
   status: 'Ativo' | 'Não Ativo';
   endereco: string;
   possuiChaveIngestao: boolean;
+  contrato: {
+    id: string;
+    numero: string;
+  } | null;
   sensores: Sensor[];
 };
 
@@ -119,6 +123,7 @@ export default function EstacoesPage() {
                 ? 'Ativo'
                 : 'Não Ativo',
             endereco: estacao.endereco,
+            contrato: estacao.contrato,
             sensores: estacao.sensores.map((sensor) => ({
               id: sensor.id,
               nome: sensor.nome,
@@ -180,7 +185,8 @@ export default function EstacoesPage() {
       return (
         estacao.nome.toLowerCase().includes(termo) ||
         estacao.codigo.toLowerCase().includes(termo) ||
-        estacao.endereco.toLowerCase().includes(termo)
+        estacao.endereco.toLowerCase().includes(termo) ||
+        estacao.contrato?.numero.toLowerCase().includes(termo)
       );
     });
   }, [estacoes, busca]);
@@ -313,6 +319,7 @@ export default function EstacoesPage() {
             ? 'Ativo'
             : 'Não Ativo',
         endereco: novaEstacaoApi.endereco,
+        contrato: novaEstacaoApi.contrato,
         sensores: novaEstacaoApi.sensores.map(
           (sensor) => ({
             id: sensor.id,
@@ -596,6 +603,7 @@ export default function EstacoesPage() {
             ? 'Ativo'
             : 'Não Ativo',
         endereco: estacaoAtualizada.endereco,
+        contrato: estacaoAtualizada.contrato,
         sensores: estacaoAtualizada.sensores.map(
           (sensor) => ({
             id: sensor.id,
@@ -810,6 +818,16 @@ export default function EstacoesPage() {
               document.body,
             )}
         </div>
+      ),
+    },
+
+    {
+      key: 'contrato',
+      header: 'Contrato',
+      render: (_, estacao) => (
+        <span>
+          {estacao.contrato?.numero ?? 'Sem contrato'}
+        </span>
       ),
     },
   ];
