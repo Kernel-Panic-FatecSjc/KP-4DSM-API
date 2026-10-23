@@ -9,15 +9,22 @@ import { AtualizarOrgaoDto } from './dto/atualizar-orgao.dto';
 import { CriarOrgaoDto } from './dto/criar-orgao.dto';
 import { ListarOrgaosQueryDto } from './dto/listar-orgaos-query.dto';
 
+
+function normalizarCnpj(cnpj: string | null | undefined): string | null | undefined {
+  return cnpj === null ? null : cnpj?.replace(/[^0-9A-Z]/gi, '').toUpperCase();
+}
+
+
 @Injectable()
 export class OrgaosService {
   constructor(private readonly prisma: PrismaService) {}
 
+
   listar(query: ListarOrgaosQueryDto) {
     const busca = query.busca?.trim();
     const termoCnpj =
-      busca && /^[\d./\-\s]+$/.test(busca)
-        ? busca.replace(/\D/g, '')
+      busca && /^[\dA-Z./-]+$/i.test(busca)
+        ? busca.replace(/[^0-9A-Z]/gi, '').toUpperCase()
         : undefined;
     return this.prisma.orgaoPublico.findMany({
       where: {
@@ -35,14 +42,16 @@ export class OrgaosService {
     });
   }
 
+
   async consultar(id: string) {
     const orgao = await this.prisma.orgaoPublico.findUnique({ where: { id } });
     if (!orgao) throw new NotFoundException('Órgão não encontrado');
     return orgao;
   }
 
+
   async criar(dto: CriarOrgaoDto) {
-    const cnpj = dto.cnpj?.replace(/\D/g, '');
+    const cnpj = normalizarCnpj(dto.cnpj);
     if (
       cnpj &&
       (await this.prisma.orgaoPublico.findUnique({ where: { cnpj } }))
@@ -51,7 +60,12 @@ export class OrgaosService {
     }
     try {
       return await this.prisma.orgaoPublico.create({
-        data: { ...dto, cnpj, uf: dto.uf.toUpperCase() },
+        data: {
+          ...dto,
+          cnpj,
+          uf: dto.uf.toUpperCase(),
+          ativo: dto.ativo ?? true,
+        },
       });
     } catch (erro) {
       if (
@@ -64,9 +78,10 @@ export class OrgaosService {
     }
   }
 
+
   async atualizar(id: string, dto: AtualizarOrgaoDto) {
     const orgao = await this.consultar(id);
-    const cnpj = dto.cnpj?.replace(/\D/g, '');
+    const cnpj = normalizarCnpj(dto.cnpj);
     if (
       cnpj &&
       cnpj !== orgao.cnpj &&
@@ -89,6 +104,7 @@ export class OrgaosService {
       throw erro;
     }
   }
+
 
   async inativar(id: string) {
     await this.consultar(id);

@@ -1,5 +1,6 @@
 import { registerDecorator, ValidationOptions } from 'class-validator';
 
+
 export function IsCnpj(
   validationOptions?: ValidationOptions,
 ): PropertyDecorator {
@@ -12,18 +13,21 @@ export function IsCnpj(
       validator: {
         validate(value: unknown): boolean {
           if (typeof value !== 'string') return false;
-          if (!/^[\d./\-\s]+$/.test(value)) return false;
-          const cnpj = value.replace(/\D/g, '');
-          if (cnpj.length !== 14 || /^(\d)\1{13}$/.test(cnpj)) return false;
+          if (!/^[\dA-Za-z./\-\s]+$/.test(value)) return false;
+          const cnpj = value.replace(/[^0-9A-Z]/gi, '').toUpperCase();
+          if (
+            cnpj.length !== 14 ||
+            !/^[0-9A-Z]{12}\d{2}$/.test(cnpj) ||
+            /^([0-9A-Z])\1{13}$/.test(cnpj)
+          ) {
+            return false;
+          }
           const calcularDigito = (base: string, pesos: number[]) => {
-            const resto =
-              base
-                .split('')
-                .reduce(
-                  (soma, digito, indice) =>
-                    soma + Number(digito) * pesos[indice],
-                  0,
-                ) % 11;
+            const resto = [...base].reduce(
+              (soma, caractere, indice) =>
+                soma + (caractere.charCodeAt(0) - 48) * pesos[indice],
+              0,
+            ) % 11;
             return resto < 2 ? 0 : 11 - resto;
           };
           const primeiro = calcularDigito(

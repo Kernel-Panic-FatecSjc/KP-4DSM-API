@@ -7,7 +7,9 @@ export class ErroApi extends Error {
   }
 }
 
+
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001';
+
 
 export async function api<T>(caminho: string, opcoes: RequestInit = {}): Promise<T> {
   const resposta = await fetch(`${API_URL}${caminho}`, {
@@ -16,14 +18,21 @@ export async function api<T>(caminho: string, opcoes: RequestInit = {}): Promise
     headers: { 'Content-Type': 'application/json', ...opcoes.headers },
   });
 
+
   const corpo = await resposta.json().catch(() => null);
 
+
   if (!resposta.ok) {
-    throw new ErroApi(resposta.status, corpo?.message ?? 'Erro inesperado');
+    const mensagem = Array.isArray(corpo?.message)
+      ? corpo.message.join(', ')
+      : corpo?.message ?? 'Erro inesperado';
+    throw new ErroApi(resposta.status, mensagem);
   }
+
 
   return corpo as T;
 }
+
 
 export interface Usuario {
   id: string;
@@ -34,6 +43,7 @@ export interface Usuario {
   criadoEm: string;
   atualizadoEm: string;
 }
+
 
 export interface RegistroAuditoria {
   id: string;
@@ -46,12 +56,14 @@ export interface RegistroAuditoria {
   usuario: { id: string; nome: string } | null;
 }
 
+
 export interface ListaAuditoria {
   itens: RegistroAuditoria[];
   total: number;
   pagina: number;
   tamanho: number;
 }
+
 
 export interface LeituraBruta {
   id: string;
@@ -63,12 +75,14 @@ export interface LeituraBruta {
   payload: unknown;
 }
 
+
 export interface ListaLeiturasBrutas {
   itens: LeituraBruta[];
   total: number;
   pagina: number;
   tamanho: number;
 }
+
 
 export interface EstacaoApi {
   id: string;
@@ -84,10 +98,12 @@ export interface EstacaoApi {
   atualizadoEm: string;
 }
 
+
 /** Resposta do cadastro: única vez em que a chave de ingestão aparece. */
 export interface EstacaoCriadaApi extends EstacaoApi {
   chaveIngestao: string;
 }
+
 
 export interface AtualizarEstacaoPayload {
   nome?: string;
@@ -100,6 +116,8 @@ export interface AtualizarEstacaoPayload {
 }
 
 
+
+
 export interface CriarEstacaoPayload {
   nome: string;
   endereco: string;
@@ -108,6 +126,7 @@ export interface CriarEstacaoPayload {
   longitude: number;
   tipoParametroIds: string[];
 }
+
 
 export interface SensorApi {
   id: string;
@@ -120,11 +139,13 @@ export interface SensorApi {
   estacoesAssociadas: number;
 }
 
+
 export interface UnidadeSensor {
   valor: string;
   nome: string;
   grandeza: string;
 }
+
 
 export interface SensorPayload {
   nome: string;
@@ -135,8 +156,10 @@ export interface SensorPayload {
   valorMaximo: number | null;
 }
 
+
 export type SeveridadeAlerta ='ATENCAO' | 'ALERTA' | 'EMERGENCIA';
 export type StatusAlarme = 'ABERTO' | 'RECONHECIDO' | 'RESOLVIDO';
+
 
 export interface AlarmeHistorico {
   id: string;
@@ -150,6 +173,7 @@ export interface AlarmeHistorico {
   parametro: { id: string; nome: string; unidade: string };
 }
 
+
 export interface ListaAlarmes {
   itens: AlarmeHistorico[];
   total: number;
@@ -157,12 +181,14 @@ export interface ListaAlarmes {
   tamanho: number;
 }
 
+
 export interface OpcoesFiltroAlarmes {
   estacoes: { id: string; nome: string }[];
   tiposParametro: { id: string; nome: string }[];
   severidades: SeveridadeAlerta[];
   status: StatusAlarme[];
 }
+
 
 export interface FiltrosAlarmes {
   estacaoId?: string;
@@ -173,6 +199,7 @@ export interface FiltrosAlarmes {
   ate?: string;
   pagina?: number;
 }
+
 
 export interface Alerta {
   id: string;
@@ -186,12 +213,14 @@ export interface Alerta {
   acoes?: never;
 }
 
+
 export interface ListaAlertas {
   itens: Alerta[];
   total: number;
   pagina: number;
   tamanho: number;
 }
+
 
 export interface OpcoesFiltroAlertas {
   estacoes: { id: string; nome: string }[];
@@ -206,6 +235,7 @@ export interface OpcoesFiltroAlertas {
   severidades: SeveridadeAlerta[];
 }
 
+
 export interface FiltrosAlertas {
   estacaoId?: string;
   tipoParametroId?: string;
@@ -214,10 +244,12 @@ export interface FiltrosAlertas {
   pagina?: number;
 }
 
+
 export interface DashboardPonto {
   timestamp: string;
   valor: number;
 }
+
 
 export interface DashboardSerie {
   parametroId: string;
@@ -227,6 +259,7 @@ export interface DashboardSerie {
   estacaoNome: string;
   pontos: DashboardPonto[];
 }
+
 
 export interface DashboardDados {
   periodo: { de: string; ate: string };
@@ -239,3 +272,32 @@ export interface DashboardDados {
   };
   series: DashboardSerie[];
 }
+
+
+export type EsferaOrgaoApi = 'MUNICIPAL' | 'ESTADUAL' | 'FEDERAL';
+
+
+export interface OrgaoApi {
+  id: string;
+  nome: string;
+  cnpj: string | null;
+  esfera: EsferaOrgaoApi;
+  municipio: string;
+  uf: string;
+  ativo: boolean;
+  criadoEm: string;
+  atualizadoEm: string;
+}
+
+
+export interface CriarOrgaoPayload {
+  nome: string;
+  cnpj?: string | null;
+  esfera: EsferaOrgaoApi;
+  municipio: string;
+  uf: string;
+  ativo?: boolean;
+}
+
+
+export type AtualizarOrgaoPayload = Partial<CriarOrgaoPayload>;

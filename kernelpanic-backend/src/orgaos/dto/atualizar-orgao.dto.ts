@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsNotEmpty,
   IsOptional,
@@ -10,29 +11,40 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { EsferaOrgao } from '../../generated/prisma/client';
 import { IsCnpj } from './cnpj.validator';
 
+
 export class AtualizarOrgaoDto {
+  @IsOptional()
+  @IsBoolean()
+  @ApiPropertyOptional({ description: 'Reativa ou desativa o órgão' })
+  ativo?: boolean;
+
+
   @IsOptional()
   @IsString()
   @IsNotEmpty()
   @ApiPropertyOptional()
   nome?: string;
 
+
   @IsOptional()
   @IsString()
   @IsCnpj({ message: 'cnpj deve ser válido' })
-  @ApiPropertyOptional({ example: '11.222.333/0001-81' })
-  cnpj?: string;
+  @ApiPropertyOptional({ example: '11.222.333/0001-81', nullable: true })
+  cnpj?: string | null;
+
 
   @IsOptional()
   @IsEnum(EsferaOrgao)
   @ApiPropertyOptional({ enum: EsferaOrgao })
   esfera?: EsferaOrgao;
 
+
   @IsOptional()
   @IsString()
   @IsNotEmpty()
   @ApiPropertyOptional()
   municipio?: string;
+
 
   @IsOptional()
   @IsString()
