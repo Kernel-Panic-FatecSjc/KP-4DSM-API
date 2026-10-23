@@ -290,6 +290,42 @@ export interface OrgaoApi {
 }
 
 
+export type StatusContratoApi = 'RASCUNHO' | 'VIGENTE' | 'SUSPENSO' | 'ENCERRADO';
+
+
+export interface ContratoApi {
+  id: string;
+  numero: string;
+  objeto: string;
+  inicioVigencia: string;
+  fimVigencia: string;
+  status: StatusContratoApi;
+  criadoEm: string;
+  atualizadoEm: string;
+  encerradoEm: string | null;
+  orgao: Pick<OrgaoApi, 'id' | 'nome' | 'cnpj'>;
+  quantidadeEstacoes: number;
+}
+
+
+export interface ContratosPaginadosApi {
+  contratos: ContratoApi[];
+  total: number;
+  pagina: number;
+  tamanho: number;
+}
+
+
+export interface ContratoPayload {
+  numero: string;
+  objeto: string;
+  inicioVigencia: string;
+  fimVigencia: string;
+  orgaoId: string;
+  status: StatusContratoApi;
+}
+
+
 export interface CriarOrgaoPayload {
   nome: string;
   cnpj?: string | null;

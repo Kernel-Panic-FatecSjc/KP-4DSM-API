@@ -1,363 +1,376 @@
 'use client';
 
-import { Pencil, Plus, Trash2, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { Check, Pencil, Plus, X } from 'lucide-react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/DataTable';
 import { PageHeading } from '@/components/PageHeading';
+import { useUsuario } from '@/components/ProtectedLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { cnpjValido, formatarCnpj, gerarCnpj, limparCnpj } from '@/lib/cnpj';
+import {
+  api,
+  ErroApi,
+  type ContratoApi,
+  type ContratoPayload,
+  type ContratosPaginadosApi,
+  type OrgaoApi,
+  type StatusContratoApi,
+} from '@/lib/api';
+import { formatarCnpj } from '@/lib/cnpj';
 
 const ITENS_POR_PAGINA = 5;
+const STATUS_CONTRATO: StatusContratoApi[] = [
+  'RASCUNHO',
+  'VIGENTE',
+  'SUSPENSO',
+  'ENCERRADO',
+];
 
-type StatusContrato = 'VIGENTE' | 'ENCERRADO' | 'SUSPENSO';
+const ROTULOS_STATUS: Record<StatusContratoApi, string> = {
+  RASCUNHO: 'Rascunho',
+  VIGENTE: 'Vigente',
+  SUSPENSO: 'Suspenso',
+  ENCERRADO: 'Encerrado',
+};
 
-interface Contrato {
-  id: string;
+const CORES_STATUS: Record<StatusContratoApi, string> = {
+  RASCUNHO: 'bg-muted border-border text-muted-foreground',
+  VIGENTE: 'bg-lime/10 border-lime/30 text-lime',
+  SUSPENSO: 'bg-warning/10 border-warning/30 text-warning',
+  ENCERRADO: 'bg-muted border-border text-muted-foreground',
+};
+
+const TRANSICOES_PERMITIDAS: Record<StatusContratoApi, StatusContratoApi[]> = {
+  RASCUNHO: ['RASCUNHO', 'VIGENTE', 'ENCERRADO'],
+  VIGENTE: ['VIGENTE', 'SUSPENSO', 'ENCERRADO'],
+  SUSPENSO: ['SUSPENSO', 'VIGENTE', 'ENCERRADO'],
+  ENCERRADO: [],
+};
+
+interface FormularioContrato {
   numero: string;
-  orgao: string;
-  cnpj: string;
+  objeto: string;
+  orgaoId: string;
   inicioVigencia: string;
   fimVigencia: string;
-  status: StatusContrato;
-  estacaoIds: string[];
+  status: StatusContratoApi;
 }
 
-type FormularioContrato = Omit<Contrato, 'id'>;
-
-interface EstacaoMock {
-  id: string;
-  nome: string;
-  codigo: string;
-}
-
-const ESTACOES_DISPONIVEIS: EstacaoMock[] = [
-  { id: 'estacao-centro-sjc', nome: 'Centro - São José dos Campos', codigo: 'SJC-001' },
-  { id: 'estacao-santana-sjc', nome: 'Santana - São José dos Campos', codigo: 'SJC-002' },
-  { id: 'estacao-jacarei', nome: 'Centro - Jacareí', codigo: 'JCR-001' },
-  { id: 'estacao-taubate', nome: 'Centro - Taubaté', codigo: 'TBT-001' },
-  { id: 'estacao-cacapava', nome: 'Centro - Caçapava', codigo: 'CCV-001' },
-  { id: 'estacao-paraibuna', nome: 'Centro - Paraibuna', codigo: 'PBN-001' },
-];
-
-const CONTRATOS_INICIAIS: Contrato[] = [
-  {
-    id: 'contrato-1',
-    numero: '018/2025',
-    orgao: 'Defesa Civil de São José dos Campos',
-    cnpj: gerarCnpj('123456780001'),
-    inicioVigencia: '2025-02-01',
-    fimVigencia: '2027-01-31',
-    status: 'VIGENTE',
-    estacaoIds: ['estacao-centro-sjc', 'estacao-santana-sjc'],
-  },
-  {
-    id: 'contrato-2',
-    numero: '042/2024',
-    orgao: 'Prefeitura Municipal de Jacareí',
-    cnpj: gerarCnpj('234567890001'),
-    inicioVigencia: '2024-06-15',
-    fimVigencia: '2026-06-14',
-    status: 'VIGENTE',
-    estacaoIds: ['estacao-jacarei'],
-  },
-  {
-    id: 'contrato-3',
-    numero: '007/2023',
-    orgao: 'Coordenadoria Estadual de Proteção e Defesa Civil',
-    cnpj: gerarCnpj('345678900001'),
-    inicioVigencia: '2023-03-01',
-    fimVigencia: '2025-02-28',
-    status: 'ENCERRADO',
-    estacaoIds: ['estacao-centro-sjc', 'estacao-taubate'],
-  },
-  {
-    id: 'contrato-4',
-    numero: '031/2025',
-    orgao: 'Defesa Civil de Taubaté',
-    cnpj: gerarCnpj('456789010001'),
-    inicioVigencia: '2025-08-01',
-    fimVigencia: '2026-07-31',
-    status: 'SUSPENSO',
-    estacaoIds: ['estacao-taubate'],
-  },
-  {
-    id: 'contrato-6',
-    numero: '055/2025',
-    orgao: 'Defesa Civil de Caçapava',
-    cnpj: gerarCnpj('567890120001'),
-    inicioVigencia: '2025-09-01',
-    fimVigencia: '2027-08-31',
-    status: 'VIGENTE',
-    estacaoIds: ['estacao-cacapava'],
-  },
-  {
-    id: 'contrato-7',
-    numero: '012/2024',
-    orgao: 'Prefeitura Municipal de Paraibuna',
-    cnpj: gerarCnpj('678901230001'),
-    inicioVigencia: '2024-04-01',
-    fimVigencia: '2026-03-31',
-    status: 'ENCERRADO',
-    estacaoIds: ['estacao-paraibuna'],
-  },
-  {
-    id: 'contrato-8',
-    numero: '023/2026',
-    orgao: 'Defesa Civil de Pindamonhangaba',
-    cnpj: gerarCnpj('789012340001'),
-    inicioVigencia: '2026-01-15',
-    fimVigencia: '2028-01-14',
-    status: 'VIGENTE',
-    estacaoIds: [],
-  },
-  {
-    id: 'contrato-9',
-    numero: '019/2024',
-    orgao: 'Prefeitura Municipal de Igaratá',
-    cnpj: gerarCnpj('890123450001'),
-    inicioVigencia: '2024-11-01',
-    fimVigencia: '2026-10-31',
-    status: 'SUSPENSO',
-    estacaoIds: ['estacao-paraibuna'],
-  },
-  {
-    id: 'contrato-10',
-    numero: '004/2023',
-    orgao: 'Defesa Civil de Santa Branca',
-    cnpj: gerarCnpj('901234560001'),
-    inicioVigencia: '2023-05-01',
-    fimVigencia: '2025-04-30',
-    status: 'ENCERRADO',
-    estacaoIds: [],
-  },
-  {
-    id: 'contrato-11',
-    numero: '026/2026',
-    orgao: 'Prefeitura Municipal de Monteiro Lobato',
-    cnpj: gerarCnpj('012345670001'),
-    inicioVigencia: '2026-07-01',
-    fimVigencia: '2028-06-30',
-    status: 'VIGENTE',
-    estacaoIds: [],
-  },
-];
+type ConfirmacaoStatus =
+  | { tipo: 'salvar'; contrato: ContratoApi | null; dados: ContratoPayload }
+  | { tipo: 'encerrar'; contrato: ContratoApi };
 
 const FORMULARIO_INICIAL: FormularioContrato = {
   numero: '',
-  orgao: '',
-  cnpj: '',
+  objeto: '',
+  orgaoId: '',
   inicioVigencia: '',
   fimVigencia: '',
-  status: 'VIGENTE',
-  estacaoIds: [],
-};
-
-const ROTULOS_STATUS: Record<StatusContrato, string> = {
-  VIGENTE: 'Vigente',
-  ENCERRADO: 'Encerrado',
-  SUSPENSO: 'Suspenso',
-};
-
-const CORES_STATUS: Record<StatusContrato, string> = {
-  VIGENTE: 'bg-lime/10 border-lime/30 text-lime',
-  ENCERRADO: 'bg-muted border-border text-muted-foreground',
-  SUSPENSO: 'bg-warning/10 border-warning/30 text-warning',
+  status: 'RASCUNHO',
 };
 
 function formatarData(data: string): string {
   return new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC' }).format(
-    new Date(`${data}T00:00:00Z`),
+    new Date(data),
   );
 }
 
+function dataParaCampo(data: string): string {
+  return data.slice(0, 10);
+}
+
+function mensagemErro(erro: unknown, padrao: string): string {
+  return erro instanceof Error ? erro.message : padrao;
+}
+
 export default function ContratosPage() {
-  const [contratos, setContratos] = useState<Contrato[]>(CONTRATOS_INICIAIS);
+  const router = useRouter();
+  const usuario = useUsuario();
+  const [contratos, setContratos] = useState<ContratoApi[]>([]);
+  const [orgaos, setOrgaos] = useState<OrgaoApi[]>([]);
+  const [total, setTotal] = useState(0);
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [erroPagina, setErroPagina] = useState<string | null>(null);
+  const [erroOrgaos, setErroOrgaos] = useState<string | null>(null);
   const [busca, setBusca] = useState('');
-  const [filtroStatus, setFiltroStatus] = useState<StatusContrato | 'TODOS'>('TODOS');
+  const [filtroStatus, setFiltroStatus] = useState<StatusContratoApi | 'TODOS'>('TODOS');
+  const [filtroOrgao, setFiltroOrgao] = useState('TODOS');
   const [pagina, setPagina] = useState(1);
+  const [versao, setVersao] = useState(0);
   const [modalAberto, setModalAberto] = useState(false);
-  const [contratoEditando, setContratoEditando] = useState<Contrato | null>(null);
-  const [contratoExcluindo, setContratoExcluindo] = useState<Contrato | null>(null);
-  const [dadosParaEncerrar, setDadosParaEncerrar] = useState<FormularioContrato | null>(null);
+  const [contratoEditando, setContratoEditando] = useState<ContratoApi | null>(null);
   const [formulario, setFormulario] = useState<FormularioContrato>(FORMULARIO_INICIAL);
   const [erroFormulario, setErroFormulario] = useState<string | null>(null);
+  const [confirmacaoStatus, setConfirmacaoStatus] = useState<ConfirmacaoStatus | null>(null);
+  const [erroConfirmacao, setErroConfirmacao] = useState<string | null>(null);
 
-  const contratosFiltrados = useMemo(() => {
-    const termo = busca.trim().toLocaleLowerCase('pt-BR');
-    const cnpjTermo = limparCnpj(termo);
-    return contratos.filter((contrato) => {
-      const correspondeBusca =
-        !termo ||
-        contrato.numero.toLocaleLowerCase('pt-BR').includes(termo) ||
-        contrato.orgao.toLocaleLowerCase('pt-BR').includes(termo) ||
-        (cnpjTermo !== '' && contrato.cnpj.includes(cnpjTermo));
-      const correspondeStatus = filtroStatus === 'TODOS' || contrato.status === filtroStatus;
-      return correspondeBusca && correspondeStatus;
+  const ehAdministrador = usuario?.tipo === 'ADMINISTRADOR';
+
+  function atualizarLista() {
+    setCarregando(true);
+    setVersao((atual) => atual + 1);
+  }
+
+  useEffect(() => {
+    if (!ehAdministrador) return;
+
+    let ativo = true;
+    api<OrgaoApi[]>('/orgaos')
+      .then((resposta) => {
+        if (ativo) {
+          setOrgaos(resposta);
+          setErroOrgaos(null);
+        }
+      })
+      .catch((erro: unknown) => {
+        if (!ativo) return;
+        if (erro instanceof ErroApi && erro.status === 401) {
+          router.replace('/login?proximo=%2Fcontratos');
+          return;
+        }
+        setErroOrgaos(mensagemErro(erro, 'Não foi possível carregar os órgãos.'));
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [ehAdministrador, router]);
+
+  useEffect(() => {
+    if (!ehAdministrador) {
+      return;
+    }
+
+    let ativo = true;
+    const parametros = new URLSearchParams({
+      pagina: String(pagina),
+      tamanho: String(ITENS_POR_PAGINA),
     });
-  }, [busca, contratos, filtroStatus]);
+    if (busca.trim()) parametros.set('busca', busca.trim());
+    if (filtroStatus !== 'TODOS') parametros.set('status', filtroStatus);
+    if (filtroOrgao !== 'TODOS') parametros.set('orgaoId', filtroOrgao);
 
-  const totalPaginas = Math.max(1, Math.ceil(contratosFiltrados.length / ITENS_POR_PAGINA));
+    api<ContratosPaginadosApi>(`/contratos?${parametros.toString()}`)
+      .then((resposta) => {
+        if (!ativo) return;
+        setContratos(resposta.contratos);
+        setTotal(resposta.total);
+        setErroPagina(null);
+      })
+      .catch((erro: unknown) => {
+        if (!ativo) return;
+        if (erro instanceof ErroApi && erro.status === 401) {
+          router.replace('/login?proximo=%2Fcontratos');
+          return;
+        }
+        setErroPagina(mensagemErro(erro, 'Não foi possível carregar os contratos.'));
+      })
+      .finally(() => {
+        if (ativo) setCarregando(false);
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [busca, ehAdministrador, filtroOrgao, filtroStatus, pagina, router, versao]);
+
+  const totalPaginas = Math.max(1, Math.ceil(total / ITENS_POR_PAGINA));
   const paginaAtual = Math.min(pagina, totalPaginas);
-  const contratosPaginados = useMemo(() => {
-    const inicio = (paginaAtual - 1) * ITENS_POR_PAGINA;
-    return contratosFiltrados.slice(inicio, inicio + ITENS_POR_PAGINA);
-  }, [contratosFiltrados, paginaAtual]);
 
-  const estatisticas = useMemo(
-    () => ({
-      total: contratos.length,
-      vigentes: contratos.filter((contrato) => contrato.status === 'VIGENTE').length,
-      encerrados: contratos.filter((contrato) => contrato.status === 'ENCERRADO').length,
-    }),
-    [contratos],
+  const orgaosAtivos = useMemo(() => orgaos.filter((orgao) => orgao.ativo), [orgaos]);
+  const opcoesOrgaos = useMemo(
+    () => orgaos.filter((orgao) => orgao.ativo || orgao.id === contratoEditando?.orgao.id),
+    [contratoEditando, orgaos],
   );
 
   function abrirCadastro() {
     setContratoEditando(null);
-    setFormulario(FORMULARIO_INICIAL);
+    setFormulario({ ...FORMULARIO_INICIAL, orgaoId: orgaosAtivos[0]?.id ?? '' });
     setErroFormulario(null);
     setModalAberto(true);
   }
 
-  function abrirEdicao(contrato: Contrato) {
+  function abrirEdicao(contrato: ContratoApi) {
     setContratoEditando(contrato);
     setFormulario({
       numero: contrato.numero,
-      orgao: contrato.orgao,
-      cnpj: formatarCnpj(contrato.cnpj),
-      inicioVigencia: contrato.inicioVigencia,
-      fimVigencia: contrato.fimVigencia,
+      objeto: contrato.objeto,
+      orgaoId: contrato.orgao.id,
+      inicioVigencia: dataParaCampo(contrato.inicioVigencia),
+      fimVigencia: dataParaCampo(contrato.fimVigencia),
       status: contrato.status,
-      estacaoIds: contrato.estacaoIds,
     });
     setErroFormulario(null);
     setModalAberto(true);
   }
 
-  function salvarContrato(evento: React.FormEvent<HTMLFormElement>) {
-    evento.preventDefault();
+  function validarFormulario(): ContratoPayload | null {
     const numero = formulario.numero.trim();
-    const orgao = formulario.orgao.trim();
-    const cnpj = limparCnpj(formulario.cnpj);
+    const objeto = formulario.objeto.trim();
 
-    if (!numero || !orgao || !cnpj || !formulario.inicioVigencia || !formulario.fimVigencia) {
-      setErroFormulario('Preencha todos os campos para salvar o contrato.');
-      return;
+    if (!numero || !objeto || !formulario.orgaoId) {
+      setErroFormulario('Preencha o número, o objeto e selecione um órgão ativo.');
+      return null;
+    }
+    if (numero.length > 100 || objeto.length > 2000) {
+      setErroFormulario('O número aceita até 100 caracteres e o objeto até 2000.');
+      return null;
+    }
+    if (!formulario.inicioVigencia || !formulario.fimVigencia) {
+      setErroFormulario('Informe as datas de início e fim da vigência.');
+      return null;
     }
 
-    if (!cnpjValido(cnpj)) {
-      setErroFormulario('Informe um CNPJ válido, incluindo os dígitos verificadores.');
-      return;
+    const inicio = new Date(`${formulario.inicioVigencia}T00:00:00.000Z`);
+    const fim = new Date(`${formulario.fimVigencia}T23:59:59.999Z`);
+    if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime())) {
+      setErroFormulario('Informe datas de vigência válidas.');
+      return null;
+    }
+    if (fim.getTime() < inicio.getTime()) {
+      setErroFormulario('O fim da vigência deve ser igual ou posterior ao início.');
+      return null;
     }
 
-    if (formulario.fimVigencia < formulario.inicioVigencia) {
-      setErroFormulario('O fim da vigência deve ser posterior ao início.');
-      return;
+    const orgaoSelecionado = orgaos.find((orgao) => orgao.id === formulario.orgaoId);
+    if (
+      !orgaoSelecionado ||
+      (!orgaoSelecionado.ativo && orgaoSelecionado.id !== contratoEditando?.orgao.id)
+    ) {
+      setErroFormulario('Selecione um órgão ativo cadastrado.');
+      return null;
     }
 
-    const numeroDuplicado = contratos.some(
-      (contrato) =>
-        contrato.numero.toLocaleLowerCase('pt-BR') === numero.toLocaleLowerCase('pt-BR') &&
-        contrato.id !== contratoEditando?.id,
-    );
-    if (numeroDuplicado) {
-      setErroFormulario('Já existe um contrato cadastrado com esse número.');
-      return;
+    const ativandoContrato =
+      formulario.status === 'VIGENTE' &&
+      (!contratoEditando || contratoEditando.status !== 'VIGENTE');
+    if (
+      ativandoContrato &&
+      fim.getTime() < Date.now()
+    ) {
+      setErroFormulario('Contrato com vigência expirada não pode ser ativado.');
+      return null;
     }
 
-    const cnpjDuplicado = contratos.some(
-      (contrato) => contrato.cnpj === cnpj && contrato.id !== contratoEditando?.id,
-    );
-    if (cnpjDuplicado) {
-      setErroFormulario('Já existe um contrato cadastrado com esse CNPJ.');
-      return;
-    }
-
-    const dados = { ...formulario, numero, orgao, cnpj };
-    if (dados.status === 'ENCERRADO' && contratoEditando?.status !== 'ENCERRADO') {
-      setDadosParaEncerrar(dados);
-      return;
-    }
-    aplicarContrato(dados);
-  }
-
-  function aplicarContrato(dados: FormularioContrato) {
     if (contratoEditando) {
-      setContratos((atuais) =>
-        atuais.map((contrato) =>
-          contrato.id === contratoEditando.id ? { ...contrato, ...dados } : contrato,
-        ),
-      );
-    } else {
-      setContratos((atuais) => [
-        { id: `contrato-${Date.now()}`, ...dados },
-        ...atuais,
-      ]);
-      setPagina(1);
+      const transicoes = TRANSICOES_PERMITIDAS[contratoEditando.status];
+      if (!transicoes.includes(formulario.status)) {
+        setErroFormulario(
+          `Não é permitido alterar o status de ${ROTULOS_STATUS[contratoEditando.status]} para ${ROTULOS_STATUS[formulario.status]}.`,
+        );
+        return null;
+      }
+    } else if (formulario.status === 'SUSPENSO') {
+      setErroFormulario('Um contrato novo não pode ser cadastrado como suspenso.');
+      return null;
     }
 
-    setModalAberto(false);
-    setContratoEditando(null);
-    setDadosParaEncerrar(null);
+    return {
+      numero,
+      objeto,
+      orgaoId: formulario.orgaoId,
+      inicioVigencia: formulario.inicioVigencia,
+      fimVigencia: formulario.fimVigencia,
+      status: formulario.status,
+    };
+  }
+
+  async function persistirContrato(
+    contrato: ContratoApi | null,
+    dados: ContratoPayload,
+  ) {
+    setSalvando(true);
+    try {
+      await api<ContratoApi>(
+        contrato ? `/contratos/${contrato.id}` : '/contratos',
+        {
+          method: contrato ? 'PATCH' : 'POST',
+          body: JSON.stringify(dados),
+        },
+      );
+      setModalAberto(false);
+      setContratoEditando(null);
+      setErroFormulario(null);
+      setConfirmacaoStatus(null);
+      if (!contrato) setPagina(1);
+      atualizarLista();
+    } catch (erro: unknown) {
+      setErroFormulario(mensagemErro(erro, 'Não foi possível salvar o contrato.'));
+      setConfirmacaoStatus(null);
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  function salvarContrato(evento: FormEvent<HTMLFormElement>) {
+    evento.preventDefault();
     setErroFormulario(null);
+    const dados = validarFormulario();
+    if (!dados) return;
+
+    if (dados.status !== (contratoEditando?.status ?? 'RASCUNHO')) {
+      setErroConfirmacao(null);
+      setConfirmacaoStatus({ tipo: 'salvar', contrato: contratoEditando, dados });
+      return;
+    }
+    void persistirContrato(contratoEditando, dados);
   }
 
-  function confirmarEncerramento() {
-    if (!dadosParaEncerrar) return;
-    aplicarContrato(dadosParaEncerrar);
+  async function confirmarMudancaStatus() {
+    if (!confirmacaoStatus) return;
+    setSalvando(true);
+    setErroConfirmacao(null);
+    try {
+      if (confirmacaoStatus.tipo === 'encerrar') {
+        await api<ContratoApi>(`/contratos/${confirmacaoStatus.contrato.id}/encerrar`, {
+          method: 'PATCH',
+        });
+        atualizarLista();
+      } else {
+        const { contrato, dados } = confirmacaoStatus;
+        await api<ContratoApi>(contrato ? `/contratos/${contrato.id}` : '/contratos', {
+          method: contrato ? 'PATCH' : 'POST',
+          body: JSON.stringify(dados),
+        });
+        setModalAberto(false);
+        setContratoEditando(null);
+        setErroFormulario(null);
+        if (!contrato) setPagina(1);
+        atualizarLista();
+      }
+      setConfirmacaoStatus(null);
+    } catch (erro: unknown) {
+      setErroConfirmacao(mensagemErro(erro, 'Não foi possível alterar o status do contrato.'));
+    } finally {
+      setSalvando(false);
+    }
   }
 
-  function excluirContrato() {
-    if (!contratoExcluindo) return;
-    setContratos((atuais) =>
-      atuais.filter((contrato) => contrato.id !== contratoExcluindo.id),
-    );
-    setContratoExcluindo(null);
-  }
-
-  const colunas: Column<Contrato>[] = [
+  const colunas: Column<ContratoApi>[] = [
     {
       header: 'Número do contrato',
       key: 'numero',
       render: (_, contrato) => (
-        <div>
+        <div className="min-w-40">
           <p className="font-medium">{contrato.numero}</p>
-          <p className="font-mono text-xs text-muted-foreground">{contrato.id}</p>
+          <p className="mt-1 max-w-64 text-xs text-muted-foreground">{contrato.objeto}</p>
         </div>
       ),
     },
-    { header: 'Órgão público', key: 'orgao' },
     {
-      header: 'CNPJ',
-      key: 'cnpj',
-      render: (cnpj) => (
-        <span className="whitespace-nowrap font-mono text-xs">{formatarCnpj(String(cnpj))}</span>
+      header: 'Órgão público / CNPJ',
+      key: 'orgao',
+      render: (_, contrato) => (
+        <div>
+          <p>{contrato.orgao.nome}</p>
+          <p className="mt-1 whitespace-nowrap font-mono text-xs text-muted-foreground">
+            {contrato.orgao.cnpj ? formatarCnpj(contrato.orgao.cnpj) : 'CNPJ não informado'}
+          </p>
+        </div>
       ),
-    },
-    {
-      header: 'Estações vinculadas',
-      key: 'estacaoIds',
-      render: (_, contrato) => {
-        const estacoes = ESTACOES_DISPONIVEIS.filter((estacao) =>
-          contrato.estacaoIds.includes(estacao.id),
-        );
-        return estacoes.length > 0 ? (
-          <div className="flex min-w-44 flex-col gap-1">
-            {estacoes.map((estacao) => (
-              <span key={estacao.id} className="text-xs">
-                {estacao.nome}
-                <span className="ml-1 font-mono text-[10px] text-muted-foreground">
-                  ({estacao.codigo})
-                </span>
-              </span>
-            ))}
-          </div>
-        ) : (
-          <span className="text-xs text-muted-foreground">Nenhuma estação vinculada</span>
-        );
-      },
     },
     {
       header: 'Vigência',
@@ -373,7 +386,7 @@ export default function ContratosPage() {
       key: 'status',
       render: (_, contrato) => (
         <span
-          className={`inline-block rounded-full border px-2.5 py-1 text-xs font-semibold ${CORES_STATUS[contrato.status]}`}
+          className={`inline-block whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${CORES_STATUS[contrato.status]}`}
         >
           {ROTULOS_STATUS[contrato.status]}
         </span>
@@ -384,108 +397,159 @@ export default function ContratosPage() {
       key: 'id',
       render: (_, contrato) => (
         <div className="flex gap-3">
-          <button
-            type="button"
-            onClick={() => abrirEdicao(contrato)}
-            className="inline-flex items-center gap-1 text-xs font-medium text-aqua hover:underline"
-          >
-            <Pencil className="size-3" />
-            Editar
-          </button>
-          <button
-            type="button"
-            onClick={() => setContratoExcluindo(contrato)}
-            className="inline-flex items-center gap-1 text-xs font-medium text-destructive hover:underline"
-          >
-            <Trash2 className="size-3" />
-            Excluir
-          </button>
+          {contrato.status !== 'ENCERRADO' && (
+            <>
+              <button
+                type="button"
+                onClick={() => abrirEdicao(contrato)}
+                className="inline-flex items-center gap-1 text-xs font-medium text-aqua hover:underline"
+              >
+                <Pencil className="size-3" />
+                Editar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setErroConfirmacao(null);
+                  setConfirmacaoStatus({ tipo: 'encerrar', contrato });
+                }}
+                className="inline-flex items-center gap-1 text-xs font-medium text-warning hover:underline"
+              >
+                <Check className="size-3" />
+                Encerrar
+              </button>
+            </>
+          )}
         </div>
       ),
     },
   ];
 
+  if (!usuario) {
+    return <p className="p-6 text-sm text-muted-foreground">Carregando perfil...</p>;
+  }
+
+  if (!ehAdministrador) {
+    return (
+      <div role="alert" className="rounded-md border border-border bg-card p-6 text-sm">
+        Esta página está disponível somente para administradores.
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <PageHeading
         title="Contratos e licitações"
-        description="Acompanhe os contratos públicos, seus órgãos e períodos de vigência."
+        description="Gerencie contratos públicos, órgãos contratantes e períodos de vigência."
         action={
-          <Button type="button" onClick={abrirCadastro}>
+          <Button type="button" onClick={abrirCadastro} disabled={orgaosAtivos.length === 0}>
             <Plus />
             Novo contrato
           </Button>
         }
       />
 
-      <section className="grid gap-3 sm:grid-cols-3" aria-label="Resumo de contratos">
-        <article className="rounded-lg border border-border bg-card px-4 py-4">
-          <p className="font-mono text-[10px] uppercase text-muted-foreground">Total de contratos</p>
-          <p className="mt-2 font-display text-2xl font-semibold">{estatisticas.total}</p>
-          <p className="mt-1 text-xs text-muted-foreground">cadastrados neste navegador</p>
-        </article>
-        <article className="rounded-lg border border-border bg-card px-4 py-4">
-          <p className="font-mono text-[10px] uppercase text-muted-foreground">Vigentes</p>
-          <p className="mt-2 font-display text-2xl font-semibold">{estatisticas.vigentes}</p>
-          <p className="mt-1 text-xs text-muted-foreground">contratos em andamento</p>
-        </article>
-        <article className="rounded-lg border border-border bg-card px-4 py-4">
-          <p className="font-mono text-[10px] uppercase text-muted-foreground">Encerrados</p>
-          <p className="mt-2 font-display text-2xl font-semibold">{estatisticas.encerrados}</p>
-          <p className="mt-1 text-xs text-muted-foreground">contratos finalizados</p>
+      <section aria-label="Resumo de contratos">
+        <article className="w-full rounded-lg border border-border bg-card px-4 py-4 sm:max-w-xs">
+          <p className="font-mono text-[10px] uppercase text-muted-foreground">
+            Contratos encontrados
+          </p>
+          <p className="mt-2 font-display text-2xl font-semibold">{total}</p>
         </article>
       </section>
 
-      <section aria-label="Filtros de contratos" className="grid gap-2.5 sm:grid-cols-2">
-        <div className="flex flex-col gap-1">
-          <label
-            htmlFor="buscaContrato"
-            className="font-mono text-[10px] uppercase text-muted-foreground"
+      {erroOrgaos && (
+        <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Não foi possível carregar a lista de órgãos: {erroOrgaos}
+        </div>
+      )}
+      {erroPagina && (
+        <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {erroPagina}
+          <Button
+            type="button"
+            variant="outline"
+            className="ml-3"
+            onClick={atualizarLista}
           >
-            Buscar
+            Tentar novamente
+          </Button>
+        </div>
+      )}
+
+      <section aria-label="Filtros de contratos" className="grid gap-2.5 sm:grid-cols-3">
+        <div className="flex flex-col gap-1">
+          <label htmlFor="buscaContrato" className="font-mono text-[10px] uppercase text-muted-foreground">
+            Buscar por número
           </label>
           <Input
             id="buscaContrato"
             type="search"
             value={busca}
             onChange={(evento) => {
+              setCarregando(true);
               setBusca(evento.target.value);
               setPagina(1);
             }}
-            placeholder="Buscar por número ou órgão público..."
+            placeholder="Número, objeto ou órgão..."
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label
-            htmlFor="statusContrato"
-            className="font-mono text-[10px] uppercase text-muted-foreground"
-          >
+          <label htmlFor="statusContrato" className="font-mono text-[10px] uppercase text-muted-foreground">
             Status
           </label>
           <Select
             id="statusContrato"
             value={filtroStatus}
             onChange={(evento) => {
-              setFiltroStatus(evento.target.value as StatusContrato | 'TODOS');
+              setCarregando(true);
+              setFiltroStatus(evento.target.value as StatusContratoApi | 'TODOS');
               setPagina(1);
             }}
           >
             <option value="TODOS">Todos os status</option>
-            <option value="VIGENTE">Vigente</option>
-            <option value="ENCERRADO">Encerrado</option>
-            <option value="SUSPENSO">Suspenso</option>
+            {STATUS_CONTRATO.map((status) => (
+              <option key={status} value={status}>{ROTULOS_STATUS[status]}</option>
+            ))}
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="orgaoFiltroContrato" className="font-mono text-[10px] uppercase text-muted-foreground">
+            Órgão
+          </label>
+          <Select
+            id="orgaoFiltroContrato"
+            value={filtroOrgao}
+            onChange={(evento) => {
+              setCarregando(true);
+              setFiltroOrgao(evento.target.value);
+              setPagina(1);
+            }}
+          >
+            <option value="TODOS">Todos os órgãos</option>
+            {orgaos.map((orgao) => (
+              <option key={orgao.id} value={orgao.id}>{orgao.nome}</option>
+            ))}
           </Select>
         </div>
       </section>
 
-      <DataTable<Contrato>
-        columns={colunas}
-        data={contratosPaginados}
-        currentPage={paginaAtual}
-        totalPages={totalPaginas}
-        onPageChange={setPagina}
-        rowKey="id"
-      />
+      {carregando ? (
+        <p className="py-8 text-center text-sm text-muted-foreground">Carregando contratos...</p>
+      ) : (
+        <DataTable<ContratoApi>
+          columns={colunas}
+          data={contratos}
+          currentPage={paginaAtual}
+          totalPages={totalPaginas}
+          onPageChange={(novaPagina) => {
+            setCarregando(true);
+            setPagina(novaPagina);
+          }}
+          rowKey="id"
+        />
+      )}
 
       {modalAberto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -502,16 +566,12 @@ export default function ContratosPage() {
                   {contratoEditando ? 'Editar contrato' : 'Cadastrar contrato'}
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  Preencha os dados de demonstração do contrato público.
+                  O CNPJ exibido na listagem é obtido do órgão selecionado.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => {
-                  setModalAberto(false);
-                  setDadosParaEncerrar(null);
-                  setErroFormulario(null);
-                }}
+                onClick={() => setModalAberto(false)}
                 className="rounded-md p-2 hover:bg-muted"
                 aria-label="Fechar modal"
               >
@@ -522,143 +582,92 @@ export default function ContratosPage() {
             <div className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-1">
-                  <label htmlFor="numeroContrato" className="text-sm font-medium">
-                    Número do contrato
-                  </label>
+                  <label htmlFor="numeroContrato" className="text-sm font-medium">Número do contrato</label>
                   <Input
                     id="numeroContrato"
                     required
-                    maxLength={40}
+                    maxLength={100}
                     autoFocus
-                    placeholder="Ex.: 018/2025"
                     value={formulario.numero}
-                    onChange={(evento) =>
-                      setFormulario((atual) => ({ ...atual, numero: evento.target.value }))
-                    }
+                    onChange={(evento) => setFormulario((atual) => ({ ...atual, numero: evento.target.value }))}
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label htmlFor="statusModalContrato" className="text-sm font-medium">
-                    Status
-                  </label>
+                  <label htmlFor="statusModalContrato" className="text-sm font-medium">Status</label>
                   <Select
                     id="statusModalContrato"
                     value={formulario.status}
+                    disabled={contratoEditando?.status === 'ENCERRADO'}
                     onChange={(evento) =>
                       setFormulario((atual) => ({
                         ...atual,
-                        status: evento.target.value as StatusContrato,
+                        status: evento.target.value as StatusContratoApi,
                       }))
                     }
                   >
-                    <option value="VIGENTE">Vigente</option>
-                    <option value="ENCERRADO">Encerrado</option>
-                    <option value="SUSPENSO">Suspenso</option>
+                    {STATUS_CONTRATO.filter((status) =>
+                      contratoEditando
+                        ? TRANSICOES_PERMITIDAS[contratoEditando.status].includes(status)
+                        : status !== 'SUSPENSO',
+                    ).map((status) => (
+                      <option key={status} value={status}>{ROTULOS_STATUS[status]}</option>
+                    ))}
                   </Select>
                 </div>
               </div>
 
               <div className="flex flex-col gap-1">
-                <label htmlFor="orgaoContrato" className="text-sm font-medium">
-                  Órgão público
-                </label>
-                <Input
-                  id="orgaoContrato"
+                <label htmlFor="objetoContrato" className="text-sm font-medium">Objeto</label>
+                <textarea
+                  id="objetoContrato"
                   required
-                  maxLength={160}
-                  placeholder="Ex.: Defesa Civil municipal"
-                  value={formulario.orgao}
-                  onChange={(evento) =>
-                    setFormulario((atual) => ({ ...atual, orgao: evento.target.value }))
-                  }
+                  maxLength={2000}
+                  rows={3}
+                  value={formulario.objeto}
+                  onChange={(evento) => setFormulario((atual) => ({ ...atual, objeto: evento.target.value }))}
+                  className="rounded-md border border-input bg-card px-3 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
-                <label htmlFor="cnpjContrato" className="text-sm font-medium">
-                  CNPJ
-                </label>
-                <Input
-                  id="cnpjContrato"
+                <label htmlFor="orgaoContrato" className="text-sm font-medium">Órgão público</label>
+                <Select
+                  id="orgaoContrato"
                   required
-                  autoCapitalize="characters"
-                  autoComplete="off"
-                  maxLength={18}
-                  placeholder="00.000.000/0000-00"
-                  value={formulario.cnpj}
-                  aria-describedby="ajudaCnpjContrato"
-                  onChange={(evento) =>
-                    setFormulario((atual) => ({
-                      ...atual,
-                      cnpj: formatarCnpj(evento.target.value),
-                    }))
-                  }
-                />
-                <p id="ajudaCnpjContrato" className="text-xs text-muted-foreground">
-                  O CNPJ será validado pelos dígitos verificadores antes de salvar.
-                </p>
+                  value={formulario.orgaoId}
+                  disabled={orgaosAtivos.length === 0}
+                  onChange={(evento) => setFormulario((atual) => ({ ...atual, orgaoId: evento.target.value }))}
+                >
+                  <option value="" disabled>Selecione um órgão ativo</option>
+                  {opcoesOrgaos.map((orgao) => (
+                    <option key={orgao.id} value={orgao.id}>
+                      {orgao.nome}{orgao.cnpj ? ` — ${formatarCnpj(orgao.cnpj)}` : ''}
+                      {!orgao.ativo ? ' (inativo)' : ''}
+                    </option>
+                  ))}
+                </Select>
+                {orgaos.length === 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Cadastre ou ative um órgão antes de criar contratos.
+                  </p>
+                )}
               </div>
-
-              <fieldset className="rounded-md border border-border p-3">
-                <legend className="px-1 text-sm font-medium">Estações vinculadas</legend>
-                <p className="mb-3 text-xs text-muted-foreground">
-                  Selecione as estações atendidas por este contrato.
-                </p>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {ESTACOES_DISPONIVEIS.map((estacao) => {
-                    const selecionada = formulario.estacaoIds.includes(estacao.id);
-                    return (
-                      <label
-                        key={estacao.id}
-                        className="flex cursor-pointer items-start gap-2 rounded-md border border-border p-2.5 text-sm hover:bg-muted/40"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selecionada}
-                          onChange={() =>
-                            setFormulario((atual) => ({
-                              ...atual,
-                              estacaoIds: selecionada
-                                ? atual.estacaoIds.filter((id) => id !== estacao.id)
-                                : [...atual.estacaoIds, estacao.id],
-                            }))
-                          }
-                          className="mt-0.5 accent-current"
-                        />
-                        <span>
-                          <span className="block font-medium">{estacao.nome}</span>
-                          <span className="font-mono text-xs text-muted-foreground">
-                            {estacao.codigo}
-                          </span>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
 
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="flex flex-col gap-1">
-                  <label htmlFor="inicioVigencia" className="text-sm font-medium">
-                    Início da vigência
-                  </label>
+                  <label htmlFor="inicioVigencia" className="text-sm font-medium">Início da vigência</label>
                   <Input
                     id="inicioVigencia"
                     type="date"
                     required
                     value={formulario.inicioVigencia}
                     onChange={(evento) =>
-                      setFormulario((atual) => ({
-                        ...atual,
-                        inicioVigencia: evento.target.value,
-                      }))
+                      setFormulario((atual) => ({ ...atual, inicioVigencia: evento.target.value }))
                     }
                   />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label htmlFor="fimVigencia" className="text-sm font-medium">
-                    Fim da vigência
-                  </label>
+                  <label htmlFor="fimVigencia" className="text-sm font-medium">Fim da vigência</label>
                   <Input
                     id="fimVigencia"
                     type="date"
@@ -666,109 +675,68 @@ export default function ContratosPage() {
                     min={formulario.inicioVigencia || undefined}
                     value={formulario.fimVigencia}
                     onChange={(evento) =>
-                      setFormulario((atual) => ({
-                        ...atual,
-                        fimVigencia: evento.target.value,
-                      }))
+                      setFormulario((atual) => ({ ...atual, fimVigencia: evento.target.value }))
                     }
                   />
                 </div>
               </div>
 
               {erroFormulario && (
-                <div
-                  role="alert"
-                  className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                >
+                <div role="alert" className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {erroFormulario}
                 </div>
               )}
             </div>
 
             <div className="mt-6 flex justify-end gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setModalAberto(false);
-                  setDadosParaEncerrar(null);
-                  setErroFormulario(null);
-                }}
-              >
+              <Button type="button" variant="outline" onClick={() => setModalAberto(false)}>
                 Cancelar
               </Button>
-              <Button type="submit">
-                {contratoEditando ? 'Salvar alterações' : 'Cadastrar contrato'}
+              <Button type="submit" disabled={salvando || Boolean(erroOrgaos)}>
+                {salvando ? 'Salvando...' : contratoEditando ? 'Salvar alterações' : 'Cadastrar contrato'}
               </Button>
             </div>
           </form>
         </div>
       )}
 
-      {contratoExcluindo && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
-          <div
-            className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl"
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="titulo-exclusao-contrato"
-          >
-            <h2 id="titulo-exclusao-contrato" className="text-lg font-semibold">
-              Excluir contrato
-            </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Tem certeza que deseja excluir o contrato{' '}
-              <strong>{contratoExcluindo.numero}</strong>? Esta ação não pode ser desfeita.
-            </p>
-            <div className="mt-6 flex justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setContratoExcluindo(null)}
-              >
-                Cancelar
-              </Button>
-              <Button
-                type="button"
-                onClick={excluirContrato}
-                className="bg-red-600 text-white hover:bg-red-700"
-              >
-                Excluir
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {dadosParaEncerrar && (
+      {confirmacaoStatus && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-4">
           <div
             className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl"
             role="alertdialog"
             aria-modal="true"
-            aria-labelledby="titulo-confirmacao-encerramento"
+            aria-labelledby="titulo-confirmacao-status"
           >
-            <h2 id="titulo-confirmacao-encerramento" className="text-lg font-semibold">
-              Confirmar encerramento do contrato?
+            <h2 id="titulo-confirmacao-status" className="text-lg font-semibold">
+              Confirmar mudança de status?
             </h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              O contrato <strong>{dadosParaEncerrar.numero}</strong> será marcado como encerrado.
-              Deseja continuar?
+              {confirmacaoStatus.tipo === 'encerrar'
+                ? <>O contrato <strong>{confirmacaoStatus.contrato.numero}</strong> será marcado como encerrado.</>
+                : <>
+                    O contrato {confirmacaoStatus.contrato && <strong>{confirmacaoStatus.contrato.numero}</strong>}
+                    {confirmacaoStatus.contrato ? ' terá o status alterado para ' : ' será cadastrado com o status '}
+                    <strong>{ROTULOS_STATUS[confirmacaoStatus.dados.status]}</strong>.
+                  </>}
+              {' '}Deseja continuar?
             </p>
+            {erroConfirmacao && (
+              <div role="alert" className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {erroConfirmacao}
+              </div>
+            )}
             <div className="mt-6 flex justify-end gap-3">
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setDadosParaEncerrar(null)}
+                disabled={salvando}
+                onClick={() => setConfirmacaoStatus(null)}
               >
                 Voltar
               </Button>
-              <Button
-                type="button"
-                onClick={confirmarEncerramento}
-                className="bg-warning text-warning-foreground hover:opacity-90"
-              >
-                Encerrar contrato
+              <Button type="button" disabled={salvando} onClick={() => void confirmarMudancaStatus()}>
+                {salvando ? 'Salvando...' : 'Confirmar'}
               </Button>
             </div>
           </div>
