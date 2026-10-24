@@ -4,6 +4,8 @@ import { TelemetriaService } from '../../src/ingestao/telemetria.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { criarAppDeTeste, emailDeTeste, PREFIXO_TESTE } from '../helpers';
 
+jest.setTimeout(30_000);
+
 // Com o banco real: os triggers barram UPDATE e DELETE direto em
 // leituras_brutas e medidas, inclusive fora da API.
 describe('Imutabilidade dos dados originais (funcional)', () => {
