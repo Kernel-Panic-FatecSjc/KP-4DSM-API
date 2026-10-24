@@ -32,8 +32,11 @@ type Estacao = {
 type Contrato = {
   id: string;
   numero: string;
-  orgao: string;
-  cnpj: string;
+  orgao: {
+    id: string;
+    nome: string;
+    cnpj: string | null;
+  };
   inicioVigencia: string;
   fimVigencia: string;
   status: string;
@@ -43,10 +46,17 @@ type EstacaoDisponivel = {
   id: string;
   nome: string;
   vid: string;
+  statusOperacional: string;
   contrato: {
     id: string;
     numero: string;
   } | null;
+};
+
+type PerfilResposta = {
+  perfil?: string;
+  role?: string;
+  tipo?: string;
 };
 
 export default function ContratoDetalhePage({
@@ -66,58 +76,116 @@ export default function ContratoDetalhePage({
   const [estacaoAberta, setEstacaoAberta] = useState<string | null>(null);
   const [selecionadas, setSelecionadas] = useState<string[]>([]);
 
+  const [ehAdministrador, setEhAdministrador] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [carregandoDisponiveis, setCarregandoDisponiveis] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  const carregarDados = async () => {
-    try {
-      setCarregando(true);
-      setErro(null);
+  useEffect(() => {
+    let ativo = true;
 
-      const [contratoResposta, estacoesResposta] = await Promise.all([
-        api<Contrato>(`/contratos/${id}`),
-        api<Estacao[]>(`/contratos/${id}/estacoes`),
-      ]);
+    async function carregarDados() {
+      try {
+        if (ativo) {
+          setCarregando(true);
+          setErro(null);
+        }
 
-      setContrato(contratoResposta);
-      setEstacoes(estacoesResposta);
-    } catch (error) {
-      setErro(
-        error instanceof ErroApi
-          ? error.message
-          : 'Não foi possível carregar o contrato.',
-      );
-    } finally {
-      setCarregando(false);
+        const [contratoResposta, estacoesResposta] = await Promise.all([
+          api<Contrato>(`/contratos/${id}`),
+          api<Estacao[]>(`/contratos/${id}/estacoes`),
+        ]);
+
+        if (!ativo) {
+          return;
+        }
+
+        setContrato(contratoResposta);
+        setEstacoes(estacoesResposta);
+      } catch (error) {
+        if (!ativo) {
+          return;
+        }
+
+        setErro(
+          error instanceof ErroApi
+            ? error.message
+            : 'Não foi possível carregar o contrato.',
+        );
+      } finally {
+        if (ativo) {
+          setCarregando(false);
+        }
+      }
     }
-  };
 
-  const carregarEstacoesDisponiveis = async () => {
-    try {
-      setCarregandoDisponiveis(true);
+    async function carregarPerfil() {
+      try {
+        const perfil = await api<PerfilResposta>('/autenticacao/perfil');
 
-      const resposta = await api<EstacaoDisponivel[]>('/estacoes');
+        if (!ativo) {
+          return;
+        }
 
-      setEstacoesDisponiveis(
-        resposta.filter((estacao) => estacao.contrato === null),
-      );
-    } catch (error) {
-      setErro(
-        error instanceof ErroApi
-          ? error.message
-          : 'Não foi possível carregar as estações disponíveis.',
-      );
-    } finally {
-      setCarregandoDisponiveis(false);
+        const valorPerfil = perfil.perfil ?? perfil.role ?? perfil.tipo;
+        setEhAdministrador(valorPerfil === 'ADMINISTRADOR');
+      } catch {
+        if (ativo) {
+          setEhAdministrador(false);
+        }
+      }
     }
-  };
+
+    carregarDados();
+    carregarPerfil();
+
+    return () => {
+      ativo = false;
+    };
+  }, [id]);
 
   useEffect(() => {
-    carregarDados();
+    if (!contrato || !ehAdministrador || contrato.status !== 'VIGENTE') {
+      return;
+    }
+
+    let ativo = true;
+
+    async function carregarEstacoesDisponiveis() {
+      try {
+        setCarregandoDisponiveis(true);
+
+        const resposta = await api<EstacaoDisponivel[]>('/estacoes');
+
+        if (!ativo) {
+          return;
+        }
+
+        setEstacoesDisponiveis(
+          resposta.filter(
+            (estacao) =>
+              estacao.contrato === null &&
+              estacao.statusOperacional === 'ATIVA',
+          ),
+        );
+      } catch {
+        if (ativo) {
+          setEstacoesDisponiveis([]);
+        }
+      } finally {
+        if (ativo) {
+          setCarregandoDisponiveis(false);
+        }
+      }
+    }
+
     carregarEstacoesDisponiveis();
-  }, [id]);
+
+    return () => {
+      ativo = false;
+    };
+  }, [contrato, ehAdministrador]);
 
   const alternarEstacao = (estacaoId: string) => {
     setSelecionadas((atual) =>
@@ -128,7 +196,11 @@ export default function ContratoDetalhePage({
   };
 
   const vincularEstacoes = async () => {
-    if (selecionadas.length === 0) {
+    if (
+      selecionadas.length === 0 ||
+      !ehAdministrador ||
+      contrato?.status !== 'VIGENTE'
+    ) {
       return;
     }
 
@@ -144,8 +216,24 @@ export default function ContratoDetalhePage({
       });
 
       setSelecionadas([]);
-      await carregarDados();
-      await carregarEstacoesDisponiveis();
+
+      const estacoesResposta = await api<Estacao[]>(
+        `/contratos/${id}/estacoes`,
+      );
+
+      setEstacoes(estacoesResposta);
+
+      if (contrato.status === 'VIGENTE') {
+        const disponiveis = await api<EstacaoDisponivel[]>('/estacoes');
+
+        setEstacoesDisponiveis(
+          disponiveis.filter(
+            (estacao) =>
+              estacao.contrato === null &&
+              estacao.statusOperacional === 'ATIVA',
+          ),
+        );
+      }
     } catch (error) {
       setErro(
         error instanceof ErroApi
@@ -158,6 +246,10 @@ export default function ContratoDetalhePage({
   };
 
   const desvincularEstacao = async (estacaoId: string) => {
+    if (!ehAdministrador) {
+      return;
+    }
+
     const confirmar = window.confirm(
       'Tem certeza que deseja desvincular esta estação do contrato?',
     );
@@ -174,8 +266,23 @@ export default function ContratoDetalhePage({
         method: 'DELETE',
       });
 
-      await carregarDados();
-      await carregarEstacoesDisponiveis();
+      const estacoesResposta = await api<Estacao[]>(
+        `/contratos/${id}/estacoes`,
+      );
+
+      setEstacoes(estacoesResposta);
+
+      if (contrato?.status === 'VIGENTE') {
+        const disponiveis = await api<EstacaoDisponivel[]>('/estacoes');
+
+        setEstacoesDisponiveis(
+          disponiveis.filter(
+            (estacao) =>
+              estacao.contrato === null &&
+              estacao.statusOperacional === 'ATIVA',
+          ),
+        );
+      }
     } catch (error) {
       setErro(
         error instanceof ErroApi
@@ -252,12 +359,14 @@ export default function ContratoDetalhePage({
 
           <div>
             <p className="text-sm text-muted-foreground">Órgão público</p>
-            <p className="font-medium">{contrato.orgao}</p>
+            <p className="font-medium">{contrato.orgao.nome}</p>
           </div>
 
           <div>
             <p className="text-sm text-muted-foreground">CNPJ</p>
-            <p className="font-medium">{contrato.cnpj}</p>
+            <p className="font-medium">
+              {contrato.orgao.cnpj ?? 'Não informado'}
+            </p>
           </div>
 
           <div>
@@ -266,12 +375,16 @@ export default function ContratoDetalhePage({
           </div>
 
           <div>
-            <p className="text-sm text-muted-foreground">Início da vigência</p>
+            <p className="text-sm text-muted-foreground">
+              Início da vigência
+            </p>
             <p className="font-medium">{contrato.inicioVigencia}</p>
           </div>
 
           <div>
-            <p className="text-sm text-muted-foreground">Fim da vigência</p>
+            <p className="text-sm text-muted-foreground">
+              Fim da vigência
+            </p>
             <p className="font-medium">{contrato.fimVigencia}</p>
           </div>
         </div>
@@ -320,15 +433,17 @@ export default function ContratoDetalhePage({
                       </div>
                     </button>
 
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={salvando}
-                      onClick={() => desvincularEstacao(estacao.id)}
-                    >
-                      <Unlink className="mr-2 size-4" />
-                      Desvincular
-                    </Button>
+                    {ehAdministrador && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={salvando}
+                        onClick={() => desvincularEstacao(estacao.id)}
+                      >
+                        <Unlink className="mr-2 size-4" />
+                        Desvincular
+                      </Button>
+                    )}
                   </div>
 
                   {aberta && (
@@ -361,56 +476,60 @@ export default function ContratoDetalhePage({
         )}
       </section>
 
-      <section className="rounded-lg border bg-card p-6">
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold">Vincular estações</h2>
-          <p className="text-sm text-muted-foreground">
-            Selecione as estações que ainda não possuem contrato.
-          </p>
-        </div>
-
-        {carregandoDisponiveis ? (
-          <p className="text-sm text-muted-foreground">Carregando estações...</p>
-        ) : estacoesDisponiveis.length === 0 ? (
-          <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-            Não há estações disponíveis para vinculação.
+      {ehAdministrador && contrato.status === 'VIGENTE' && (
+        <section className="rounded-lg border bg-card p-6">
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold">Vincular estações</h2>
+            <p className="text-sm text-muted-foreground">
+              Selecione as estações ativas que ainda não possuem contrato.
+            </p>
           </div>
-        ) : (
-          <>
-            <div className="space-y-2">
-              {estacoesDisponiveis.map((estacao) => (
-                <label
-                  key={estacao.id}
-                  className="flex cursor-pointer items-center gap-3 rounded-md border p-3 hover:bg-muted/40"
+
+          {carregandoDisponiveis ? (
+            <p className="text-sm text-muted-foreground">
+              Carregando estações...
+            </p>
+          ) : estacoesDisponiveis.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Não há estações disponíveis para vinculação.
+            </div>
+          ) : (
+            <>
+              <div className="space-y-2">
+                {estacoesDisponiveis.map((estacao) => (
+                  <label
+                    key={estacao.id}
+                    className="flex cursor-pointer items-center gap-3 rounded-md border p-3 hover:bg-muted/40"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selecionadas.includes(estacao.id)}
+                      onChange={() => alternarEstacao(estacao.id)}
+                    />
+
+                    <div>
+                      <p className="font-medium">{estacao.nome}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {estacao.vid}
+                      </p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-4 flex justify-end">
+                <Button
+                  disabled={selecionadas.length === 0 || salvando}
+                  onClick={vincularEstacoes}
                 >
-                  <input
-                    type="checkbox"
-                    checked={selecionadas.includes(estacao.id)}
-                    onChange={() => alternarEstacao(estacao.id)}
-                  />
-
-                  <div>
-                    <p className="font-medium">{estacao.nome}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {estacao.vid}
-                    </p>
-                  </div>
-                </label>
-              ))}
-            </div>
-
-            <div className="mt-4 flex justify-end">
-              <Button
-                disabled={selecionadas.length === 0 || salvando}
-                onClick={vincularEstacoes}
-              >
-                <Link2 className="mr-2 size-4" />
-                {salvando ? 'Vinculando...' : 'Vincular selecionadas'}
-              </Button>
-            </div>
-          </>
-        )}
-      </section>
+                  <Link2 className="mr-2 size-4" />
+                  {salvando ? 'Vinculando...' : 'Vincular selecionadas'}
+                </Button>
+              </div>
+            </>
+          )}
+        </section>
+      )}
     </div>
   );
 }
