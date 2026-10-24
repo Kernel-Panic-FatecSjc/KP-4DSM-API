@@ -136,9 +136,18 @@ describe('Hierarquia de contrato, estações e sensores (funcional)', () => {
     });
   });
 
-  it('exige autenticação e documenta a rota no Swagger', async () => {
+  it('exige autenticação para consultar, vincular e desvincular e documenta a rota no Swagger', async () => {
     await request(app.getHttpServer())
       .get(`/contratos/${CONTRATO_ID}/estacoes`)
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post(`/contratos/${CONTRATO_ID}/estacoes`)
+      .send({ estacaoIds: [UUID_ESTACAO] })
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .delete(`/contratos/${CONTRATO_ID}/estacoes/${UUID_ESTACAO}`)
       .expect(401);
 
     const swagger = await request(app.getHttpServer())
@@ -209,6 +218,16 @@ describe('Hierarquia de contrato, estações e sensores (funcional)', () => {
     contrato.findUnique.mockResolvedValueOnce({
       id: CONTRATO_ID,
       status: 'RASCUNHO',
+    });
+    await request(app.getHttpServer())
+      .post(`/contratos/${CONTRATO_ID}/estacoes`)
+      .set('Cookie', adminCookie)
+      .send({ estacaoIds: [UUID_ESTACAO] })
+      .expect(400);
+
+    contrato.findUnique.mockResolvedValueOnce({
+      id: CONTRATO_ID,
+      status: 'ENCERRADO',
     });
     await request(app.getHttpServer())
       .post(`/contratos/${CONTRATO_ID}/estacoes`)
