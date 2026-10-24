@@ -18,6 +18,7 @@ const POSICAO_ESTACAO = { latitude: -23.1627, longitude: -45.7953 };
 // Taubaté (~40 km da estação) e Manaus (~2.700 km).
 const PERTO = { latitude: -23.0264, longitude: -45.5553 };
 const LONGE = { latitude: -3.119, longitude: -60.0217 };
+const NOME_ESTACAO = `${PREFIXO_TESTE}Estação tempo real`;
 
 // Ponta a ponta com o banco real: inserir uma medida acima do limite faz o
 // trigger criar o alarme e notificar (pg_notify), e o websocket repassa a
@@ -46,13 +47,23 @@ describe('Alarmes em tempo real (funcional)', () => {
     return cliente;
   }
 
+  // O banco de teste é compartilhado com as outras suítes funcionais, que rodam
+  // em paralelo: quem está logado recebe os alarmes de todas as estações. Por
+  // isso só contam aqui os alarmes da estação criada por esta suíte.
   function aguardarAlarmes(cliente: Socket): Promise<AlarmeRecebido[]> {
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Nenhum alarme recebido pelo websocket')), 5000);
-      cliente.once(EVENTO_NOVOS_ALARMES, (alarmes: AlarmeRecebido[]) => {
+      const aoReceber = (alarmes: AlarmeRecebido[]) => {
+        const proprios = alarmes.filter((alarme) => alarme.estacao.nome === NOME_ESTACAO);
+        if (proprios.length === 0) return;
         clearTimeout(timer);
-        resolve(alarmes);
-      });
+        cliente.off(EVENTO_NOVOS_ALARMES, aoReceber);
+        resolve(proprios);
+      };
+      const timer = setTimeout(() => {
+        cliente.off(EVENTO_NOVOS_ALARMES, aoReceber);
+        reject(new Error('Nenhum alarme recebido pelo websocket'));
+      }, 5000);
+      cliente.on(EVENTO_NOVOS_ALARMES, aoReceber);
     });
   }
 
@@ -81,7 +92,7 @@ describe('Alarmes em tempo real (funcional)', () => {
     });
     const estacao = await prisma.estacao.create({
       data: {
-        nome: `${PREFIXO_TESTE}Estação tempo real`,
+        nome: NOME_ESTACAO,
         endereco: 'Rua de teste',
         vid: `${PREFIXO_TESTE}${Date.now()}`,
         usuarioId: usuario.id,
@@ -122,7 +133,7 @@ describe('Alarmes em tempo real (funcional)', () => {
     expect(alarmesPerto[0]).toMatchObject({
       valorMedido: 80,
       severidade: 'EMERGENCIA',
-      estacao: { nome: `${PREFIXO_TESTE}Estação tempo real` },
+      estacao: { nome: NOME_ESTACAO },
     });
     expect(alarmesAdmin).toEqual(alarmesPerto);
 

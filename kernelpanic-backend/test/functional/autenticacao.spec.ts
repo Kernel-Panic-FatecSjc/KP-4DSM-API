@@ -22,7 +22,12 @@ describe('Autenticação (funcional)', () => {
     // Usuário criado diretamente no banco (bootstrap), simulando o usuário
     // de seed que só existe para permitir a criação dos demais via API.
     await prisma.usuario.create({
-      data: { nome: admin.nome, email: admin.email, senhaHash: await bcrypt.hash(admin.senha, 10) },
+      data: {
+        nome: admin.nome,
+        email: admin.email,
+        senhaHash: await bcrypt.hash(admin.senha, 10),
+        tipo: 'ADMINISTRADOR',
+      },
     });
     await prisma.usuario.create({
       data: { nome: monitor.nome, email: monitor.email, senhaHash: await bcrypt.hash(monitor.senha, 10), tipo: 'MONITOR' },
@@ -40,14 +45,19 @@ describe('Autenticação (funcional)', () => {
     await request(app.getHttpServer()).post('/usuarios').send(usuario).expect(401);
   });
 
-  it('cria um usuário quando autenticado, incluindo o nome', async () => {
+  it('cria um usuário como MONITOR quando o administrador não informa o perfil', async () => {
     const resposta = await request(app.getHttpServer())
       .post('/usuarios')
       .set('Cookie', adminCookie)
       .send(usuario)
       .expect(201);
 
-    expect(resposta.body).toMatchObject({ nome: usuario.nome, email: usuario.email, ativo: true });
+    expect(resposta.body).toMatchObject({
+      nome: usuario.nome,
+      email: usuario.email,
+      tipo: 'MONITOR',
+      ativo: true,
+    });
     expect(resposta.body.senhaHash).toBeUndefined();
   });
 
@@ -84,7 +94,8 @@ describe('Autenticação (funcional)', () => {
 
     expect(respostaPerfil.body).toMatchObject({ email: usuario.email });
 
-    await request(app.getHttpServer()).get('/usuarios').set('Cookie', cookie).expect(200);
+    // Perfil comum (MONITOR) acessa a rota autenticada, mas não a de administração.
+    await request(app.getHttpServer()).get('/usuarios').set('Cookie', cookie).expect(403);
   });
 
   it('restringe a listagem de usuários ao administrador', async () => {
@@ -104,7 +115,7 @@ describe('Autenticação (funcional)', () => {
     expect(resposta.body[0].senha).toBeUndefined();
   });
 
-  it('permite que um usuário autenticado edite outro usuário', async () => {
+  it('permite que somente o administrador edite outro usuário', async () => {
     const outro = await request(app.getHttpServer())
       .post('/usuarios')
       .set('Cookie', adminCookie)
@@ -116,6 +127,12 @@ describe('Autenticação (funcional)', () => {
     await request(app.getHttpServer())
       .patch(`/usuarios/${outroUsuarioId}`)
       .set('Cookie', cookie)
+      .send({ nome: 'Outro Editado' })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .patch(`/usuarios/${outroUsuarioId}`)
+      .set('Cookie', adminCookie)
       .send({ nome: 'Outro Editado' })
       .expect(200);
   });

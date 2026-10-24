@@ -20,6 +20,7 @@ export class UsuariosController {
   ) {}
 
   @Post()
+  @UseGuards(GuardaAdministrador)
   async criar(@Body() dto: CriarUsuarioDto, @UsuarioAutenticado() usuarioLogado: PayloadJwt): Promise<UsuarioRespostaDto> {
     const usuario = await this.usuariosService.criar(dto);
     await this.auditoriaService.registrar({
@@ -47,6 +48,7 @@ export class UsuariosController {
   }
 
   @Patch(':id')
+  @UseGuards(GuardaAdministrador)
   async atualizar(
     @Param('id') id: string,
     @Body() dto: AtualizarUsuarioDto,
@@ -64,6 +66,7 @@ export class UsuariosController {
   }
 
   @Delete(':id')
+  @UseGuards(GuardaAdministrador)
   async inativar(@Param('id') id: string, @UsuarioAutenticado() usuarioLogado: PayloadJwt): Promise<{ mensagem: string }> {
     if (id === usuarioLogado.sub) {
       throw new ForbiddenException('Não é possível inativar o próprio usuário');

@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { camposInformados } from '../auditoria/campos-informados';
+import { GuardaAdministrador } from '../autenticacao/guarda-administrador.guard';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import type { PayloadJwt } from '../autenticacao/payload-jwt.interface';
 import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
@@ -32,6 +33,7 @@ export class SensoresController {
   }
 
   @Post()
+  @UseGuards(GuardaAdministrador)
   async criar(
     @Body() dto: CriarSensorDto,
     @UsuarioAutenticado() usuario: PayloadJwt,
@@ -48,6 +50,7 @@ export class SensoresController {
   }
 
   @Patch(':id')
+  @UseGuards(GuardaAdministrador)
   async atualizar(
     @Param('id') id: string,
     @Body() dto: AtualizarSensorDto,
@@ -65,6 +68,7 @@ export class SensoresController {
   }
 
   @Delete(':id')
+  @UseGuards(GuardaAdministrador)
   @HttpCode(HttpStatus.OK)
   async remover(
     @Param('id') id: string,

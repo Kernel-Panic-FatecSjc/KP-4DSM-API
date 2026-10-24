@@ -33,7 +33,25 @@ describe('UsuariosService', () => {
       const usuario = await service.criar({ nome: 'Fulano', email: 'a@a.com', senha: 'senha12345' });
 
       expect(usuario.senhaHash).not.toBe('senha12345');
+      expect(usuario.tipo).toBe('MONITOR');
+      expect(prismaMock.usuario.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ tipo: 'MONITOR' }),
+      });
       expect(await bcrypt.compare('senha12345', usuario.senhaHash)).toBe(true);
+    });
+
+    it('respeita o perfil enviado pelo administrador', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue(null);
+      prismaMock.usuario.create.mockImplementation(({ data }) => ({ id: '1', ...data }));
+
+      const usuario = await service.criar({
+        nome: 'Admin',
+        email: 'admin@a.com',
+        senha: 'senha12345',
+        tipo: 'ADMINISTRADOR',
+      });
+
+      expect(usuario.tipo).toBe('ADMINISTRADOR');
     });
 
     it('lança ConflictException quando o email já existe', async () => {

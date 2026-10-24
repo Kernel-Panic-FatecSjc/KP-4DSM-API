@@ -70,6 +70,7 @@ export class EstacoesController {
   }
 
   @Patch(':id')
+  @UseGuards(GuardaAdministrador)
   async atualizar(
     @Param('id') id: string,
     @Body() dto: AtualizarEstacaoDto,
@@ -87,6 +88,7 @@ export class EstacoesController {
   }
 
   @Delete(':id')
+  @UseGuards(GuardaAdministrador)
   async inativar(
     @Param('id') id: string,
     @UsuarioAutenticado() usuario: PayloadJwt,
