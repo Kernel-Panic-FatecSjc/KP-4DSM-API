@@ -131,7 +131,7 @@ function FormularioLogin() {
             <input
               id="email"
               type="email"
-              placeholder="Digite seu email"
+              placeholder="Email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -153,7 +153,7 @@ function FormularioLogin() {
             <input
               id="senha"
               type={senhaVisivel ? 'text' : 'password'}
-              placeholder="Digite sua senha"
+              placeholder="Senha"
               required
               value={senha}
               onChange={(e) => setSenha(e.target.value)}
