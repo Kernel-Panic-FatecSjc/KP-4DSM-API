@@ -1,18 +1,41 @@
 'use client';
 
 import { Pencil, Plus, Trash2, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/DataTable';
 import { PageHeading } from '@/components/PageHeading';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { api, ErroApi } from '@/lib/api';
 import { cnpjValido, formatarCnpj, gerarCnpj, limparCnpj } from '@/lib/cnpj';
 
 const ITENS_POR_PAGINA = 5;
 
 type StatusContrato = 'VIGENTE' | 'ENCERRADO' | 'SUSPENSO';
+
+interface ContratoApi {
+  id: string;
+  numero: string;
+  objeto: string;
+  inicioVigencia: string;
+  fimVigencia: string;
+  status: StatusContrato;
+  orgao: {
+    id: string;
+    nome: string;
+    cnpj: string | null;
+  };
+  quantidadeEstacoes: number;
+}
+
+interface ContratosApiResponse {
+  contratos: ContratoApi[];
+  total: number;
+  pagina: number;
+  tamanho: number;
+}
 
 interface Contrato {
   id: string;
@@ -23,6 +46,7 @@ interface Contrato {
   fimVigencia: string;
   status: StatusContrato;
   estacaoIds: string[];
+  quantidadeEstacoes: number;
 }
 
 type FormularioContrato = Omit<Contrato, 'id'>;
@@ -52,6 +76,7 @@ const CONTRATOS_INICIAIS: Contrato[] = [
     fimVigencia: '2027-01-31',
     status: 'VIGENTE',
     estacaoIds: ['estacao-centro-sjc', 'estacao-santana-sjc'],
+    quantidadeEstacoes: 2,
   },
   {
     id: 'contrato-2',
@@ -62,6 +87,7 @@ const CONTRATOS_INICIAIS: Contrato[] = [
     fimVigencia: '2026-06-14',
     status: 'VIGENTE',
     estacaoIds: ['estacao-jacarei'],
+    quantidadeEstacoes: 1,
   },
   {
     id: 'contrato-3',
@@ -72,6 +98,7 @@ const CONTRATOS_INICIAIS: Contrato[] = [
     fimVigencia: '2025-02-28',
     status: 'ENCERRADO',
     estacaoIds: ['estacao-centro-sjc', 'estacao-taubate'],
+    quantidadeEstacoes: 2,
   },
   {
     id: 'contrato-4',
@@ -82,6 +109,7 @@ const CONTRATOS_INICIAIS: Contrato[] = [
     fimVigencia: '2026-07-31',
     status: 'SUSPENSO',
     estacaoIds: ['estacao-taubate'],
+    quantidadeEstacoes: 1,
   },
   {
     id: 'contrato-6',
@@ -92,6 +120,7 @@ const CONTRATOS_INICIAIS: Contrato[] = [
     fimVigencia: '2027-08-31',
     status: 'VIGENTE',
     estacaoIds: ['estacao-cacapava'],
+    quantidadeEstacoes: 1,
   },
   {
     id: 'contrato-7',
@@ -102,6 +131,7 @@ const CONTRATOS_INICIAIS: Contrato[] = [
     fimVigencia: '2026-03-31',
     status: 'ENCERRADO',
     estacaoIds: ['estacao-paraibuna'],
+    quantidadeEstacoes: 1,
   },
   {
     id: 'contrato-8',
@@ -112,6 +142,7 @@ const CONTRATOS_INICIAIS: Contrato[] = [
     fimVigencia: '2028-01-14',
     status: 'VIGENTE',
     estacaoIds: [],
+    quantidadeEstacoes: 0,
   },
   {
     id: 'contrato-9',
@@ -122,6 +153,7 @@ const CONTRATOS_INICIAIS: Contrato[] = [
     fimVigencia: '2026-10-31',
     status: 'SUSPENSO',
     estacaoIds: ['estacao-paraibuna'],
+    quantidadeEstacoes: 1,
   },
   {
     id: 'contrato-10',
@@ -132,6 +164,7 @@ const CONTRATOS_INICIAIS: Contrato[] = [
     fimVigencia: '2025-04-30',
     status: 'ENCERRADO',
     estacaoIds: [],
+    quantidadeEstacoes: 0,
   },
   {
     id: 'contrato-11',
@@ -142,6 +175,7 @@ const CONTRATOS_INICIAIS: Contrato[] = [
     fimVigencia: '2028-06-30',
     status: 'VIGENTE',
     estacaoIds: [],
+    quantidadeEstacoes: 0,
   },
 ];
 
@@ -153,6 +187,7 @@ const FORMULARIO_INICIAL: FormularioContrato = {
   fimVigencia: '',
   status: 'VIGENTE',
   estacaoIds: [],
+  quantidadeEstacoes: 0,
 };
 
 const ROTULOS_STATUS: Record<StatusContrato, string> = {
@@ -186,6 +221,52 @@ export default function ContratosPage() {
   const [dadosParaEncerrar, setDadosParaEncerrar] = useState<FormularioContrato | null>(null);
   const [formulario, setFormulario] = useState<FormularioContrato>(FORMULARIO_INICIAL);
   const [erroFormulario, setErroFormulario] = useState<string | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+
+    async function carregarContratos() {
+      try {
+        const resposta = await api<ContratosApiResponse>(
+          '/contratos?tamanho=100&pagina=1',
+        );
+
+        if (!ativo) {
+          return;
+        }
+
+        setContratos(
+          resposta.contratos.map((contrato) => ({
+            id: contrato.id,
+            numero: contrato.numero,
+            orgao: contrato.orgao.nome,
+            cnpj: contrato.orgao.cnpj ?? '',
+            inicioVigencia: contrato.inicioVigencia,
+            fimVigencia: contrato.fimVigencia,
+            status: contrato.status,
+            estacaoIds: [],
+            quantidadeEstacoes: contrato.quantidadeEstacoes,
+          })),
+        );
+      } catch (error) {
+        if (!ativo) {
+          return;
+        }
+
+        console.error(
+          error instanceof ErroApi
+            ? error.message
+            : 'Não foi possível carregar os contratos.',
+        );
+      }
+    }
+
+    carregarContratos();
+
+    return () => {
+      ativo = false;
+    };
+  }, []);
 
   const contratosFiltrados = useMemo(() => {
     const termo = busca.trim().toLocaleLowerCase('pt-BR');
@@ -234,6 +315,7 @@ export default function ContratosPage() {
       fimVigencia: contrato.fimVigencia,
       status: contrato.status,
       estacaoIds: contrato.estacaoIds,
+      quantidadeEstacoes: contrato.quantidadeEstacoes,
     });
     setErroFormulario(null);
     setModalAberto(true);
@@ -341,26 +423,18 @@ export default function ContratosPage() {
     },
     {
       header: 'Estações vinculadas',
-      key: 'estacaoIds',
-      render: (_, contrato) => {
-        const estacoes = ESTACOES_DISPONIVEIS.filter((estacao) =>
-          contrato.estacaoIds.includes(estacao.id),
-        );
-        return estacoes.length > 0 ? (
-          <div className="flex min-w-44 flex-col gap-1">
-            {estacoes.map((estacao) => (
-              <span key={estacao.id} className="text-xs">
-                {estacao.nome}
-                <span className="ml-1 font-mono text-[10px] text-muted-foreground">
-                  ({estacao.codigo})
-                </span>
-              </span>
-            ))}
-          </div>
+      key: 'quantidadeEstacoes',
+      render: (_, contrato) =>
+        contrato.quantidadeEstacoes > 0 ? (
+          <span className="text-xs">
+            {contrato.quantidadeEstacoes}{' '}
+            {contrato.quantidadeEstacoes === 1 ? 'estação' : 'estações'}
+          </span>
         ) : (
-          <span className="text-xs text-muted-foreground">Nenhuma estação vinculada</span>
-        );
-      },
+          <span className="text-xs text-muted-foreground">
+            Nenhuma estação vinculada
+          </span>
+        ),
     },
     {
       header: 'Vigência',
