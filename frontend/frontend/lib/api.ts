@@ -96,6 +96,7 @@ export interface EstacaoApi {
   sensores: { id: string; nome: string; unidade: string }[];
   criadoEm: string;
   atualizadoEm: string;
+  contrato: { id: string; numero: string } | null;
 }
 
 
