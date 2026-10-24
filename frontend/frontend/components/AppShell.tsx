@@ -26,7 +26,7 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { AlertaTempoReal } from './AlertaTempoReal';
-import { ehRotaPublica, useSessao } from './ProtectedLayout';
+import { ehRotaPublica, useSessao, useUsuario } from './ProtectedLayout';
 import { RegiaoProvider } from './RegiaoVisitante';
 import { Button } from './ui/button';
 
@@ -35,6 +35,7 @@ interface NavLink {
   label: string;
   href: string;
   icon: LucideIcon;
+  adminOnly?: boolean;
 }
 
 
@@ -109,6 +110,7 @@ const NAV_ITEMS: NavItem[] = [
         label: 'Contratos',
         href: '/contratos',
         icon: FileText,
+        adminOnly: true,
       },
       {
         label: 'Órgãos',
@@ -129,6 +131,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     Alertas: true,
   });
   const autenticado = useSessao() === 'autenticado';
+  const ehAdministrador = useUsuario()?.tipo === 'ADMINISTRADOR';
 
 
   const todosOsItens = NAV_ITEMS.flatMap((item) =>
@@ -225,7 +228,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             // Grupo com links internos
             const filhosVisiveis = item.children.filter(
-              (filho) => autenticado || ehRotaPublica(filho.href),
+              (filho) =>
+                (autenticado && (!filho.adminOnly || ehAdministrador)) ||
+                ehRotaPublica(filho.href),
             );
 
 
