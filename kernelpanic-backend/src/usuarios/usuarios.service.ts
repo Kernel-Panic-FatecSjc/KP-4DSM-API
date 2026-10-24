@@ -2,6 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
 import type { Usuario } from '../generated/prisma/client';
+import { TipoUsuario } from '../generated/prisma/enums';
 import { AtualizarUsuarioDto } from './dto/atualizar-usuario.dto';
 import { CriarUsuarioDto } from './dto/criar-usuario.dto';
 
@@ -19,7 +20,12 @@ export class UsuariosService {
 
     const senhaHash = await bcrypt.hash(dto.senha, SALT_ROUNDS);
     return this.prisma.usuario.create({
-      data: { nome: dto.nome, email: dto.email, senhaHash },
+      data: {
+        nome: dto.nome,
+        email: dto.email,
+        senhaHash,
+        tipo: dto.tipo ?? TipoUsuario.MONITOR,
+      },
     });
   }
 

@@ -72,7 +72,7 @@ enum StatusContrato {
 model Usuario {
   id           String      @id @default(uuid())
   nome         String
-  tipo         TipoUsuario @default(ADMINISTRADOR)
+  tipo         TipoUsuario @default(MONITOR)
   email        String      @unique
   senhaHash    String
   ativo        Boolean     @default(true)

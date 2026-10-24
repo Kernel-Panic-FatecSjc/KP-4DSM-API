@@ -13,8 +13,8 @@ async function main() {
   const senhaHash = await bcrypt.hash(SENHA_PADRAO, 10);
 
   await client.query(
-    `INSERT INTO usuarios (id, nome, email, "senhaHash", ativo, "criadoEm", "atualizadoEm")
-     VALUES (gen_random_uuid(), $1, $2, $3, true, now(), now())
+    `INSERT INTO usuarios (id, nome, email, "senhaHash", tipo, ativo, "criadoEm", "atualizadoEm")
+     VALUES (gen_random_uuid(), $1, $2, $3, 'ADMINISTRADOR', true, now(), now())
      ON CONFLICT (email) DO NOTHING`,
     [NOME_PADRAO, EMAIL_PADRAO, senhaHash],
   );
