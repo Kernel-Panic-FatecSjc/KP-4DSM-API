@@ -1,4 +1,4 @@
-import { ADMIN } from './support/dados';
+import { ADMIN, LICITACAO_A, pagina } from './support/dados';
 import { expect, SEM_SESSAO, test } from './support/teste';
 
 test.describe('Login', () => {
@@ -11,6 +11,8 @@ test.describe('Login', () => {
     });
     api.responder('GET /autenticacao/perfil', () => (logado ? { body: ADMIN } : SEM_SESSAO));
     api.responder('GET /usuarios', { body: [ADMIN] });
+    // A Tecsus tem o seletor de licitação na tela de usuários.
+    api.responder('GET /licitacoes', { body: pagina([LICITACAO_A]) });
 
     await page.goto('/usuarios');
     await expect(page).toHaveURL('/login?proximo=%2Fusuarios');

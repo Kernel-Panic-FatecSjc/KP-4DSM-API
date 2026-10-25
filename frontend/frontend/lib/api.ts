@@ -34,14 +34,99 @@ export async function api<T>(caminho: string, opcoes: RequestInit = {}): Promise
 }
 
 
+/**
+ * Baixa um arquivo gerado pela API (CSV em streaming) por navegação comum: o
+ * navegador grava direto em disco, sem montar o arquivo na memória da página.
+ * O cookie de sessão vai junto, como em qualquer GET para a API.
+ */
+export function baixarDaApi(caminho: string): void {
+  const link = document.createElement('a');
+  link.href = `${API_URL}${caminho}`;
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+
+/** Resposta paginada padrão da API. */
+export interface Paginado<T> {
+  itens: T[];
+  total: number;
+  pagina: number;
+  tamanho: number;
+}
+
+
+export type TipoUsuario = 'ADMIN_TECSUS' | 'ADMIN_LICITACAO' | 'USUARIO_LICITACAO';
+
+
+export type StatusLicitacao = 'RASCUNHO' | 'VIGENTE' | 'SUSPENSA' | 'ENCERRADA';
+
+
 export interface Usuario {
   id: string;
   nome: string;
   email: string;
-  tipo: 'ADMINISTRADOR' | 'MONITOR';
+  tipo: TipoUsuario;
   ativo: boolean;
+  /** Nula para a Tecsus. */
+  licitacao: { id: string; codigoIdentificador: string; orgaoNome: string; status: StatusLicitacao } | null;
+  /** Só no perfil da sessão: a licitação do usuário não está vigente. */
+  somenteLeitura?: boolean;
   criadoEm: string;
   atualizadoEm: string;
+}
+
+
+export type ModalidadeLicitacao =
+  | 'PREGAO'
+  | 'CONCORRENCIA'
+  | 'CONCURSO'
+  | 'LEILAO'
+  | 'DIALOGO_COMPETITIVO'
+  | 'DISPENSA'
+  | 'INEXIGIBILIDADE'
+  | 'OUTRA';
+
+
+export interface LicitacaoApi {
+  id: string;
+  codigoIdentificador: string;
+  numeroProcesso: string;
+  modalidade: ModalidadeLicitacao;
+  objeto: string;
+  numeroContrato: string;
+  inicioVigencia: string;
+  fimVigencia: string;
+  status: StatusLicitacao;
+  encerradaEm: string | null;
+  orgaoNome: string;
+  orgaoCnpj: string | null;
+  orgaoEsfera: EsferaOrgaoApi;
+  orgaoMunicipio: string;
+  orgaoUf: string;
+  criadoEm: string;
+  atualizadoEm: string;
+  quantidadeEstacoes?: number;
+  quantidadeUsuarios?: number;
+}
+
+
+export interface LicitacaoPayload {
+  codigoIdentificador: string;
+  numeroProcesso: string;
+  modalidade: ModalidadeLicitacao;
+  objeto: string;
+  numeroContrato: string;
+  inicioVigencia: string;
+  fimVigencia: string;
+  status?: StatusLicitacao;
+  orgaoNome: string;
+  orgaoCnpj?: string | null;
+  orgaoEsfera: EsferaOrgaoApi;
+  orgaoMunicipio: string;
+  orgaoUf: string;
 }
 
 
@@ -54,6 +139,8 @@ export interface RegistroAuditoria {
   enderecoIp: string | null;
   detalhes: unknown;
   usuario: { id: string; nome: string } | null;
+  /** Licitação de quem fez a ação; nula = Tecsus ou visitante. */
+  licitacaoId: string | null;
 }
 
 
@@ -84,6 +171,26 @@ export interface ListaLeiturasBrutas {
 }
 
 
+export type MotivoLeituraErro = 'ESTACAO_NAO_CADASTRADA' | 'SENSOR_NAO_CONFIGURADO' | 'ABAIXO_DO_MINIMO' | 'ACIMA_DO_MAXIMO';
+
+
+/** Leitura que o tratamento recebeu e não virou medida. */
+export interface LeituraErro {
+  id: string;
+  leituraBrutaId: string;
+  vidEstacao: string;
+  nomeSensor: string;
+  parametroId: string | null;
+  licitacaoId: string | null;
+  valor: number;
+  unixtime: string;
+  motivo: MotivoLeituraErro;
+  valorMinimo: number | null;
+  valorMaximo: number | null;
+  registradoEm: string;
+}
+
+
 export interface EstacaoApi {
   id: string;
   nome: string;
@@ -94,6 +201,7 @@ export interface EstacaoApi {
   statusOperacional: 'ATIVA' | 'INATIVA';
   possuiChaveIngestao: boolean;
   sensores: { id: string; nome: string; unidade: string }[];
+  licitacao: { id: string; codigoIdentificador: string };
   criadoEm: string;
   atualizadoEm: string;
 }
@@ -125,6 +233,8 @@ export interface CriarEstacaoPayload {
   latitude: number;
   longitude: number;
   tipoParametroIds: string[];
+  /** Obrigatória para a Tecsus; o admin da licitação pode omitir. */
+  licitacaoId?: string;
 }
 
 
@@ -137,6 +247,7 @@ export interface SensorApi {
   valorMinimo: number | null;
   valorMaximo: number | null;
   estacoesAssociadas: number;
+  licitacaoId: string;
 }
 
 
@@ -154,6 +265,8 @@ export interface SensorPayload {
   ganho: number;
   valorMinimo: number | null;
   valorMaximo: number | null;
+  /** Obrigatória para a Tecsus no cadastro; o admin da licitação pode omitir. */
+  licitacaoId?: string;
 }
 
 
@@ -165,6 +278,7 @@ export interface AlarmeHistorico {
   id: string;
   disparadoEm: string;
   status: StatusAlarme;
+  licitacaoId: string;
   severidade: SeveridadeAlerta;
   operador: string;
   valorLimite: number;
@@ -208,6 +322,7 @@ export interface Alerta {
   severidade: SeveridadeAlerta;
   ativo: boolean;
   criadoEm: string;
+  licitacaoId: string;
   estacao: { id: string; nome: string };
   parametro: { id: string; nome: string; unidade: string };
   acoes?: never;
@@ -262,6 +377,8 @@ export interface DashboardSerie {
 
 
 export interface DashboardDados {
+  /** Licitação filtrada (nula = todas, só para a Tecsus). */
+  licitacaoId: string | null;
   periodo: { de: string; ate: string };
   estacoes: { id: string; nome: string; endereco: string }[];
   indicadores: {
@@ -276,64 +393,3 @@ export interface DashboardDados {
 
 export type EsferaOrgaoApi = 'MUNICIPAL' | 'ESTADUAL' | 'FEDERAL';
 
-
-export interface OrgaoApi {
-  id: string;
-  nome: string;
-  cnpj: string | null;
-  esfera: EsferaOrgaoApi;
-  municipio: string;
-  uf: string;
-  ativo: boolean;
-  criadoEm: string;
-  atualizadoEm: string;
-}
-
-
-export type StatusContratoApi = 'RASCUNHO' | 'VIGENTE' | 'SUSPENSO' | 'ENCERRADO';
-
-
-export interface ContratoApi {
-  id: string;
-  numero: string;
-  objeto: string;
-  inicioVigencia: string;
-  fimVigencia: string;
-  status: StatusContratoApi;
-  criadoEm: string;
-  atualizadoEm: string;
-  encerradoEm: string | null;
-  orgao: Pick<OrgaoApi, 'id' | 'nome' | 'cnpj'>;
-  quantidadeEstacoes: number;
-}
-
-
-export interface ContratosPaginadosApi {
-  contratos: ContratoApi[];
-  total: number;
-  pagina: number;
-  tamanho: number;
-}
-
-
-export interface ContratoPayload {
-  numero: string;
-  objeto: string;
-  inicioVigencia: string;
-  fimVigencia: string;
-  orgaoId: string;
-  status: StatusContratoApi;
-}
-
-
-export interface CriarOrgaoPayload {
-  nome: string;
-  cnpj?: string | null;
-  esfera: EsferaOrgaoApi;
-  municipio: string;
-  uf: string;
-  ativo?: boolean;
-}
-
-
-export type AtualizarOrgaoPayload = Partial<CriarOrgaoPayload>;

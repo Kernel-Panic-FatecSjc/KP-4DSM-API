@@ -1,13 +1,13 @@
 'use client';
 
 import {
-  Building,
   Bell,
   ChevronDown,
   ChevronRight,
   ClipboardList,
   Database,
   FileText,
+  FileWarning,
   Gauge,
   LayoutDashboard,
   LogIn,
@@ -23,7 +23,8 @@ import {
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { api } from '@/lib/api';
+import { api, type TipoUsuario } from '@/lib/api';
+import { ehTecsus, ROTULO_PERFIL, somenteLeitura } from '@/lib/perfil';
 import { cn } from '@/lib/utils';
 import { AlertaTempoReal } from './AlertaTempoReal';
 import { ehRotaPublica, useSessao, useUsuario } from './ProtectedLayout';
@@ -35,7 +36,8 @@ interface NavLink {
   label: string;
   href: string;
   icon: LucideIcon;
-  adminOnly?: boolean;
+  /** Perfis que veem o item; omitido, qualquer usuário logado. */
+  perfis?: TipoUsuario[];
 }
 
 
@@ -90,6 +92,11 @@ const NAV_ITEMS: NavItem[] = [
         href: '/leituras-brutas',
         icon: Database,
       },
+      {
+        label: 'Leituras com erro',
+        href: '/leituras-erro',
+        icon: FileWarning,
+      },
     ],
   },
   {
@@ -97,25 +104,22 @@ const NAV_ITEMS: NavItem[] = [
     icon: Users,
     children: [
       {
+        label: 'Licitações',
+        href: '/licitacoes',
+        icon: FileText,
+        perfis: ['ADMIN_TECSUS'],
+      },
+      {
         label: 'Usuários',
         href: '/usuarios',
         icon: Users,
+        perfis: ['ADMIN_TECSUS', 'ADMIN_LICITACAO'],
       },
       {
         label: 'Auditoria',
         href: '/auditoria',
         icon: ClipboardList,
-      },
-      {
-        label: 'Contratos',
-        href: '/contratos',
-        icon: FileText,
-        adminOnly: true,
-      },
-      {
-        label: 'Órgãos',
-        href: '/orgaos',
-        icon: Building,
+        perfis: ['ADMIN_TECSUS', 'ADMIN_LICITACAO'],
       },
     ],
   },
@@ -131,7 +135,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     Alertas: true,
   });
   const autenticado = useSessao() === 'autenticado';
-  const ehAdministrador = useUsuario()?.tipo === 'ADMINISTRADOR';
+  const usuario = useUsuario();
 
 
   const todosOsItens = NAV_ITEMS.flatMap((item) =>
@@ -229,7 +233,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             // Grupo com links internos
             const filhosVisiveis = item.children.filter(
               (filho) =>
-                (autenticado && (!filho.adminOnly || ehAdministrador)) ||
+                (autenticado && (!filho.perfis || (usuario !== null && filho.perfis.includes(usuario.tipo)))) ||
                 ehRotaPublica(filho.href),
             );
 
@@ -390,14 +394,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Button
             variant="ghost"
             size="icon"
-            className="hidden md:inline-flex"
+            className="max-md:hidden"
             onClick={() => setCollapsed((value) => !value)}
             aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
           >
             {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
           </Button>
           <p className="truncate font-display text-[15px] font-semibold">{tituloAtual}</p>
+          {usuario && (
+            <p className="ml-auto hidden truncate text-right text-xs text-muted-foreground sm:block" title={usuario.email}>
+              {usuario.nome} · {ROTULO_PERFIL[usuario.tipo]}
+              {!ehTecsus(usuario) && usuario.licitacao && (
+                <>
+                  {' · '}
+                  <Link href={`/licitacoes/${usuario.licitacao.id}`} className="font-mono underline-offset-2 hover:underline">
+                    {usuario.licitacao.codigoIdentificador}
+                  </Link>
+                </>
+              )}
+            </p>
+          )}
         </header>
+
+        {somenteLeitura(usuario) && (
+          <div role="status" className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900 md:px-6">
+            A licitação {usuario?.licitacao?.codigoIdentificador} não está vigente: o acesso é somente leitura.
+          </div>
+        )}
 
 
         <RegiaoProvider>
