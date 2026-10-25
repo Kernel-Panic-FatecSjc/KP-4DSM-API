@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
-import { chaveIngestaoConfere } from '../../src/ingestao/chave-ingestao';
+import { chaveIngestaoConfere } from '../../src/estacoes/chave-ingestao';
 import { ESTACAO_COM_SENSORES, TIPO_CHUVA } from '../fixtures';
 import { criarAppDeTeste } from '../helpers';
 

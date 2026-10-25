@@ -1,15 +1,15 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { HEADER_CHAVE_INGESTAO } from '../../src/ingestao/guarda-chave-ingestao.guard';
-import { IngestaoService } from '../../src/ingestao/ingestao.service';
+import { HEADER_CHAVE_INGESTAO } from '../../servicos/ingestao/http/guarda-chave-ingestao.guard';
+import { IngestaoAppModule } from '../../servicos/ingestao/ingestao.module';
+import { IngestaoService } from '../../servicos/ingestao/ingestao.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { CHAVE_INGESTAO, HASH_CHAVE_INGESTAO } from '../fixtures';
 import { criarAppDeTeste, emailDeTeste, PREFIXO_TESTE } from '../helpers';
 
-// Com o banco real: estação inativa envia leitura, o pacote fica em
-// leituras_brutas e nenhuma medida nem alarme é criado. A estação ativa, com o
-// mesmo alerta, serve de controle: sem ela, o teste passaria mesmo que o
-// trigger de alarmes nunca disparasse.
+// A ingestão só preserva o pacote original. O serviço de tratamento decide
+// depois se ele vira medida; aqui confirmamos que o status da estação é
+// informado, mas não altera nem o payload gravado nem cria medidas/alarmes.
 describe('Ingestão de estação inativa (funcional)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -52,17 +52,17 @@ describe('Ingestão de estação inativa (funcional)', () => {
     return { medidas: Number(medidas), alarmes: Number(alarmes) };
   };
 
-  const leituraBrutaGravada = async (id: string) => {
-    const [{ total }] = await prisma.$queryRaw<{ total: bigint }[]>`
-      SELECT count(*) AS total FROM leituras_brutas WHERE id = ${id}`;
-    return Number(total);
+  const payloadBrutoGravado = async (id: string) => {
+    const [leitura] = await prisma.$queryRaw<{ payload: unknown }[]>`
+      SELECT payload FROM leituras_brutas WHERE id = ${id}`;
+    return leitura?.payload;
   };
 
   let usuarioId: string;
   let tipoParametroId: string;
 
   beforeAll(async () => {
-    app = await criarAppDeTeste();
+    app = await criarAppDeTeste({ modulo: IngestaoAppModule });
     prisma = app.get(PrismaService);
     const usuario = await prisma.usuario.create({
       data: { nome: 'Inativa', email: emailDeTeste('inativa'), senhaHash: 'x' },
@@ -79,12 +79,13 @@ describe('Ingestão de estação inativa (funcional)', () => {
     await app.close();
   });
 
-  it('estação ativa: grava a medida e dispara o alarme (controle)', async () => {
+  it('estação ativa: preserva o pacote bruto sem processá-lo', async () => {
     const { vid, estacaoId } = await criarEstacao('ATIVA', usuarioId, tipoParametroId);
     const resposta = await enviar(vid);
 
     expect(resposta.estacaoInativa).toBe(false);
-    expect(await contar(estacaoId)).toEqual({ medidas: 1, alarmes: 1 });
+    expect(await payloadBrutoGravado(resposta.leituraBrutaId)).toEqual({ chuva: 50 });
+    expect(await contar(estacaoId)).toEqual({ medidas: 0, alarmes: 0 });
   });
 
   it('estação inativa: guarda o pacote bruto e não cria medida nem alarme', async () => {
@@ -93,7 +94,7 @@ describe('Ingestão de estação inativa (funcional)', () => {
     const resposta = await enviar(vid);
 
     expect(resposta.estacaoInativa).toBe(true);
-    expect(await leituraBrutaGravada(resposta.leituraBrutaId)).toBe(1);
+    expect(await payloadBrutoGravado(resposta.leituraBrutaId)).toEqual({ chuva: 50 });
     expect(await contar(estacaoId)).toEqual({ medidas: 0, alarmes: 0 });
   });
 });

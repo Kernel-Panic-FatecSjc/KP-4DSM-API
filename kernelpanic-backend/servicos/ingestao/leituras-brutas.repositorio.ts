@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { MotivoLeituraErro } from '../generated/prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../../src/prisma/prisma.service';
 
 export interface LeituraBrutaParaGravar {
   id: string;
@@ -11,74 +10,16 @@ export interface LeituraBrutaParaGravar {
   unixtimeDispositivo: number;
 }
 
-export interface MedidaParaGravar {
-  parametroId: string;
-  estacaoId: string;
-  valor: number;
-  unixtime: number;
-}
-
-export interface LeituraErroParaGravar {
-  id: string;
-  leituraBrutaId: string;
-  vidEstacao: string;
-  nomeSensor: string;
-  /** Nulo quando o sensor não tem parâmetro configurado na estação. */
-  parametroId: string | null;
-  valor: number;
-  unixtime: number;
-  motivo: MotivoLeituraErro;
-  valorMinimo: number | null;
-  valorMaximo: number | null;
-}
-
 // Postgres aceita no máximo 65535 parâmetros por query; controla o tamanho
 // do INSERT multi-linha pra nunca chegar perto disso (mesmo limite usado
 // pelos scripts de teste-carga).
 const PARAMS_POR_LEITURA_BRUTA = 6;
 const MAX_LINHAS_POR_QUERY = 10_000;
 
+/** Única escrita da ingestão: o pacote como chegou, em leituras_brutas (append-only). */
 @Injectable()
-export class TelemetriaService {
+export class LeiturasBrutasRepositorio {
   constructor(private readonly prisma: PrismaService) {}
-
-  /**
-   * Grava um lote de medidas num único INSERT multi-linha (createMany), para
-   * que o trigger de avaliação de alertas — que roda por statement, não por
-   * linha — seja disparado uma única vez para o lote inteiro.
-   *
-   * `skipDuplicates: true` traduz-se em ON CONFLICT DO NOTHING no Postgres:
-   * se o ESP32 não receber a confirmação e reenviar o mesmo buffer, a segunda
-   * tentativa é descartada silenciosamente pelo índice único
-   * (parametroId, unixtime) — sem erro, sem medida duplicada e, por
-   * consequência, sem alarme duplicado.
-   */
-  async registrarMedidas(medidas: MedidaParaGravar[]): Promise<number> {
-    if (medidas.length === 0) return 0;
-
-    const { count } = await this.prisma.medida.createMany({
-      data: medidas.map((medida) => ({ ...medida, unixtime: BigInt(medida.unixtime) })),
-      skipDuplicates: true,
-    });
-
-    return count;
-  }
-
-  /**
-   * Grava as leituras que não viraram medida (valor fora da faixa, sensor sem
-   * parâmetro). O id vem pronto de quem chamou, então regravar o lote depois
-   * de uma falha não duplica: skipDuplicates vira ON CONFLICT DO NOTHING.
-   */
-  async registrarLeiturasErro(erros: LeituraErroParaGravar[]): Promise<number> {
-    if (erros.length === 0) return 0;
-
-    const { count } = await this.prisma.leituraErro.createMany({
-      data: erros.map((erro) => ({ ...erro, unixtime: BigInt(erro.unixtime) })),
-      skipDuplicates: true,
-    });
-
-    return count;
-  }
 
   /**
    * Grava um lote de leituras brutas num único INSERT multi-linha. Raw SQL
@@ -91,7 +32,7 @@ export class TelemetriaService {
    * IngestaoService tenta de novo depois de uma falha (ex.: um sub-lote
    * gravou e o seguinte não).
    */
-  async registrarLeiturasBrutas(leituras: LeituraBrutaParaGravar[]): Promise<number> {
+  async registrar(leituras: LeituraBrutaParaGravar[]): Promise<number> {
     let total = 0;
     for (let i = 0; i < leituras.length; i += MAX_LINHAS_POR_QUERY) {
       total += await this.inserirSubLoteBrutas(leituras.slice(i, i + MAX_LINHAS_POR_QUERY));

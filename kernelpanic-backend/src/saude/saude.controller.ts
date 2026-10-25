@@ -13,7 +13,7 @@ export class SaudeController {
     const estado = await this.saudeService.verificar();
 
     // O corpo do 503 diz qual componente falhou, para o health check pós-deploy.
-    if (estado.banco !== 'ok' || estado.ingestao !== 'ok') {
+    if (estado.banco !== 'ok') {
       throw new ServiceUnavailableException(estado);
     }
 

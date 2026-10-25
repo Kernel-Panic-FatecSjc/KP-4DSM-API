@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { HEADER_CHAVE_INGESTAO } from '../../src/ingestao/guarda-chave-ingestao.guard';
+import { HEADER_CHAVE_INGESTAO } from '../../servicos/ingestao/http/guarda-chave-ingestao.guard';
+import { IngestaoAppModule } from '../../servicos/ingestao/ingestao.module';
 import {
   CHAVE_INGESTAO,
   ESTACAO_COM_COORDENADAS,
@@ -10,14 +11,15 @@ import {
 import { criarAppDeTeste } from '../helpers';
 
 // O lote da ingestão fica em memória até o próximo flush; ao receber SIGTERM
-// (ex.: deploy) a API precisa gravá-lo antes de sair.
-describe('Ingestão no encerramento da API (funcional)', () => {
+// (ex.: deploy) o serviço de ingestão precisa gravá-lo antes de sair.
+describe('Serviço de ingestão no encerramento (funcional)', () => {
   let app: INestApplication;
   const estacao = { findUnique: jest.fn() };
   const executeRawUnsafe = jest.fn();
 
   beforeAll(async () => {
     app = await criarAppDeTeste({
+      modulo: IngestaoAppModule,
       prismaMock: {
         estacao,
         $executeRawUnsafe: executeRawUnsafe,
@@ -25,8 +27,8 @@ describe('Ingestão no encerramento da API (funcional)', () => {
         $disconnect: jest.fn(),
       },
     });
-    // criarAppDeTeste aplica configurarApp, o mesmo do main.ts: é ele que
-    // liga os shutdown hooks
+    // criarAppDeTeste aplica configurarApp, que liga os shutdown hooks como
+    // o main.ts da ingestão
     estacao.findUnique.mockResolvedValue(ESTACAO_COM_COORDENADAS);
     executeRawUnsafe.mockResolvedValue(1);
   });

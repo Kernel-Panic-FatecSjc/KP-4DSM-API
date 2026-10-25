@@ -7,7 +7,7 @@
 # liga (ou não) cada job, e no stdout as saídas chave=valor do job detector.
 #
 # Cada aplicação é separada (cada uma vai para a sua VPS):
-#   backend          lint, typecheck e build da API
+#   backend          lint, typecheck e build da API e dos serviços (servicos/)
 #   backend_testes   testes unitários e funcionais da API
 #   banco            migrations, schema e seed
 #   frontend         lint, typecheck e build do Next.js
@@ -56,11 +56,11 @@ while IFS= read -r arquivo; do
     # Schema, migrations, seed e versão do Prisma mudam o banco gerado.
     $API/prisma/* | $API/prisma7.config.ts | $API/package.json | $API/package-lock.json)
       jobs=(backend backend_testes banco) ;;
-    # Código, testes e o que o Jest/ts-jest lê.
-    $API/src/* | $API/test/* | $API/tsconfig.json | $API/jest.config.ts)
+    # Código (API e serviços de ingestão/tratamento), testes e o que o Jest/ts-jest lê.
+    $API/src/* | $API/servicos/* | $API/test/* | $API/tsconfig.json | $API/jest.config.ts)
       jobs=(backend backend_testes) ;;
     # Entra no lint/typecheck/build, mas não muda o resultado dos testes.
-    $API/teste-carga/* | $API/tsconfig.build.json | $API/nest-cli.json | $API/oxlint.json)
+    $API/teste-carga/* | $API/tsconfig.build.json | $API/tsconfig.servicos.json | $API/nest-cli.json | $API/oxlint.json)
       jobs=(backend) ;;
     # Não é lido por build nem por teste no CI (o CI sobe o próprio Postgres).
     $API/*.md | $API/.env.example | $API/.gitignore | $API/.prettierrc | $API/docker-compose.yml)

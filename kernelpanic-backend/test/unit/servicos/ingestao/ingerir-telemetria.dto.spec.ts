@@ -1,8 +1,8 @@
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
-import { IngerirTelemetriaDto } from '../../../src/ingestao/dto/ingerir-telemetria.dto';
-import { MAXIMO_SENSORES_POR_LEITURA } from '../../../src/ingestao/mapa-leituras.validator';
-import { LEITURAS, VID_ESTACAO } from '../../fixtures';
+import { IngerirTelemetriaDto } from '../../../../servicos/ingestao/http/dto/ingerir-telemetria.dto';
+import { MAXIMO_SENSORES_POR_LEITURA } from '../../../../servicos/ingestao/validacao/mapa-leituras.validator';
+import { LEITURAS, VID_ESTACAO } from '../../../fixtures';
 
 const validar = (payload: unknown) =>
   validateSync(plainToInstance(IngerirTelemetriaDto, payload), { whitelist: true });

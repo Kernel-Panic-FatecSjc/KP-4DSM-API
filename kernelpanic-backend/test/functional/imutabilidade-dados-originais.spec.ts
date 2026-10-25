@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { TelemetriaService } from '../../src/ingestao/telemetria.service';
+import { LeiturasBrutasRepositorio } from '../../servicos/ingestao/leituras-brutas.repositorio';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { criarAppDeTeste, emailDeTeste, PREFIXO_TESTE } from '../helpers';
 
@@ -39,7 +39,7 @@ describe('Imutabilidade dos dados originais (funcional)', () => {
     });
 
     leituraBrutaId = randomUUID();
-    await app.get(TelemetriaService).registrarLeiturasBrutas([
+    await new LeiturasBrutasRepositorio(prisma).registrar([
       {
         id: leituraBrutaId,
         vidEstacao: estacao.vid,
@@ -95,10 +95,14 @@ describe('Imutabilidade dos dados originais (funcional)', () => {
 
     it('grava a leitura com a faixa vigente, e regravar o mesmo lote não duplica', async () => {
       const registro = novoErro();
-      const telemetria = app.get(TelemetriaService);
-
-      await expect(telemetria.registrarLeiturasErro([registro])).resolves.toBe(1);
-      await expect(telemetria.registrarLeiturasErro([registro])).resolves.toBe(0);
+      await prisma.leituraErro.createMany({
+        data: [{ ...registro, unixtime: BigInt(registro.unixtime) }],
+        skipDuplicates: true,
+      });
+      await prisma.leituraErro.createMany({
+        data: [{ ...registro, unixtime: BigInt(registro.unixtime) }],
+        skipDuplicates: true,
+      });
 
       const gravadas = await prisma.leituraErro.findMany({ where: { id: registro.id } });
       expect(gravadas).toHaveLength(1);
@@ -112,7 +116,9 @@ describe('Imutabilidade dos dados originais (funcional)', () => {
 
     it('recusa UPDATE e DELETE com mensagem clara', async () => {
       const registro = novoErro();
-      await app.get(TelemetriaService).registrarLeiturasErro([registro]);
+      await prisma.leituraErro.create({
+        data: { ...registro, unixtime: BigInt(registro.unixtime) },
+      });
 
       await expect(
         prisma.leituraErro.update({ where: { id: registro.id }, data: { valor: 1 } }),

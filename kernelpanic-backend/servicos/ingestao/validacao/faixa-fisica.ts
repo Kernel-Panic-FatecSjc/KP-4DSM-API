@@ -1,9 +1,8 @@
-import { MotivoLeituraErro } from '../generated/prisma/client';
+import { MotivoLeituraErro } from '../../../src/generated/prisma/client';
 
 /**
- * Diz se o valor está fora da faixa física do sensor. Os limites são
- * inclusivos (o valor igual ao mínimo ou ao máximo é válido) e opcionais:
- * null ou ausente deixa aquele lado sem checagem.
+ * Verifica a faixa física inclusiva de um sensor. Limites nulos ou ausentes
+ * deixam aquele lado sem restrição.
  */
 export function motivoForaDaFaixa(
   valor: number,

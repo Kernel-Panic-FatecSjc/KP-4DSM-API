@@ -1,8 +1,9 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { IngestaoService } from '../../src/ingestao/ingestao.service';
-import { HEADER_CHAVE_INGESTAO } from '../../src/ingestao/guarda-chave-ingestao.guard';
-import { calcularHashChaveIngestao } from '../../src/ingestao/chave-ingestao';
+import { HEADER_CHAVE_INGESTAO } from '../../servicos/ingestao/http/guarda-chave-ingestao.guard';
+import { IngestaoAppModule } from '../../servicos/ingestao/ingestao.module';
+import { IngestaoService } from '../../servicos/ingestao/ingestao.service';
+import { calcularHashChaveIngestao } from '../../src/estacoes/chave-ingestao';
 import {
   CHAVE_INGESTAO,
   ESTACAO_COM_COORDENADAS,
@@ -13,21 +14,21 @@ import {
 } from '../fixtures';
 import { criarAppDeTeste } from '../helpers';
 
-describe('Ingestão (funcional)', () => {
+// Rota HTTP do serviço de ingestão (alternativa ao MQTT): só grava leituras_brutas.
+describe('Serviço de ingestão, rota HTTP (funcional)', () => {
   let app: INestApplication;
   let ingestaoService: IngestaoService;
   const estacao = { findUnique: jest.fn() };
   const executeRawUnsafe = jest.fn();
-  const logAuditoria = { create: jest.fn() };
-  const leituraErro = { createMany: jest.fn() };
+  const queryRaw = jest.fn();
 
   beforeAll(async () => {
     app = await criarAppDeTeste({
+      modulo: IngestaoAppModule,
       prismaMock: {
         estacao,
-        logAuditoria,
-        leituraErro,
         $executeRawUnsafe: executeRawUnsafe,
+        $queryRaw: queryRaw,
         $connect: jest.fn(),
         $disconnect: jest.fn(),
       },
@@ -43,7 +44,7 @@ describe('Ingestão (funcional)', () => {
     jest.clearAllMocks();
     estacao.findUnique.mockResolvedValue(ESTACAO_COM_COORDENADAS);
     executeRawUnsafe.mockResolvedValue(1);
-    leituraErro.createMany.mockResolvedValue({ count: 0 });
+    queryRaw.mockResolvedValue([{ '?column?': 1 }]);
   });
 
   afterAll(async () => {
@@ -77,50 +78,20 @@ describe('Ingestão (funcional)', () => {
     expect(executeRawUnsafe).toHaveBeenCalledTimes(1);
   });
 
-  it('não gera linha de auditoria de acesso a cada telemetria recebida', async () => {
-    await postar({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS }).expect(202);
-    await ingestaoService.flush();
-    // o middleware registra no evento "finish" da resposta, depois de o cliente receber
-    await new Promise((resolve) => setImmediate(resolve));
-
-    expect(logAuditoria.create).not.toHaveBeenCalled();
-  });
-
-  it('aceita com 202 o pacote com valor fora da faixa: guarda o bruto e registra o erro, sem medida', async () => {
-    estacao.findUnique.mockResolvedValue({
-      ...ESTACAO_COM_COORDENADAS,
-      parametros: [{ id: 'parametro-temp', tipoParametro: { nome: 'temperatura', valorMinimo: -40, valorMaximo: 60 } }],
-    });
-
-    const resposta = await postar({
-      vid: VID_ESTACAO,
-      unixtime: 1_760_000_000,
-      leituras: { temperatura: 150 },
-    }).expect(202);
+  it('grava só a leitura bruta: nenhuma medida nem leitura com erro sai da ingestão', async () => {
+    await postar({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: { temperatura: 150 } }).expect(202);
     await ingestaoService.flush();
 
     expect(executeRawUnsafe).toHaveBeenCalledTimes(1);
-    expect(executeRawUnsafe.mock.calls[0]).toContain(resposta.body.leituraBrutaId);
-    expect(leituraErro.createMany).toHaveBeenCalledWith({
-      data: [
-        expect.objectContaining({
-          leituraBrutaId: resposta.body.leituraBrutaId,
-          nomeSensor: 'temperatura',
-          motivo: 'ACIMA_DO_MAXIMO',
-          valorMinimo: -40,
-          valorMaximo: 60,
-          unixtime: 1_760_000_000n,
-        }),
-      ],
-      skipDuplicates: true,
-    });
+    expect(executeRawUnsafe.mock.calls[0][0]).toContain('INSERT INTO leituras_brutas');
   });
 
   it('aceita com 202 o pacote de estação inativa, guarda o bruto e avisa no corpo', async () => {
     estacao.findUnique.mockResolvedValue({ ...ESTACAO_COM_COORDENADAS, statusOperacional: 'INATIVA' });
 
     const resposta = await postar({
-      vid: VID_ESTACAO,
+      // outro vid: a ingestão guarda a estação em cache por 60 s
+      vid: 'ESP32-INATIVA',
       unixtime: 1_760_000_000,
       leituras: LEITURAS,
     }).expect(202);
@@ -217,6 +188,19 @@ describe('Ingestão (funcional)', () => {
     expect(valoresGravados).toEqual(
       expect.arrayContaining([primeira.body.leituraBrutaId, segunda.body.leituraBrutaId]),
     );
+  });
+
+  it('o /saude aponta o lote que falhou ao gravar e volta a 200 quando ele grava', async () => {
+    await postar({ vid: VID_ESTACAO, unixtime: 1_760_000_000, leituras: LEITURAS }).expect(202);
+    executeRawUnsafe.mockRejectedValueOnce(new Error('Falha temporária ao gravar leituras'));
+    await ingestaoService.flush();
+
+    const falha = await request(app.getHttpServer()).get('/saude').expect(503);
+    expect(falha.body).toMatchObject({ banco: 'ok', lote: 'falha', mqtt: 'desligado' });
+
+    await ingestaoService.flush();
+    const recuperada = await request(app.getHttpServer()).get('/saude').expect(200);
+    expect(recuperada.body).toEqual({ banco: 'ok', lote: 'ok', mqtt: 'desligado', mensagensRecusadas: 0 });
   });
 
   it('expõe a configuração de sensores da estação para o datalogger', async () => {

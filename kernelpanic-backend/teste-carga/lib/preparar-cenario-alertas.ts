@@ -1,4 +1,4 @@
-import { gerarChaveIngestao } from '../../src/ingestao/chave-ingestao';
+import { gerarChaveIngestao } from '../../src/estacoes/chave-ingestao';
 import type { Executor } from './simulador-esp32';
 
 // Sem hífen: precisa bater com o padrão de nome de sensor aceito pelo

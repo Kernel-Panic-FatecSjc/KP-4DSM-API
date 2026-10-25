@@ -1,4 +1,4 @@
-import { calcularHashChaveIngestao } from '../src/ingestao/chave-ingestao';
+import { calcularHashChaveIngestao } from '../src/estacoes/chave-ingestao';
 
 export const VID_ESTACAO = 'ESP32-00001';
 

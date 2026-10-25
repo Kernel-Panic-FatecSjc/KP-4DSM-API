@@ -1,8 +1,8 @@
 import { CanActivate, ExecutionContext, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
-import { PrismaService } from '../prisma/prisma.service';
-import { chaveIngestaoConfere } from './chave-ingestao';
+import { chaveIngestaoConfere } from '../../../src/estacoes/chave-ingestao';
+import { PrismaService } from '../../../src/prisma/prisma.service';
 
 export const HEADER_CHAVE_INGESTAO = 'x-chave-estacao';
 

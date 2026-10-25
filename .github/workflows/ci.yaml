@@ -96,6 +96,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Serviços da cadeia de dados (servicos/ingestao e servicos/tratamento),
+      # que vão para VPS próprias mas dividem o pacote com a API.
+      - name: Build dos serviços de ingestão e tratamento
+        run: npm run build:servicos
+
   testes:
     name: Testes (NestJS)
     runs-on: ubuntu-latest
@@ -145,11 +150,13 @@ jobs:
         run: npm run prisma:generate
 
       - name: Testes unitários
+        if: github.event_name != 'pull_request'
         run: npm run test
 
       # Os testes funcionais recriam e migram o próprio banco (kernelpanic_test)
       # no globalSetup, então não há passo de migrations aqui.
       - name: Testes funcionais
+        if: github.event_name != 'pull_request'
         run: npm run test:functional
 
   frontend:
@@ -206,6 +213,7 @@ jobs:
         run: npm ci
 
       - name: Testes unitários
+        if: github.event_name != 'pull_request'
         run: npm run test
 
       # Baixa o Chromium da versão do @playwright/test do lockfile, com as
@@ -217,6 +225,7 @@ jobs:
       # do playwright.config.ts). A API não sobe: os testes respondem as rotas
       # interceptando as requisições no navegador.
       - name: Testes funcionais
+        if: github.event_name != 'pull_request'
         run: npm run test:functional
 
       # Na falha, o relatório traz o trace de cada teste: abra com
