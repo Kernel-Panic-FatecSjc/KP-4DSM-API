@@ -1,8 +1,7 @@
-import { ForbiddenException } from '@nestjs/common';
 import type { AuditoriaService } from '../../../src/auditoria/auditoria.service';
-import type { PayloadJwt } from '../../../src/autenticacao/payload-jwt.interface';
 import { UsuariosController } from '../../../src/usuarios/usuarios.controller';
 import type { UsuariosService } from '../../../src/usuarios/usuarios.service';
+import { ADMIN_A, LICITACAO_A, TECSUS } from '../sessoes';
 
 describe('UsuariosController', () => {
   let controller: UsuariosController;
@@ -16,7 +15,15 @@ describe('UsuariosController', () => {
     registrar: jest.fn(),
   };
 
-  const usuarioLogado: PayloadJwt = { sub: 'usuario-1', email: 'admin@a.com' };
+  const usuarioCriado = {
+    id: 'novo-id',
+    nome: 'Fulano',
+    email: 'fulano@a.com',
+    tipo: 'USUARIO_LICITACAO',
+    ativo: true,
+    licitacaoId: LICITACAO_A,
+    licitacao: { id: LICITACAO_A, codigoIdentificador: 'A', orgaoNome: 'Órgão A', status: 'VIGENTE' },
+  };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -31,80 +38,82 @@ describe('UsuariosController', () => {
   });
 
   describe('inativar', () => {
-    it('lança ForbiddenException quando o usuário tenta inativar a si mesmo', async () => {
-      await expect(controller.inativar(usuarioLogado.sub, usuarioLogado)).rejects.toBeInstanceOf(
-        ForbiddenException,
-      );
-
-      expect(usuariosServiceMock.inativar).not.toHaveBeenCalled();
-      expect(auditoriaServiceMock.registrar).not.toHaveBeenCalled();
-    });
-
-    it('inativa outro usuário e registra a auditoria', async () => {
+    it('inativa pelo serviço (que confere a permissão) e audita com a licitação do autor', async () => {
       usuariosServiceMock.inativar.mockResolvedValue(undefined);
 
-      const resposta = await controller.inativar('outro-usuario', usuarioLogado);
+      const resposta = await controller.inativar('outro-usuario', ADMIN_A);
 
-      expect(usuariosServiceMock.inativar).toHaveBeenCalledWith('outro-usuario');
+      expect(usuariosServiceMock.inativar).toHaveBeenCalledWith('outro-usuario', ADMIN_A);
       expect(auditoriaServiceMock.registrar).toHaveBeenCalledWith({
         acao: 'usuarios.inativar',
         entidade: 'Usuario',
         entidadeId: 'outro-usuario',
-        usuarioId: usuarioLogado.sub,
+        usuarioId: ADMIN_A.sub,
+        licitacaoId: LICITACAO_A,
       });
       expect(resposta.mensagem).toMatch(/inativado/);
+    });
+
+    it('não audita quando o serviço recusa', async () => {
+      usuariosServiceMock.inativar.mockRejectedValue(new Error('recusado'));
+
+      await expect(controller.inativar('x', ADMIN_A)).rejects.toThrow('recusado');
+      expect(auditoriaServiceMock.registrar).not.toHaveBeenCalled();
     });
   });
 
   describe('ativar', () => {
-    it('reativa o usuário e registra a auditoria', async () => {
+    it('reativa o usuário e registra a auditoria como ação da Tecsus (licitação nula)', async () => {
       usuariosServiceMock.ativar.mockResolvedValue(undefined);
 
-      const resposta = await controller.ativar('outro-usuario', usuarioLogado);
+      const resposta = await controller.ativar('outro-usuario', TECSUS);
 
-      expect(usuariosServiceMock.ativar).toHaveBeenCalledWith('outro-usuario');
+      expect(usuariosServiceMock.ativar).toHaveBeenCalledWith('outro-usuario', TECSUS);
       expect(auditoriaServiceMock.registrar).toHaveBeenCalledWith({
         acao: 'usuarios.ativar',
         entidade: 'Usuario',
         entidadeId: 'outro-usuario',
-        usuarioId: usuarioLogado.sub,
+        usuarioId: TECSUS.sub,
+        licitacaoId: null,
       });
       expect(resposta.mensagem).toMatch(/ativado/);
     });
   });
 
   describe('criar', () => {
-    it('cria o usuário e registra a auditoria com email e nome', async () => {
+    it('cria o usuário e registra a auditoria com email, nome, perfil e licitação', async () => {
       const dto = { nome: 'Fulano', email: 'fulano@a.com', senha: 'senha12345' };
-      usuariosServiceMock.criar.mockResolvedValue({ id: 'novo-id', ...dto, ativo: true });
+      usuariosServiceMock.criar.mockResolvedValue(usuarioCriado);
 
-      const resposta = await controller.criar(dto, usuarioLogado);
+      const resposta = await controller.criar(dto, ADMIN_A);
 
-      expect(usuariosServiceMock.criar).toHaveBeenCalledWith(dto);
+      expect(usuariosServiceMock.criar).toHaveBeenCalledWith(dto, ADMIN_A);
       expect(auditoriaServiceMock.registrar).toHaveBeenCalledWith({
         acao: 'usuarios.criar',
         entidade: 'Usuario',
         entidadeId: 'novo-id',
-        usuarioId: usuarioLogado.sub,
-        detalhes: { email: dto.email, nome: dto.nome },
+        usuarioId: ADMIN_A.sub,
+        licitacaoId: LICITACAO_A,
+        detalhes: { email: dto.email, nome: dto.nome, tipo: 'USUARIO_LICITACAO', licitacaoId: LICITACAO_A },
       });
-      expect(resposta).toMatchObject({ id: 'novo-id', email: dto.email });
+      expect(resposta).toMatchObject({ id: 'novo-id', email: dto.email, licitacao: { id: LICITACAO_A } });
     });
   });
 
   describe('atualizar', () => {
     it('atualiza o usuário e registra a auditoria apenas com os campos informados', async () => {
       const dto = { nome: 'Novo Nome' };
-      usuariosServiceMock.atualizar.mockResolvedValue({ id: 'outro-usuario', nome: 'Novo Nome', email: 'a@a.com', ativo: true });
+      usuariosServiceMock.atualizar.mockResolvedValue({ ...usuarioCriado, nome: 'Novo Nome' });
 
-      await controller.atualizar('outro-usuario', dto, usuarioLogado);
+      await controller.atualizar('outro-usuario', dto, TECSUS);
 
-      expect(usuariosServiceMock.atualizar).toHaveBeenCalledWith('outro-usuario', dto);
+      expect(usuariosServiceMock.atualizar).toHaveBeenCalledWith('outro-usuario', dto, TECSUS);
       expect(auditoriaServiceMock.registrar).toHaveBeenCalledWith({
         acao: 'usuarios.atualizar',
         entidade: 'Usuario',
         entidadeId: 'outro-usuario',
-        usuarioId: usuarioLogado.sub,
+        usuarioId: TECSUS.sub,
+        licitacaoId: null,
         detalhes: { campos: ['nome'] },
       });
     });

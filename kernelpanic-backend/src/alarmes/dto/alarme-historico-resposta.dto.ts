@@ -21,6 +21,7 @@ export class AlarmeHistoricoRespostaDto {
   id: string;
   disparadoEm: Date;
   status: string;
+  licitacaoId: string;
   severidade: string;
   operador: string;
   valorLimite: number;
@@ -32,6 +33,7 @@ export class AlarmeHistoricoRespostaDto {
     this.id = alarme.id;
     this.disparadoEm = alarme.disparadoEm;
     this.status = alarme.status;
+    this.licitacaoId = alarme.alerta.licitacaoId;
     this.severidade = alarme.alerta.severidade;
     this.operador = alarme.alerta.operador;
     this.valorLimite = alarme.alerta.valorLimite;

@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
 
 export class ListarLeiturasBrutasQueryDto {
   @IsOptional()
@@ -11,6 +11,11 @@ export class ListarLeiturasBrutasQueryDto {
   @IsString()
   @MaxLength(100)
   campo?: string;
+
+  // Só a Tecsus escolhe; o usuário de licitação vê só as estações dela.
+  @IsOptional()
+  @IsUUID('4')
+  licitacaoId?: string;
 
   @IsOptional()
   @IsDateString()

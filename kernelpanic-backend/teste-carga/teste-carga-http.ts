@@ -12,12 +12,14 @@ import {
 import { dormir, gerarEstacoes, gerarPayload } from './lib/simulador-esp32';
 
 /**
- * Teste de carga HTTP da ingestão: dispara POST /ingestao/telemetria a taxas
+ * Teste de carga HTTP da ingestão: dispara POST /ingestao/telemetria (rota
+ * alternativa ao MQTT do serviço de ingestão, servicos/ingestao) a taxas
  * crescentes (degraus, em requisições por segundo) para achar o pico que a API
  * sustenta, e mede por degrau a latência (p50/p95/p99/máx.), os códigos de
  * resposta e a perda de pacotes (202 aceitos x leituras que chegaram ao banco).
- * Os scripts "teste:carga*" gravam direto no banco; este passa pela API,
- * pelo guard da chave e pelo buffer em lote, como um datalogger.
+ * Passa pelo guard da chave e pelo buffer em lote, como um datalogger; as
+ * medidas saem do serviço de tratamento, que precisa estar rodando. Para a
+ * cadeia principal (broker MQTT), use teste-carga-mqtt.ts.
  *
  * Carga aberta (open loop): as requisições saem no ritmo do degrau mesmo que a
  * API atrase, como numa frota real, e não esperam a resposta anterior.
@@ -26,14 +28,9 @@ import { dormir, gerarEstacoes, gerarPayload } from './lib/simulador-esp32';
  *
  * Use um banco só de carga (DATABASE_URL com "carga" no nome) e a API apontando
  * para ele: o script cria milhares de estações e de leituras.
- *
- * TODO(SCRUM-43): repetir a medição quando as tarefas que mudam o caminho da
- * ingestão entrarem na main: SCRUM-38 (retry do lote), SCRUM-40 (faixa física e
- * leituras_erro) e SCRUM-41 (estação inativa). Os números em docs/ são da main
- * de antes delas.
  */
 
-const URL_API = process.env.URL_API ?? 'http://localhost:3001';
+const URL_API = process.env.URL_API ?? `http://localhost:${process.env.INGESTAO_PORTA ?? 3002}`;
 const NUM_ESTACOES = Number(process.env.NUM_ESTACOES ?? 2000);
 const TAXAS = (process.env.TAXAS ?? '50,100,200,400,800,1600').split(',').map(Number);
 const DURACAO_POR_TAXA = Number(process.env.DURACAO_POR_TAXA ?? 15);
@@ -177,8 +174,9 @@ async function contarGravado(client: Client, indice: number): Promise<{ brutas: 
     [de, ate, `${PREFIXO_VID_HTTP}%`],
   );
   const { rows: medidas } = await client.query(
-    'SELECT count(*)::int AS total FROM medidas WHERE unixtime BETWEEN $1 AND $2',
-    [de, ate],
+    `SELECT count(*)::int AS total FROM medidas m JOIN estacoes e ON e.id = m."estacaoId"
+     WHERE m.unixtime BETWEEN $1 AND $2 AND e.vid LIKE $3`,
+    [de, ate, `${PREFIXO_VID_HTTP}%`],
   );
   return { brutas: brutas[0].total, medidas: medidas[0].total };
 }
@@ -228,13 +226,14 @@ async function main(): Promise<void> {
     );
   }
 
-  // O buffer da API grava em lote (a cada ~2 s): espera as contagens pararem de crescer.
-  console.log('\nAguardando a API gravar o que ainda está no buffer...');
+  // A ingestão grava em lote e o tratamento gera as medidas depois: espera as
+  // contagens de medidas pararem de crescer.
+  console.log('\nAguardando a ingestão e o tratamento gravarem o que ainda está em andamento...');
   let anterior = -1;
   for (let tentativa = 0; tentativa < 60; tentativa++) {
     let total = 0;
-    for (let i = 0; i < resultados.length; i++) total += (await contarGravado(client, i)).brutas;
-    const esperado = resultados.reduce((soma, r) => soma + r.aceitas, 0);
+    for (let i = 0; i < resultados.length; i++) total += (await contarGravado(client, i)).medidas;
+    const esperado = resultados.reduce((soma, r) => soma + r.aceitas * SENSORES_POR_ESTACAO, 0);
     if (total >= esperado || (total === anterior && tentativa > 5)) break;
     anterior = total;
     await dormir(1000);

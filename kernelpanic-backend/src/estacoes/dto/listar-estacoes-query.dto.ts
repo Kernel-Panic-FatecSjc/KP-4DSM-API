@@ -1,11 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class ListarEstacoesQueryDto {
   @ApiPropertyOptional({ description: 'Trecho do endereço' })
   @IsOptional()
   @IsString()
   regiao?: string;
+
+  @ApiPropertyOptional({ description: 'Trecho do nome ou do vid' })
+  @IsOptional()
+  @IsString()
+  busca?: string;
 
   @ApiPropertyOptional({ enum: ['ATIVA', 'INATIVA'] })
   @IsOptional()
@@ -17,8 +23,23 @@ export class ListarEstacoesQueryDto {
   @IsUUID('4')
   tipoParametroId?: string;
 
-  @ApiPropertyOptional({ format: 'uuid', description: 'Estações vinculadas a este contrato' })
+  @ApiPropertyOptional({ format: 'uuid', description: 'Só a Tecsus escolhe; o usuário de licitação vê a dele' })
   @IsOptional()
   @IsUUID('4')
-  contratoId?: string;
+  licitacaoId?: string;
+
+  @ApiPropertyOptional({ minimum: 1, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  pagina = 1;
+
+  @ApiPropertyOptional({ minimum: 1, maximum: 200, default: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  tamanho = 50;
 }

@@ -2,14 +2,16 @@ import { INestApplication } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { autenticar, criarAppDeTeste, emailDeTeste } from '../helpers';
+import { autenticar, criarAppDeTeste, criarLicitacaoDeTeste, emailDeTeste } from '../helpers';
 
 describe('Autenticação (funcional)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
   const admin = { nome: 'Admin', email: emailDeTeste('admin'), senha: 'senha12345' };
-  const usuario = { nome: 'Usuário', email: emailDeTeste('usuario'), senha: 'senha12345' };
+  // licitacaoId preenchido no beforeAll: perfil de licitação sempre tem uma.
+  const usuario = { nome: 'Usuário', email: emailDeTeste('usuario'), senha: 'senha12345', licitacaoId: '' };
+  let licitacaoId: string;
   const monitor = { nome: 'Monitor', email: emailDeTeste('monitor'), senha: 'senha12345' };
   let adminCookie: string[];
   let monitorCookie: string[];
@@ -21,11 +23,19 @@ describe('Autenticação (funcional)', () => {
 
     // Usuário criado diretamente no banco (bootstrap), simulando o usuário
     // de seed que só existe para permitir a criação dos demais via API.
+    licitacaoId = (await criarLicitacaoDeTeste(app)).id;
+    usuario.licitacaoId = licitacaoId;
     await prisma.usuario.create({
-      data: { nome: admin.nome, email: admin.email, senhaHash: await bcrypt.hash(admin.senha, 10) },
+      data: { nome: admin.nome, email: admin.email, senhaHash: await bcrypt.hash(admin.senha, 10), tipo: 'ADMIN_TECSUS' },
     });
     await prisma.usuario.create({
-      data: { nome: monitor.nome, email: monitor.email, senhaHash: await bcrypt.hash(monitor.senha, 10), tipo: 'MONITOR' },
+      data: {
+        nome: monitor.nome,
+        email: monitor.email,
+        senhaHash: await bcrypt.hash(monitor.senha, 10),
+        tipo: 'USUARIO_LICITACAO',
+        licitacaoId,
+      },
     });
 
     adminCookie = await autenticar(app, admin);
@@ -47,7 +57,13 @@ describe('Autenticação (funcional)', () => {
       .send(usuario)
       .expect(201);
 
-    expect(resposta.body).toMatchObject({ nome: usuario.nome, email: usuario.email, ativo: true });
+    expect(resposta.body).toMatchObject({
+      nome: usuario.nome,
+      email: usuario.email,
+      ativo: true,
+      tipo: 'USUARIO_LICITACAO',
+      licitacao: { id: licitacaoId },
+    });
     expect(resposta.body.senhaHash).toBeUndefined();
   });
 
@@ -82,13 +98,22 @@ describe('Autenticação (funcional)', () => {
       .set('Cookie', cookie)
       .expect(200);
 
-    expect(respostaPerfil.body).toMatchObject({ email: usuario.email });
-
-    await request(app.getHttpServer()).get('/usuarios').set('Cookie', cookie).expect(200);
+    // O perfil traz o que o front usa para montar o menu: perfil, licitação e se é só leitura.
+    expect(respostaPerfil.body).toMatchObject({
+      email: usuario.email,
+      tipo: 'USUARIO_LICITACAO',
+      licitacao: { id: licitacaoId, status: 'VIGENTE' },
+      somenteLeitura: false,
+    });
   });
 
-  it('restringe a listagem de usuários ao administrador', async () => {
+  it('restringe a listagem e o cadastro de usuários aos administradores', async () => {
     await request(app.getHttpServer()).get('/usuarios').set('Cookie', monitorCookie).expect(403);
+    await request(app.getHttpServer())
+      .post('/usuarios')
+      .set('Cookie', monitorCookie)
+      .send({ nome: 'X', email: emailDeTeste('x'), senha: 'senha12345' })
+      .expect(403);
   });
 
   it('permite buscar usuários por nome sem expor senha', async () => {
@@ -104,20 +129,31 @@ describe('Autenticação (funcional)', () => {
     expect(resposta.body[0].senha).toBeUndefined();
   });
 
-  it('permite que um usuário autenticado edite outro usuário', async () => {
+  it('cada um edita os próprios dados, mas o usuário comum não edita os de outra pessoa', async () => {
     const outro = await request(app.getHttpServer())
       .post('/usuarios')
       .set('Cookie', adminCookie)
-      .send({ nome: 'Outro', email: emailDeTeste('outro'), senha: 'senha12345' });
+      .send({ nome: 'Outro', email: emailDeTeste('outro'), senha: 'senha12345', licitacaoId });
     outroUsuarioId = outro.body.id;
 
     const cookie = await autenticar(app, usuario);
+    const { body: eu } = await request(app.getHttpServer()).get('/autenticacao/perfil').set('Cookie', cookie);
 
+    await request(app.getHttpServer())
+      .patch(`/usuarios/${eu.id}`)
+      .set('Cookie', cookie)
+      .send({ nome: 'Usuário Editado' })
+      .expect(200);
     await request(app.getHttpServer())
       .patch(`/usuarios/${outroUsuarioId}`)
       .set('Cookie', cookie)
       .send({ nome: 'Outro Editado' })
-      .expect(200);
+      .expect(403);
+    await request(app.getHttpServer())
+      .patch(`/usuarios/${eu.id}`)
+      .set('Cookie', cookie)
+      .send({ tipo: 'ADMIN_LICITACAO' })
+      .expect(403);
   });
 
   it('ao inativar um usuário, o cookie/token dele já emitido perde validade imediatamente', async () => {
@@ -125,6 +161,7 @@ describe('Autenticação (funcional)', () => {
       nome: 'Vítima',
       email: emailDeTeste('vitima'),
       senha: 'senha12345',
+      licitacaoId,
     };
     const respostaCriacao = await request(app.getHttpServer())
       .post('/usuarios')

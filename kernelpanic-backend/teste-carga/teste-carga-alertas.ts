@@ -12,7 +12,7 @@ import { type EstacaoComAlerta, NOME_TIPO_PARAMETRO_CARGA, prepararCenarioAlerta
  * leituras que cruzam o limite com frequência.
  */
 
-const BASE_URL = process.env.INGESTAO_URL ?? `http://localhost:${process.env.PORT ?? 3001}`;
+const BASE_URL = process.env.INGESTAO_URL ?? `http://localhost:${process.env.INGESTAO_PORTA ?? 3002}`;
 const NUM_ESTACOES = Number(process.env.NUM_ESTACOES ?? 200);
 const TAXA_POR_SEGUNDO = Number(process.env.TAXA_POR_SEGUNDO ?? 200);
 const DURACAO_SEGUNDOS = Number(process.env.DURACAO_SEGUNDOS ?? 10);
@@ -20,8 +20,8 @@ const DURACAO_SEGUNDOS = Number(process.env.DURACAO_SEGUNDOS ?? 10);
 // de milhares de fetch() simultâneos estoura o limite de conexões TCP do
 // loopback (mesmo problema que teste-carga-paralelo.ts resolve com um Pool).
 const CONEXOES_CONCORRENTES = Number(process.env.CONEXOES_CONCORRENTES ?? 100);
-// margem sobre o INGESTAO_LOTE_INTERVALO_MS do serviço, para o último lote
-// já ter sido gravado (e o trigger já ter rodado) antes de contarmos os alarmes
+// margem sobre o lote da ingestão e o ciclo do tratamento, para o último lote
+// já ter virado medida (e o trigger já ter rodado) antes de contarmos os alarmes
 const ESPERA_FLUSH_MS = Number(process.env.ESPERA_FLUSH_MS ?? 4000);
 
 function escolher<T>(itens: T[]): T {

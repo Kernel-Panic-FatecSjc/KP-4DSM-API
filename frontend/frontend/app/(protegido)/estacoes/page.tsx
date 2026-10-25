@@ -1,7 +1,7 @@
 'use client';
 
 import { createPortal } from 'react-dom';
-import { useEffect, useMemo, useState,} from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Copy, MoreHorizontal, Plus, Search, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -12,11 +12,14 @@ import {
   type CriarEstacaoPayload,
   type EstacaoApi,
   type EstacaoCriadaApi,
+  type Paginado,
   type SensorApi,
-  type Usuario,
 } from '@/lib/api';
+import { ehTecsus, podeCadastrar } from '@/lib/perfil';
 import { PageHeading } from '@/components/PageHeading';
 import { DataTable, type Column } from '@/components/DataTable';
+import { useUsuario } from '@/components/ProtectedLayout';
+import { SeletorLicitacao } from '@/components/SeletorLicitacao';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -37,6 +40,7 @@ type Estacao = {
   endereco: string;
   possuiChaveIngestao: boolean;
   sensores: Sensor[];
+  licitacao: { id: string; codigoIdentificador: string };
 };
 
 // Chave de ingestão recém-gerada: aparece uma única vez, para gravar no datalogger.
@@ -45,19 +49,59 @@ type ChaveExibida = {
   chave: string;
 };
 
-const ITEMS_PER_PAGE = 5;
+const ITEMS_PER_PAGE = 10;
+// Espera o usuário parar de digitar antes de consultar a API.
+const ATRASO_BUSCA_MS = 300;
+// Maior página que a API aceita: cobre os sensores de uma licitação.
+const TAMANHO_LISTA_SENSORES = 200;
+
+function converterSensor(sensor: { id: string; nome: string; unidade: string }): Sensor {
+  return {
+    id: sensor.id,
+    nome: sensor.nome,
+    tipo: sensor.nome,
+    unidade: sensor.unidade,
+  };
+}
+
+function converterEstacao(estacao: EstacaoApi): Estacao {
+  return {
+    id: estacao.id,
+    nome: estacao.nome,
+    codigo: estacao.vid,
+    possuiChaveIngestao: estacao.possuiChaveIngestao,
+    latitude: estacao.latitude,
+    longitude: estacao.longitude,
+    status: estacao.statusOperacional === 'ATIVA' ? 'Ativo' : 'Não Ativo',
+    endereco: estacao.endereco,
+    sensores: estacao.sensores.map(converterSensor),
+    licitacao: estacao.licitacao,
+  };
+}
 
 export default function EstacoesPage() {
   const router = useRouter();
+  const usuario = useUsuario();
+  const tecsus = ehTecsus(usuario);
+  // Cadastro, edição e chave de ingestão: Tecsus e admin da licitação, fora de licitação encerrada.
+  const podeEditar = podeCadastrar(usuario);
 
   const [estacoes, setEstacoes] = useState<Estacao[]>([]);
-  const [sensoresDisponiveis, setSensoresDisponiveis] = useState<Sensor[]>([]);
-  const [carregandoSensores, setCarregandoSensores] = useState(true);
-  const [erroSensores, setErroSensores] = useState<string | null>(null);
+  const [total, setTotal] = useState(0);
   const [carregando, setCarregando] = useState(true);
+  const ultimaConsulta = useRef(0);
+
+  const [sensoresDisponiveis, setSensoresDisponiveis] = useState<Sensor[]>([]);
+  const [carregandoSensores, setCarregandoSensores] = useState(false);
+  const [erroSensores, setErroSensores] = useState<string | null>(null);
+  const ultimaConsultaSensores = useRef(0);
 
   const [busca, setBusca] = useState('');
+  const [buscaAplicada, setBuscaAplicada] = useState('');
+  const [licitacaoFiltro, setLicitacaoFiltro] = useState('');
   const [paginaAtual, setPaginaAtual] = useState(1);
+  // Incrementado depois de cadastrar, para reconsultar a listagem.
+  const [recarga, setRecarga] = useState(0);
 
   const [modalCadastroAberto, setModalCadastroAberto] =
     useState(false);
@@ -82,6 +126,7 @@ export default function EstacoesPage() {
     left: number;
   } | null>(null);
 
+  const [licitacaoCadastro, setLicitacaoCadastro] = useState('');
   const [nome, setNome] = useState('');
   const [vid, setVid] = useState('');
   const [latitude, setLatitude] = useState('');
@@ -91,126 +136,105 @@ export default function EstacoesPage() {
   const [sensoresSelecionados, setSensoresSelecionados] =
     useState<Sensor[]>([]);
 
-  // Cadastro e chave de ingestão são só do administrador (a API responde 403).
-  const [ehAdministrador, setEhAdministrador] = useState(false);
   const [chaveExibida, setChaveExibida] =
     useState<ChaveExibida | null>(null);
   const [chaveCopiada, setChaveCopiada] = useState(false);
 
-  useEffect(() => {
-    api<Usuario>('/autenticacao/perfil')
-      .then((perfil) => setEhAdministrador(perfil.tipo === 'ADMINISTRADOR'))
-      .catch(() => setEhAdministrador(false));
-  }, []);
-
-  useEffect(() => {
-    api<EstacaoApi[]>('/estacoes')
-      .then((resposta) => {
-        const estacoesConvertidas: Estacao[] = resposta.map(
-          (estacao) => ({
-            id: estacao.id,
-            nome: estacao.nome,
-            codigo: estacao.vid,
-            possuiChaveIngestao: estacao.possuiChaveIngestao,
-            latitude: estacao.latitude,
-            longitude: estacao.longitude,
-            status:
-              estacao.statusOperacional === 'ATIVA'
-                ? 'Ativo'
-                : 'Não Ativo',
-            endereco: estacao.endereco,
-            sensores: estacao.sensores.map((sensor) => ({
-              id: sensor.id,
-              nome: sensor.nome,
-              tipo: sensor.nome,
-              unidade: sensor.unidade,
-            })),
-          }),
-        );
-
-        setEstacoes(estacoesConvertidas);
-      })
-      .catch((erro: unknown) => {
-        if (erro instanceof ErroApi) {
-          if (erro.status === 401) {
-            router.push('/login?proximo=/estacoes');
-            return;
-          }
-
-          alert(erro.message);
-          return;
-        }
-
-        console.error(erro);
-        alert('Não foi possível carregar as estações.');
-      })
-      .finally(() => {
-        setCarregando(false);
-      });
-  }, [router]);
-
-  useEffect(() => {
-    api<SensorApi[]>('/sensores')
-      .then((resposta) => {
-        setSensoresDisponiveis(resposta.map((sensor) => ({
-          id: sensor.id,
-          nome: sensor.nome,
-          tipo: sensor.nome,
-          unidade: sensor.unidade,
-        })));
-      })
-      .catch((erro: unknown) => {
-        if (erro instanceof ErroApi && erro.status === 401) {
+  /** 401 manda para o login; o resto vira alerta. */
+  const tratarErro = useCallback(
+    (erro: unknown, padrao: string) => {
+      if (erro instanceof ErroApi) {
+        if (erro.status === 401) {
           router.push('/login?proximo=/estacoes');
           return;
         }
-        setErroSensores(erro instanceof ErroApi ? erro.message : 'Não foi possível carregar os tipos de sensores.');
-      })
-      .finally(() => setCarregandoSensores(false));
-  }, [router]);
 
-  const estacoesFiltradas = useMemo(() => {
-    const termo = busca.trim().toLowerCase();
+        alert(erro.message);
+        return;
+      }
 
-    if (!termo) {
-      return estacoes;
+      console.error(erro);
+      alert(padrao);
+    },
+    [router],
+  );
+
+  const carregarEstacoes = useCallback(async () => {
+    const consulta = ++ultimaConsulta.current;
+    setCarregando(true);
+
+    const parametros = new URLSearchParams({
+      pagina: String(paginaAtual),
+      tamanho: String(ITEMS_PER_PAGE),
+    });
+    if (buscaAplicada) parametros.set('busca', buscaAplicada);
+    if (licitacaoFiltro) parametros.set('licitacaoId', licitacaoFiltro);
+
+    try {
+      const resposta = await api<Paginado<EstacaoApi>>(`/estacoes?${parametros}`);
+      // Uma consulta mais nova (ex.: busca digitada) já está a caminho.
+      if (consulta !== ultimaConsulta.current) return;
+      setEstacoes(resposta.itens.map(converterEstacao));
+      setTotal(resposta.total);
+    } catch (erro) {
+      if (consulta !== ultimaConsulta.current) return;
+      tratarErro(erro, 'Não foi possível carregar as estações.');
+    } finally {
+      if (consulta === ultimaConsulta.current) setCarregando(false);
+    }
+  }, [tratarErro, paginaAtual, buscaAplicada, licitacaoFiltro]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- busca a listagem ao montar a página e ao mudar o filtro
+    void carregarEstacoes();
+    // recarga não é lida aqui: só refaz a consulta depois de cadastrar.
+  }, [carregarEstacoes, recarga]);
+
+  useEffect(() => {
+    const espera = setTimeout(() => {
+      setBuscaAplicada(busca.trim());
+      setPaginaAtual(1);
+    }, ATRASO_BUSCA_MS);
+    return () => clearTimeout(espera);
+  }, [busca]);
+
+  // Os sensores de uma estação são da licitação dela. A Tecsus diz qual; o
+  // admin da licitação recebe os da própria sem informar.
+  const carregarSensores = async (licitacaoId: string) => {
+    const consulta = ++ultimaConsultaSensores.current;
+    setErroSensores(null);
+
+    if (tecsus && !licitacaoId) {
+      setSensoresDisponiveis([]);
+      setCarregandoSensores(false);
+      return;
     }
 
-    return estacoes.filter((estacao) => {
-      return (
-        estacao.nome.toLowerCase().includes(termo) ||
-        estacao.codigo.toLowerCase().includes(termo) ||
-        estacao.endereco.toLowerCase().includes(termo)
-      );
-    });
-  }, [estacoes, busca]);
+    setCarregandoSensores(true);
+    const parametros = new URLSearchParams({ tamanho: String(TAMANHO_LISTA_SENSORES) });
+    if (tecsus) parametros.set('licitacaoId', licitacaoId);
 
-  const totalPaginas = Math.max(
-    1,
-    Math.ceil(
-      estacoesFiltradas.length / ITEMS_PER_PAGE,
-    ),
-  );
+    try {
+      const resposta = await api<Paginado<SensorApi>>(`/sensores?${parametros}`);
+      if (consulta !== ultimaConsultaSensores.current) return;
+      setSensoresDisponiveis(resposta.itens.map(converterSensor));
+    } catch (erro) {
+      if (consulta !== ultimaConsultaSensores.current) return;
+      if (erro instanceof ErroApi && erro.status === 401) {
+        router.push('/login?proximo=/estacoes');
+        return;
+      }
+      setSensoresDisponiveis([]);
+      setErroSensores(erro instanceof ErroApi ? erro.message : 'Não foi possível carregar os tipos de sensores.');
+    } finally {
+      if (consulta === ultimaConsultaSensores.current) setCarregandoSensores(false);
+    }
+  };
 
-  const paginaSegura = Math.min(
-    paginaAtual,
-    totalPaginas,
-  );
-
-  const estacoesPagina = useMemo(() => {
-    const inicio =
-      (paginaSegura - 1) * ITEMS_PER_PAGE;
-
-    return estacoesFiltradas.slice(
-      inicio,
-      inicio + ITEMS_PER_PAGE,
-    );
-  }, [
-    estacoesFiltradas,
-    paginaSegura,
-  ]);
+  const totalPaginas = Math.max(1, Math.ceil(total / ITEMS_PER_PAGE));
 
   const limparFormulario = () => {
+    setLicitacaoCadastro('');
     setNome('');
     setVid('');
     setLatitude('');
@@ -222,11 +246,27 @@ export default function EstacoesPage() {
 
   const abrirModalCadastro = () => {
     limparFormulario();
+    // Quem já filtrou uma licitação provavelmente vai cadastrar nela.
+    const licitacao = tecsus ? licitacaoFiltro : '';
+    setLicitacaoCadastro(licitacao);
+    void carregarSensores(licitacao);
     setModalCadastroAberto(true);
+  };
+
+  const alterarLicitacaoCadastro = (licitacaoId: string) => {
+    setLicitacaoCadastro(licitacaoId);
+    // Sensores de outra licitação seriam recusados pela API.
+    setSensoresSelecionados([]);
+    void carregarSensores(licitacaoId);
   };
 
   const cadastrarEstacao = async () => {
     try {
+      if (tecsus && !licitacaoCadastro) {
+        alert('Selecione a licitação da estação.');
+        return;
+      }
+
       if (!nome.trim()) {
         alert('Informe o nome da estação.');
         return;
@@ -293,6 +333,8 @@ export default function EstacoesPage() {
           sensoresSelecionados.map(
             (sensor) => sensor.id,
           ),
+        // O admin da licitação omite: o backend usa a licitação dele.
+        ...(tecsus ? { licitacaoId: licitacaoCadastro } : {}),
       };
 
       const novaEstacaoApi =
@@ -301,51 +343,14 @@ export default function EstacoesPage() {
           body: JSON.stringify(payload),
         });
 
-      const novaEstacao: Estacao = {
-        id: novaEstacaoApi.id,
-        nome: novaEstacaoApi.nome,
-        codigo: novaEstacaoApi.vid,
-        possuiChaveIngestao: novaEstacaoApi.possuiChaveIngestao,
-        latitude: novaEstacaoApi.latitude,
-        longitude: novaEstacaoApi.longitude,
-        status:
-          novaEstacaoApi.statusOperacional === 'ATIVA'
-            ? 'Ativo'
-            : 'Não Ativo',
-        endereco: novaEstacaoApi.endereco,
-        sensores: novaEstacaoApi.sensores.map(
-          (sensor) => ({
-            id: sensor.id,
-            nome: sensor.nome,
-            tipo: sensor.nome,
-            unidade: sensor.unidade,
-          }),
-        ),
-      };
-
-      setEstacoes((anteriores) => [
-        ...anteriores,
-        novaEstacao,
-      ]);
-
       setModalCadastroAberto(false);
       limparFormulario();
       setPaginaAtual(1);
+      setRecarga((atual) => atual + 1);
 
-      exibirChave(novaEstacao.nome, novaEstacaoApi.chaveIngestao);
+      exibirChave(novaEstacaoApi.nome, novaEstacaoApi.chaveIngestao);
     } catch (erro) {
-      if (erro instanceof ErroApi) {
-        if (erro.status === 401) {
-          router.push('/login?proximo=/estacoes');
-          return;
-        }
-
-        alert(erro.message);
-        return;
-      }
-
-      console.error(erro);
-      alert('Não foi possível cadastrar a estação.');
+      tratarErro(erro, 'Não foi possível cadastrar a estação.');
     }
   };
 
@@ -392,18 +397,7 @@ export default function EstacoesPage() {
       );
       exibirChave(estacao.nome, chaveIngestao);
     } catch (erro) {
-      if (erro instanceof ErroApi) {
-        if (erro.status === 401) {
-          router.push('/login?proximo=/estacoes');
-          return;
-        }
-
-        alert(erro.message);
-        return;
-      }
-
-      console.error(erro);
-      alert('Não foi possível gerar a chave de ingestão.');
+      tratarErro(erro, 'Não foi possível gerar a chave de ingestão.');
     }
   };
 
@@ -448,6 +442,7 @@ export default function EstacoesPage() {
     setLongitude(String(estacao.longitude));
     setEndereco(estacao.endereco);
     setSensoresSelecionados(estacao.sensores);
+    void carregarSensores(estacao.licitacao.id);
 
     setModalEdicaoAberto(true);
   };
@@ -502,18 +497,8 @@ export default function EstacoesPage() {
           : 'Estação inativada com sucesso!',
       );
     } catch (erro) {
-      if (erro instanceof ErroApi) {
-        if (erro.status === 401) {
-          router.push('/login?proximo=/estacoes');
-          return;
-        }
-
-        alert(erro.message);
-        return;
-      }
-
-      console.error(erro);
-      alert(
+      tratarErro(
+        erro,
         statusOperacional === 'ATIVA'
           ? 'Não foi possível ativar a estação.'
           : 'Não foi possível inativar a estação.',
@@ -564,6 +549,8 @@ export default function EstacoesPage() {
       return;
     }
 
+    const vidAlterado = vid.trim() !== estacaoSelecionada.codigo;
+
     try {
       const payload: AtualizarEstacaoPayload = {
         nome: nome.trim(),
@@ -584,27 +571,7 @@ export default function EstacoesPage() {
         },
       );
 
-      const estacaoConvertida: Estacao = {
-        id: estacaoAtualizada.id,
-        nome: estacaoAtualizada.nome,
-        codigo: estacaoAtualizada.vid,
-        possuiChaveIngestao: estacaoAtualizada.possuiChaveIngestao,
-        latitude: estacaoAtualizada.latitude,
-        longitude: estacaoAtualizada.longitude,
-        status:
-          estacaoAtualizada.statusOperacional === 'ATIVA'
-            ? 'Ativo'
-            : 'Não Ativo',
-        endereco: estacaoAtualizada.endereco,
-        sensores: estacaoAtualizada.sensores.map(
-          (sensor) => ({
-            id: sensor.id,
-            nome: sensor.nome,
-            tipo: sensor.nome,
-            unidade: sensor.unidade,
-          }),
-        ),
-      };
+      const estacaoConvertida = converterEstacao(estacaoAtualizada);
 
       setEstacoes((anteriores) =>
         anteriores.map((estacao) =>
@@ -616,20 +583,13 @@ export default function EstacoesPage() {
 
       setModalEdicaoAberto(false);
       limparFormulario();
-      alert('Estação atualizada com sucesso!');
+      alert(
+        vidAlterado
+          ? 'Estação atualizada. Como o UUID/MAC mudou, a chave de ingestão foi apagada: use "Gerar chave" no menu da estação e grave a nova chave no datalogger.'
+          : 'Estação atualizada com sucesso!',
+      );
     } catch (erro) {
-      if (erro instanceof ErroApi) {
-        if (erro.status === 401) {
-          router.push('/login?proximo=/estacoes');
-          return;
-        }
-
-        alert(erro.message);
-        return;
-      }
-
-      console.error(erro);
-      alert('Não foi possível atualizar a estação.');
+      tratarErro(erro, 'Não foi possível atualizar a estação.');
     }
   };
 
@@ -649,28 +609,125 @@ export default function EstacoesPage() {
     });
   };
 
+  const colunaLicitacao: Column<Estacao> = {
+    key: 'licitacao',
+    header: 'Licitação',
+    render: (_, estacao) => (
+      <span className="whitespace-nowrap rounded-md bg-muted px-2 py-1 font-mono text-xs">
+        {estacao.licitacao.codigoIdentificador}
+      </span>
+    ),
+  };
+
+  const colunaAcoes: Column<Estacao> = {
+    key: 'longitude',
+    header: '',
+    render: (_, estacao) => (
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={(event) =>
+            abrirMenu(
+              event,
+              estacao.codigo,
+            )
+          }
+          className="rounded-md p-2 hover:bg-muted"
+          aria-label={`Ações para ${estacao.nome}`}
+        >
+          <MoreHorizontal className="h-5 w-5" />
+        </button>
+
+        {menuAbertoCodigo ===
+          estacao.codigo &&
+          posicaoMenu &&
+          typeof document !== 'undefined' &&
+          createPortal(
+            <div
+              className="fixed z-[100] w-40 rounded-lg border border-border bg-card p-1 shadow-lg"
+              style={{
+                top: posicaoMenu.top,
+                left: posicaoMenu.left,
+              }}
+              role="menu"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                onClick={() =>
+                  abrirModalEdicao(estacao)
+                }
+              >
+                Editar
+              </button>
+
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                onClick={() => void regenerarChave(estacao)}
+              >
+                {estacao.possuiChaveIngestao
+                  ? 'Regenerar chave'
+                  : 'Gerar chave'}
+              </button>
+
+              <button
+                type="button"
+                role="menuitem"
+                className={`w-full rounded-md px-3 py-2 text-left text-sm ${
+                  estacao.status === 'Ativo'
+                    ? 'text-red-600 hover:bg-red-50'
+                    : 'text-green-700 hover:bg-green-50'
+                }`}
+                onClick={() => {
+                  if (estacao.status === 'Ativo') {
+                    confirmarExclusao(estacao.codigo);
+                    return;
+                  }
+
+                  void atualizarStatusEstacao(
+                    estacao,
+                    'ATIVA',
+                  );
+                }}
+              >
+                {estacao.status === 'Ativo'
+                  ? 'Desativar'
+                  : 'Ativar'}
+              </button>
+            </div>,
+            document.body,
+          )}
+      </div>
+    ),
+  };
+
   const tableColumns: Column<Estacao>[] = [
     {
       key: 'nome',
       header: 'Estação',
       render: (_, estacao) => (
-        <div>
+        <div className="min-w-40">
           <p className="font-medium">
             {estacao.nome}
           </p>
 
-          <p className="text-xs text-muted-foreground">
+          <p className="break-all text-xs text-muted-foreground">
             {estacao.codigo}
           </p>
         </div>
       ),
     },
 
+    ...(tecsus ? [colunaLicitacao] : []),
+
     {
       key: 'endereco',
       header: 'Endereço',
       render: (_, estacao) => (
-        <span>{estacao.endereco}</span>
+        <span className="block min-w-40">{estacao.endereco}</span>
       ),
     },
 
@@ -678,7 +735,7 @@ export default function EstacoesPage() {
       key: 'latitude',
       header: 'Localização',
       render: (_, estacao) => (
-        <div className="text-sm">
+        <div className="whitespace-nowrap text-sm">
           <p>
             Lat: {estacao.latitude}
           </p>
@@ -694,15 +751,24 @@ export default function EstacoesPage() {
       key: 'status',
       header: 'Status',
       render: (_, estacao) => (
-        <span
-          className={
-            estacao.status === 'Ativo'
-              ? 'inline-flex rounded-full px-3 py-1 text-xs font-medium bg-green-100 text-green-700'
-              : 'inline-flex rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-600'
-          }
-        >
-          {estacao.status}
-        </span>
+        <div className="space-y-1">
+          <span
+            className={
+              estacao.status === 'Ativo'
+                ? 'inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium bg-green-100 text-green-700'
+                : 'inline-flex whitespace-nowrap rounded-full px-3 py-1 text-xs font-medium bg-gray-100 text-gray-600'
+            }
+          >
+            {estacao.status}
+          </span>
+
+          {/* Sem chave a estação não consegue publicar (ex.: logo depois de trocar o vid). */}
+          {!estacao.possuiChaveIngestao && (
+            <p className="whitespace-nowrap text-xs text-muted-foreground">
+              Sem chave de ingestão
+            </p>
+          )}
+        </div>
       ),
     },
 
@@ -710,7 +776,7 @@ export default function EstacoesPage() {
       key: 'sensores',
       header: 'Sensores',
       render: (_, estacao) => (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex min-w-32 flex-wrap gap-1">
           {estacao.sensores.length === 0 ? (
             <span className="text-sm text-muted-foreground">
               Nenhum
@@ -729,90 +795,66 @@ export default function EstacoesPage() {
       ),
     },
 
-    {
-      key: 'longitude',
-      header: '',
-      render: (_, estacao) => (
-        <div className="flex justify-end">
-          <button
-            type="button"
-            onClick={(event) =>
-              abrirMenu(
-                event,
-                estacao.codigo,
-              )
-            }
-            className="rounded-md p-2 hover:bg-muted"
-            aria-label={`Ações para ${estacao.nome}`}
-          >
-            <MoreHorizontal className="h-5 w-5" />
-          </button>
-
-          {menuAbertoCodigo ===
-            estacao.codigo &&
-            posicaoMenu &&
-            typeof document !== 'undefined' &&
-            createPortal(
-              <div
-                className="fixed z-[100] w-40 rounded-lg border border-border bg-card p-1 shadow-lg"
-                style={{
-                  top: posicaoMenu.top,
-                  left: posicaoMenu.left,
-                }}
-                role="menu"
-              >
-                <button
-                  type="button"
-                  className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
-                  onClick={() =>
-                    abrirModalEdicao(estacao)
-                  }
-                >
-                  Editar
-                </button>
-
-                {ehAdministrador && (
-                  <button
-                    type="button"
-                    className="w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
-                    onClick={() => void regenerarChave(estacao)}
-                  >
-                    {estacao.possuiChaveIngestao
-                      ? 'Regenerar chave'
-                      : 'Gerar chave'}
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  className={`w-full rounded-md px-3 py-2 text-left text-sm ${
-                    estacao.status === 'Ativo'
-                      ? 'text-red-600 hover:bg-red-50'
-                      : 'text-green-700 hover:bg-green-50'
-                  }`}
-                  onClick={() => {
-                    if (estacao.status === 'Ativo') {
-                      confirmarExclusao(estacao.codigo);
-                      return;
-                    }
-
-                    void atualizarStatusEstacao(
-                      estacao,
-                      'ATIVA',
-                    );
-                  }}
-                >
-                  {estacao.status === 'Ativo'
-                    ? 'Desativar'
-                    : 'Ativar'}
-                </button>
-              </div>,
-              document.body,
-            )}
-        </div>
-      ),
-    },
+    ...(podeEditar ? [colunaAcoes] : []),
   ];
+
+  const filtrando = Boolean(buscaAplicada || licitacaoFiltro);
+
+  // Lista de sensores do modal de seleção; a Tecsus precisa escolher a licitação antes.
+  const listaSensores = tecsus && modalCadastroAberto && !licitacaoCadastro ? (
+    <p className="py-4 text-center text-sm text-muted-foreground">
+      Escolha a licitação da estação para ver os sensores dela.
+    </p>
+  ) : carregandoSensores ? (
+    <p className="py-4 text-center text-sm text-muted-foreground">Carregando sensores cadastrados...</p>
+  ) : erroSensores ? (
+    <p role="alert" className="py-4 text-center text-sm text-destructive">{erroSensores}</p>
+  ) : sensoresDisponiveis.length === 0 ? (
+    <p className="py-4 text-center text-sm text-muted-foreground">
+      Nenhum tipo de sensor cadastrado nesta licitação.{' '}
+      <Link href="/sensores" className="font-medium text-primary hover:underline">Cadastrar sensores</Link>
+    </p>
+  ) : (
+    sensoresDisponiveis.map((sensor) => {
+      const selecionado =
+        sensoresSelecionados.some(
+          (item) =>
+            item.id === sensor.id,
+        );
+
+      return (
+        <button
+          key={sensor.id}
+          type="button"
+          aria-pressed={selecionado}
+          onClick={() =>
+            alternarSensor(sensor)
+          }
+          className={`flex w-full items-center justify-between gap-3 rounded-lg border p-3 text-left transition ${
+            selecionado
+              ? 'border-primary bg-primary/10'
+              : 'hover:bg-muted'
+          }`}
+        >
+          <div className="min-w-0">
+            <p className="font-medium">
+              {sensor.nome}
+            </p>
+
+            <p className="text-xs text-muted-foreground">
+              Unidade: {sensor.unidade}
+            </p>
+          </div>
+
+          {selecionado && (
+            <span className="text-sm font-medium">
+              Selecionado
+            </span>
+          )}
+        </button>
+      );
+    })
+  );
 
   return (
     <div className="space-y-6">
@@ -821,25 +863,36 @@ export default function EstacoesPage() {
         description="Gerencie as estações e seus sensores."
       />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative w-full sm:max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+        <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-1 sm:flex-row">
+          <div className="relative w-full sm:max-w-md">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
-          <Input
-            value={busca}
-            onChange={(event) => {
-              setBusca(event.target.value);
+            <Input
+              value={busca}
+              onChange={(event) => setBusca(event.target.value)}
+              placeholder="Buscar por nome ou UUID/MAC..."
+              aria-label="Buscar estação"
+              className="pl-9"
+            />
+          </div>
+
+          <SeletorLicitacao
+            valor={licitacaoFiltro}
+            onChange={(licitacaoId) => {
+              setLicitacaoFiltro(licitacaoId);
               setPaginaAtual(1);
             }}
-            placeholder="Buscar estação..."
-            className="pl-9"
+            rotuloTodas="Todas as licitações"
+            className="sm:max-w-xs"
           />
         </div>
 
-        {ehAdministrador && (
+        {podeEditar && (
           <Button
             type="button"
             onClick={abrirModalCadastro}
+            className="w-full sm:w-auto"
           >
             <Plus className="mr-2 h-4 w-4" />
             Nova estação
@@ -848,29 +901,31 @@ export default function EstacoesPage() {
       </div>
 
       <div className="min-h-[300px]">
-        {carregando ? (
+        {carregando && estacoes.length === 0 ? (
           <div className="flex min-h-[300px] items-center justify-center rounded-lg border">
             <p className="text-sm text-muted-foreground">
               Carregando estações...
             </p>
           </div>
-        ) : estacoesPagina.length === 0 ? (
-          <div className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border">
+        ) : estacoes.length === 0 ? (
+          <div className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border px-4 text-center">
             <p className="font-medium">
               Nenhuma estação encontrada
             </p>
 
             <p className="mt-1 text-sm text-muted-foreground">
-              {busca
-                ? 'Tente alterar os termos da busca.'
-                : 'Cadastre a primeira estação.'}
+              {filtrando
+                ? 'Tente alterar a busca ou o filtro.'
+                : podeEditar
+                  ? 'Cadastre a primeira estação.'
+                  : 'Ainda não há estações cadastradas.'}
             </p>
           </div>
         ) : (
           <DataTable
             columns={tableColumns}
-            data={estacoesPagina}
-            currentPage={paginaSegura}
+            data={estacoes}
+            currentPage={paginaAtual}
             totalPages={totalPaginas}
             onPageChange={(page: number) =>
               setPaginaAtual(page)
@@ -882,10 +937,15 @@ export default function EstacoesPage() {
 
       {modalCadastroAberto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-xl bg-card p-6 shadow-xl">
-            <div className="mb-6 flex items-center justify-between">
+          <div
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-xl bg-card p-4 shadow-xl sm:p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="titulo-cadastro-estacao"
+          >
+            <div className="mb-6 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold">
+                <h2 id="titulo-cadastro-estacao" className="text-xl font-semibold">
                   Cadastrar estação
                 </h2>
 
@@ -900,19 +960,38 @@ export default function EstacoesPage() {
                   setModalCadastroAberto(false)
                 }
                 className="rounded-md p-2 hover:bg-muted"
+                aria-label="Fechar"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
+              {tecsus && (
+                <div className="sm:col-span-2">
+                  <label htmlFor="estacao-licitacao" className="mb-1 block text-sm font-medium">
+                    Licitação
+                  </label>
+
+                  <SeletorLicitacao
+                    id="estacao-licitacao"
+                    valor={licitacaoCadastro}
+                    onChange={alterarLicitacaoCadastro}
+                  />
+
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    A estação pertence a esta licitação e só pode usar os sensores dela.
+                  </p>
+                </div>
+              )}
 
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium">
+                <label htmlFor="estacao-nome" className="mb-1 block text-sm font-medium">
                   Nome da estação
                 </label>
 
                 <Input
+                  id="estacao-nome"
                   value={nome}
                   onChange={(event) =>
                     setNome(event.target.value)
@@ -922,11 +1001,12 @@ export default function EstacoesPage() {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium">
+                <label htmlFor="estacao-vid" className="mb-1 block text-sm font-medium">
                   UUID/MAC
                 </label>
 
                 <Input
+                  id="estacao-vid"
                   value={vid}
                   onChange={(event) =>
                     setVid(event.target.value)
@@ -942,11 +1022,12 @@ export default function EstacoesPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium">
+                <label htmlFor="estacao-latitude" className="mb-1 block text-sm font-medium">
                   Latitude
                 </label>
 
                 <Input
+                  id="estacao-latitude"
                   type="number"
                   step="any"
                   value={latitude}
@@ -958,11 +1039,12 @@ export default function EstacoesPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium">
+                <label htmlFor="estacao-longitude" className="mb-1 block text-sm font-medium">
                   Longitude
                 </label>
 
                 <Input
+                  id="estacao-longitude"
                   type="number"
                   step="any"
                   value={longitude}
@@ -974,11 +1056,12 @@ export default function EstacoesPage() {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium">
+                <label htmlFor="estacao-endereco" className="mb-1 block text-sm font-medium">
                   Endereço / Região
                 </label>
 
                 <Input
+                  id="estacao-endereco"
                   value={endereco}
                   onChange={(event) =>
                     setEndereco(event.target.value)
@@ -989,11 +1072,11 @@ export default function EstacoesPage() {
             </div>
 
             <div className="mt-5">
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <label className="block text-sm font-medium">
+                  <p className="block text-sm font-medium">
                     Sensores
-                  </label>
+                  </p>
 
                   <p className="text-xs text-muted-foreground">
                     Selecione os tipos de parâmetro associados.
@@ -1033,7 +1116,7 @@ export default function EstacoesPage() {
               )}
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
               <Button
                 type="button"
                 variant="outline"
@@ -1058,10 +1141,15 @@ export default function EstacoesPage() {
 
       {modalSensoresAberto && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-xl bg-card p-6 shadow-xl">
-            <div className="mb-5 flex items-center justify-between">
+          <div
+            className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col rounded-xl bg-card p-4 shadow-xl sm:p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="titulo-selecao-sensores"
+          >
+            <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-semibold">
+                <h2 id="titulo-selecao-sensores" className="text-lg font-semibold">
                   Selecionar sensores
                 </h2>
 
@@ -1076,52 +1164,14 @@ export default function EstacoesPage() {
                   setModalSensoresAberto(false)
                 }
                 className="rounded-md p-2 hover:bg-muted"
+                aria-label="Fechar"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="space-y-2">
-              {carregandoSensores ? <p className="py-4 text-center text-sm text-muted-foreground">Carregando sensores cadastrados...</p> : erroSensores ? <p role="alert" className="py-4 text-center text-sm text-destructive">{erroSensores}</p> : sensoresDisponiveis.length === 0 ? <p className="py-4 text-center text-sm text-muted-foreground">Nenhum tipo de sensor cadastrado.{' '}<Link href="/sensores" className="font-medium text-primary hover:underline">Cadastrar sensores</Link></p> : sensoresDisponiveis.map(
-                (sensor) => {
-                  const selecionado =
-                    sensoresSelecionados.some(
-                      (item) =>
-                        item.id === sensor.id,
-                    );
-
-                  return (
-                    <button
-                      key={sensor.id}
-                      type="button"
-                      onClick={() =>
-                        alternarSensor(sensor)
-                      }
-                      className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${
-                        selecionado
-                          ? 'border-primary bg-primary/10'
-                          : 'hover:bg-muted'
-                      }`}
-                    >
-                      <div>
-                        <p className="font-medium">
-                          {sensor.nome}
-                        </p>
-
-                        <p className="text-xs text-muted-foreground">
-                          Unidade: {sensor.unidade}
-                        </p>
-                      </div>
-
-                      {selecionado && (
-                        <span className="text-sm font-medium">
-                          Selecionado
-                        </span>
-                      )}
-                    </button>
-                  );
-                },
-              )}
+            <div className="min-h-0 space-y-2 overflow-y-auto">
+              {listaSensores}
             </div>
 
             <div className="mt-5 flex justify-end">
@@ -1138,12 +1188,17 @@ export default function EstacoesPage() {
         </div>
       )}
 
-      {modalEdicaoAberto && (
+      {modalEdicaoAberto && estacaoSelecionada && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-2xl rounded-xl bg-card p-6 shadow-xl">
-            <div className="mb-6 flex items-center justify-between">
+          <div
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-2xl overflow-y-auto rounded-xl bg-card p-4 shadow-xl sm:p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="titulo-edicao-estacao"
+          >
+            <div className="mb-6 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold">
+                <h2 id="titulo-edicao-estacao" className="text-xl font-semibold">
                   Editar estação
                 </h2>
 
@@ -1159,18 +1214,30 @@ export default function EstacoesPage() {
                   limparFormulario();
                 }}
                 className="rounded-md p-2 hover:bg-muted"
+                aria-label="Fechar"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
+            {tecsus && (
+              <p className="mb-4 text-sm text-muted-foreground">
+                Licitação:{' '}
+                <span className="font-mono text-foreground">
+                  {estacaoSelecionada.licitacao.codigoIdentificador}
+                </span>
+                . Para transferir a estação, use a tela de licitações.
+              </p>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium">
+                <label htmlFor="edicao-nome" className="mb-1 block text-sm font-medium">
                   Nome
                 </label>
 
                 <Input
+                  id="edicao-nome"
                   value={nome}
                   onChange={(event) =>
                     setNome(event.target.value)
@@ -1179,24 +1246,33 @@ export default function EstacoesPage() {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium">
+                <label htmlFor="edicao-vid" className="mb-1 block text-sm font-medium">
                   UUID/MAC
                 </label>
 
                 <Input
+                  id="edicao-vid"
                   value={vid}
                   onChange={(event) =>
                     setVid(event.target.value)
                   }
                 />
+
+                {vid.trim() !== estacaoSelecionada.codigo && (
+                  <p role="status" className="mt-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-foreground">
+                    Ao trocar o UUID/MAC, a chave de ingestão da estação é apagada. Depois de salvar, use
+                    &quot;Gerar chave&quot; no menu da estação e grave a nova chave no datalogger.
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium">
+                <label htmlFor="edicao-latitude" className="mb-1 block text-sm font-medium">
                   Latitude
                 </label>
 
                 <Input
+                  id="edicao-latitude"
                   type="number"
                   step="any"
                   value={latitude}
@@ -1207,11 +1283,12 @@ export default function EstacoesPage() {
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium">
+                <label htmlFor="edicao-longitude" className="mb-1 block text-sm font-medium">
                   Longitude
                 </label>
 
                 <Input
+                  id="edicao-longitude"
                   type="number"
                   step="any"
                   value={longitude}
@@ -1222,11 +1299,12 @@ export default function EstacoesPage() {
               </div>
 
               <div className="sm:col-span-2">
-                <label className="mb-1 block text-sm font-medium">
+                <label htmlFor="edicao-endereco" className="mb-1 block text-sm font-medium">
                   Endereço
                 </label>
 
                 <Input
+                  id="edicao-endereco"
                   value={endereco}
                   onChange={(event) =>
                     setEndereco(event.target.value)
@@ -1236,9 +1314,9 @@ export default function EstacoesPage() {
             </div>
 
             <div className="mt-5">
-              <label className="mb-2 block text-sm font-medium">
+              <p className="mb-2 block text-sm font-medium">
                 Sensores
-              </label>
+              </p>
 
               <div className="flex flex-wrap gap-2">
                 {sensoresSelecionados.map(
@@ -1264,7 +1342,7 @@ export default function EstacoesPage() {
               </button>
             </div>
 
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
               <Button
                 type="button"
                 variant="outline"
@@ -1290,7 +1368,7 @@ export default function EstacoesPage() {
       {modalExclusaoAberto &&
         estacaoSelecionada && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
-            <div className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl">
+            <div className="w-full max-w-md rounded-xl bg-card p-4 shadow-xl sm:p-6" role="alertdialog" aria-modal="true">
               <h2 className="text-lg font-semibold">
                 Desativar estação
               </h2>
@@ -1304,7 +1382,7 @@ export default function EstacoesPage() {
                 ?
               </p>
 
-              <div className="mt-6 flex justify-end gap-3">
+              <div className="mt-6 flex flex-wrap justify-end gap-3">
                 <Button
                   type="button"
                   variant="outline"
@@ -1331,7 +1409,7 @@ export default function EstacoesPage() {
       {chaveExibida && (
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
           <div
-            className="w-full max-w-md rounded-xl bg-card p-6 shadow-xl"
+            className="w-full max-w-md rounded-xl bg-card p-4 shadow-xl sm:p-6"
             role="dialog"
             aria-labelledby="titulo-chave-ingestao"
           >
@@ -1350,7 +1428,7 @@ export default function EstacoesPage() {
             </p>
 
             <div className="mt-4 flex items-center gap-2">
-              <code className="flex-1 break-all rounded-md bg-muted px-3 py-2 text-sm">
+              <code className="min-w-0 flex-1 break-all rounded-md bg-muted px-3 py-2 text-sm">
                 {chaveExibida.chave}
               </code>
 

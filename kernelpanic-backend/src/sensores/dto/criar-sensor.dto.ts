@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsEnum, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, MaxLength, NotEquals } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUUID, MaxLength, NotEquals } from 'class-validator';
 import { UnidadeSensor } from '../unidade-sensor';
 
 // Sem isso, um nome só com espaços passaria pelo @IsNotEmpty e "Pluviômetro "
@@ -41,4 +41,10 @@ export class CriarSensorDto {
   @IsOptional()
   @IsObject()
   json?: Record<string, unknown>;
+
+  // Cada licitação tem os seus tipos. Obrigatória para a Tecsus; o admin da
+  // licitação pode omitir (vale a dele).
+  @IsOptional()
+  @IsUUID('4')
+  licitacaoId?: string;
 }

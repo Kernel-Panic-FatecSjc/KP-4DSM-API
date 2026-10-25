@@ -1,3 +1,5 @@
+> **Substituída** pelo [modelo por licitação](regras-licitacao.md) (outubro/2026): contrato e órgão viraram campos da licitação, e as tabelas `contratos` e `orgaos_publicos` saíram. Mantida como histórico da decisão anterior.
+
 # Decisão de modelagem — licitações e contratos (RF10)
 
 **Decisão:** licitação será uma entidade própria (`licitacoes`), relacionada opcionalmente a `contratos`.

@@ -1,4 +1,5 @@
 import { gerarChaveIngestao } from '../../src/estacoes/chave-ingestao';
+import { garantirLicitacaoCarga, garantirSensoresCarga } from './cenario-carga';
 import type { Executor } from './simulador-esp32';
 
 // Sem hífen: precisa bater com o padrão de nome de sensor aceito pelo
@@ -7,8 +8,6 @@ import type { Executor } from './simulador-esp32';
 export const NOME_TIPO_PARAMETRO_CARGA = 'temperaturaCarga';
 export const PREFIXO_VID_CARGA = 'CARGA-ALERTA-';
 
-const EMAIL_USUARIO_CARGA = 'carga-alertas@kernelpanic.dev';
-
 export interface EstacaoComAlerta {
   vid: string;
   chaveIngestao: string;
@@ -16,43 +15,20 @@ export interface EstacaoComAlerta {
   alertaId: string;
 }
 
-async function garantirUsuarioDeCarga(executor: Executor): Promise<string> {
-  await executor.query(
-    `INSERT INTO usuarios (id, nome, email, "senhaHash", ativo, "criadoEm", "atualizadoEm")
-     VALUES (gen_random_uuid(), 'Usuário Teste de Carga', $1, 'x', true, now(), now())
-     ON CONFLICT (email) DO NOTHING`,
-    [EMAIL_USUARIO_CARGA],
-  );
-
-  const { rows } = (await executor.query('SELECT id FROM usuarios WHERE email = $1', [
-    EMAIL_USUARIO_CARGA,
-  ])) as { rows: { id: string }[] };
-
-  return rows[0].id;
-}
-
-async function garantirTipoParametro(executor: Executor): Promise<string> {
-  const { rows: existentes } = (await executor.query(
-    'SELECT id FROM tipos_parametro WHERE nome = $1',
-    [NOME_TIPO_PARAMETRO_CARGA],
-  )) as { rows: { id: string }[] };
-  if (existentes.length > 0) return existentes[0].id;
-
+async function garantirTipoParametro(executor: Executor, licitacaoId: string): Promise<string> {
+  await garantirSensoresCarga(executor, licitacaoId, [[NOME_TIPO_PARAMETRO_CARGA, '°C']]);
   const { rows } = (await executor.query(
-    `INSERT INTO tipos_parametro (id, nome, unidade, fator, ganho)
-     VALUES (gen_random_uuid(), $1, '°C', 1, 0)
-     RETURNING id`,
-    [NOME_TIPO_PARAMETRO_CARGA],
+    'SELECT id FROM tipos_parametro WHERE nome = $1 AND "licitacaoId" = $2',
+    [NOME_TIPO_PARAMETRO_CARGA, licitacaoId],
   )) as { rows: { id: string }[] };
-
   return rows[0].id;
 }
 
 /**
  * Cria (ou reaproveita) estações fakes com usuário, parâmetro e um alerta
  * MAIOR_QUE por estação, para exercitar o pipeline inteiro:
- * POST /ingestao/telemetria -> lote de medidas -> trigger de alertas ->
- * alarmes. O limite de cada alerta fica em cima da temperatura-base da
+ * POST /ingestao/telemetria (serviço de ingestão) -> leituras_brutas ->
+ * tratamento -> medidas -> trigger de alertas -> alarmes. O limite de cada alerta fica em cima da temperatura-base da
  * própria estação, então o ruído aleatório do gerador (+-1°C) cruza a
  * linha com boa frequência — a ideia é ver alarmes sendo criados, não só
  * medidas.
@@ -61,8 +37,8 @@ export async function prepararCenarioAlertas(
   executor: Executor,
   quantidade: number,
 ): Promise<EstacaoComAlerta[]> {
-  const usuarioId = await garantirUsuarioDeCarga(executor);
-  const tipoParametroId = await garantirTipoParametro(executor);
+  const { usuarioId, licitacaoId } = await garantirLicitacaoCarga(executor);
+  const tipoParametroId = await garantirTipoParametro(executor, licitacaoId);
 
   const estacoes: EstacaoComAlerta[] = [];
 
@@ -73,11 +49,11 @@ export async function prepararCenarioAlertas(
     const { chave, hash } = gerarChaveIngestao();
 
     const { rows: estacaoRows } = (await executor.query(
-      `INSERT INTO estacoes (id, nome, endereco, vid, latitude, longitude, "chaveIngestaoHash", "usuarioId", "criadoEm", "atualizadoEm")
-       VALUES (gen_random_uuid(), $1, 'Gerado por teste de carga', $2, 0, 0, $3, $4, now(), now())
+      `INSERT INTO estacoes (id, nome, endereco, vid, latitude, longitude, "chaveIngestaoHash", "usuarioId", "licitacaoId", "criadoEm", "atualizadoEm")
+       VALUES (gen_random_uuid(), $1, 'Gerado por teste de carga', $2, 0, 0, $3, $4, $5, now(), now())
        ON CONFLICT (vid) DO UPDATE SET nome = EXCLUDED.nome, "chaveIngestaoHash" = EXCLUDED."chaveIngestaoHash"
        RETURNING id`,
-      [`Estação de carga ${i}`, vid, hash, usuarioId],
+      [`Estação de carga ${i}`, vid, hash, usuarioId, licitacaoId],
     )) as { rows: { id: string }[] };
     const estacaoId = estacaoRows[0].id;
 
@@ -99,10 +75,10 @@ export async function prepararCenarioAlertas(
       alertaExistente[0]?.id ??
       (
         (await executor.query(
-          `INSERT INTO alertas (id, operador, "valorLimite", severidade, ativo, "criadoEm", "parametroId")
-           VALUES (gen_random_uuid(), 'MAIOR_QUE', $1, 'ALERTA', true, now(), $2)
+          `INSERT INTO alertas (id, operador, "valorLimite", severidade, ativo, "criadoEm", "parametroId", "licitacaoId")
+           VALUES (gen_random_uuid(), 'MAIOR_QUE', $1, 'ALERTA', true, now(), $2, $3)
            RETURNING id`,
-          [baseTemperatura, parametroId],
+          [baseTemperatura, parametroId, licitacaoId],
         )) as { rows: { id: string }[] }
       ).rows[0].id;
 

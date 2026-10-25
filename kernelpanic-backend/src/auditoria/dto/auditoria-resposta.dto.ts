@@ -1,7 +1,7 @@
 import type { Prisma } from '../../generated/prisma/client';
 import { isIP } from 'node:net';
 
-type RegistroComUsuario = Pick<Prisma.LogAuditoriaModel, 'id' | 'criadoEm' | 'acao' | 'entidade' | 'entidadeId' | 'detalhes' | 'enderecoIp'> & {
+type RegistroComUsuario = Pick<Prisma.LogAuditoriaModel, 'id' | 'criadoEm' | 'acao' | 'entidade' | 'entidadeId' | 'detalhes' | 'enderecoIp' | 'licitacaoId'> & {
   usuario: { id: string; nome: string } | null;
 };
 
@@ -40,6 +40,8 @@ export class AuditoriaRespostaDto {
   enderecoIp: string | null;
   detalhes: unknown;
   usuario: { id: string; nome: string } | null;
+  /** Licitação de quem fez a ação; nula = Tecsus ou visitante. */
+  licitacaoId: string | null;
 
   constructor(registro: RegistroComUsuario) {
     this.id = registro.id;
@@ -58,5 +60,6 @@ export class AuditoriaRespostaDto {
         }
       : detalhes;
     this.usuario = registro.usuario;
+    this.licitacaoId = registro.licitacaoId;
   }
 }

@@ -1,15 +1,18 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
+import { GuardaPerfil } from '../autenticacao/guarda-perfil.guard';
+import type { UsuarioLogado } from '../autenticacao/payload-jwt.interface';
+import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
 import { DashboardService } from './dashboard.service';
 import { DashboardQueryDto } from './dto/dashboard-query.dto';
 
 @Controller('dashboard')
-@UseGuards(GuardaJwt)
+@UseGuards(GuardaJwt, GuardaPerfil)
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get()
-  buscarDados(@Query() query: DashboardQueryDto) {
-    return this.dashboardService.buscarDados(query);
+  buscarDados(@Query() query: DashboardQueryDto, @UsuarioAutenticado() usuario: UsuarioLogado) {
+    return this.dashboardService.buscarDados(query, usuario);
   }
 }

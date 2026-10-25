@@ -2,9 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeading } from '@/components/PageHeading';
+import { useUsuario } from '@/components/ProtectedLayout';
+import { SeletorLicitacao } from '@/components/SeletorLicitacao';
 import { Button } from '@/components/ui/button';
 import { DataTable, type Column } from '@/components/DataTable';
 import { api, ErroApi, type Alerta, type ListaAlertas, type OpcoesFiltroAlertas, type SeveridadeAlerta } from '@/lib/api';
+import { ehTecsus, podeCadastrar } from '@/lib/perfil';
 import { useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/input';
 import { Pencil, Plus, X } from 'lucide-react';
@@ -90,6 +93,10 @@ function formatarData(data: string) {
 
 export default function AlertasPage() {
   const router = useRouter();
+  const usuario = useUsuario();
+  const tecsus = ehTecsus(usuario);
+  // Usuário comum e licitação fora de vigência só consultam: a API daria 403.
+  const podeEditar = podeCadastrar(usuario);
 
   const [alertas, setAlertas] = useState<Alerta[]>([]);
   const [opcoesFiltro, setOpcoesFiltro] =
@@ -106,6 +113,10 @@ export default function AlertasPage() {
 
   const [severidadeFilter, setSeveridadeFilter] =
     useState<FiltroSeveridade>('TODOS');
+
+  // Só a Tecsus filtra; para o usuário de licitação a API já devolve a dele.
+  const [licitacaoFilter, setLicitacaoFilter] =
+    useState('');
 
   const [estacaoFilter, setEstacaoFilter] =
     useState('');
@@ -142,9 +153,18 @@ export default function AlertasPage() {
 
   const carregarOpcoesFiltro = useCallback(async () => {
     try {
+      const parametros = new URLSearchParams();
+
+      if (licitacaoFilter) {
+        parametros.set(
+          'licitacaoId',
+          licitacaoFilter,
+        );
+      }
+
       const resposta =
         await api<OpcoesFiltroAlertas>(
-          '/alertas/filtros',
+          `/alertas/filtros?${parametros.toString()}`,
         );
 
       setOpcoesFiltro(resposta);
@@ -164,7 +184,7 @@ export default function AlertasPage() {
         'Não foi possível carregar os filtros.',
       );
     }
-  }, [router]);
+  }, [licitacaoFilter, router]);
 
   const carregarAlertas = useCallback(async () => {
     try {
@@ -182,6 +202,13 @@ export default function AlertasPage() {
         'tamanho',
         String(ITEMS_PER_PAGE),
       );
+
+      if (licitacaoFilter) {
+        parametros.set(
+          'licitacaoId',
+          licitacaoFilter,
+        );
+      }
 
       if (
         severidadeFilter !== 'TODOS'
@@ -242,6 +269,7 @@ export default function AlertasPage() {
     }
   }, [
     currentPage,
+    licitacaoFilter,
     severidadeFilter,
     estacaoFilter,
     tipoParametroFilter,
@@ -315,8 +343,17 @@ export default function AlertasPage() {
       (alerta) => alerta.ativo,
     ).length;
 
+  const alterarLicitacao = (licitacaoId: string) => {
+    // Estação e parâmetro escolhidos podem não existir na nova licitação.
+    setLicitacaoFilter(licitacaoId);
+    setEstacaoFilter('');
+    setTipoParametroFilter('');
+    setCurrentPage(1);
+  };
+
   const limparFiltros = () => {
     setSearchTerm('');
+    setLicitacaoFilter('');
     setSeveridadeFilter('TODOS');
     setEstacaoFilter('');
     setTipoParametroFilter('');
@@ -444,11 +481,13 @@ export default function AlertasPage() {
     {
       header: 'Operador',
       key: 'operador',
+      className: 'whitespace-nowrap',
     },
 
     {
       header: 'Severidade',
       key: 'severidade',
+      className: 'whitespace-nowrap',
       render: (valor) => {
         const severidade =
           valor as SeveridadeAlerta;
@@ -470,6 +509,7 @@ export default function AlertasPage() {
     {
       header: 'Limite',
       key: 'valorLimite',
+      className: 'whitespace-nowrap',
       render: (valor, alerta) => (
         <span>
           {String(valor)} {alerta.parametro.unidade}
@@ -480,6 +520,7 @@ export default function AlertasPage() {
     {
       header: 'Status',
       key: 'ativo',
+      className: 'whitespace-nowrap',
       render: (valor) => (
         <span
           className={
@@ -496,13 +537,18 @@ export default function AlertasPage() {
     {
       header: 'Criado em',
       key: 'criadoEm',
+      className: 'whitespace-nowrap',
       render: (valor) =>
         formatarData(String(valor)),
     },
 
-    {
+  ];
+
+  if (podeEditar) {
+    columns.push({
       header: 'Ações',
       key: 'acoes',
+      className: 'whitespace-nowrap',
       render: (_, alerta) => (
         <div className="flex items-center gap-1">
           <button
@@ -514,23 +560,26 @@ export default function AlertasPage() {
           >
             <Pencil className="h-4 w-4" />
           </button>
-
         </div>
       ),
-    },
-  ];
+    });
+  }
 
   return (
     <div className="space-y-5">
       <PageHeading
         title="Alertas"
-        description="Acompanhe e resolva ocorrências operacionais."
-        action={(
+        description={
+          podeEditar
+            ? 'Cadastre e acompanhe as regras que disparam alarmes nas estações.'
+            : 'Consulte as regras que disparam alarmes nas estações.'
+        }
+        action={podeEditar ? (
           <Button type="button" onClick={abrirCadastro}>
             <Plus className="mr-2 h-4 w-4" />
             Novo alerta
           </Button>
-        )}
+        ) : undefined}
       />
 
       <section className="rise delay-1 grid gap-3 sm:grid-cols-3">
@@ -582,6 +631,26 @@ export default function AlertasPage() {
           ========================================== */}
 
       <section className="rise delay-0 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {/* LICITAÇÃO (só Tecsus) */}
+
+        {tecsus && (
+          <div className="flex min-w-0 flex-col gap-1">
+            <label
+              htmlFor="licitacao"
+              className="font-mono text-[10px] uppercase text-muted-foreground"
+            >
+              Licitação
+            </label>
+
+            <SeletorLicitacao
+              id="licitacao"
+              valor={licitacaoFilter}
+              onChange={alterarLicitacao}
+              rotuloTodas="Todas as licitações"
+            />
+          </div>
+        )}
+
         {/* BUSCA */}
 
         <div className="flex flex-col gap-1">
@@ -792,10 +861,15 @@ export default function AlertasPage() {
 
       {modalAberto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-xl bg-card p-6 shadow-xl">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="alerta-formulario-titulo"
+            className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-card p-5 shadow-xl sm:p-6"
+          >
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold">
+                <h2 id="alerta-formulario-titulo" className="text-xl font-semibold">
                   {alertaEditando ? 'Editar alerta' : 'Cadastrar alerta'}
                 </h2>
                 <p className="text-sm text-muted-foreground">
@@ -961,7 +1035,7 @@ export default function AlertasPage() {
               )}
             </div>
 
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
               <Button
                 type="button"
                 variant="outline"

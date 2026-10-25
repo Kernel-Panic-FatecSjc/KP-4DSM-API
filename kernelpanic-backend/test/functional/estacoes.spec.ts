@@ -2,10 +2,10 @@ import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { chaveIngestaoConfere } from '../../src/estacoes/chave-ingestao';
-import { ESTACAO_COM_SENSORES, TIPO_CHUVA } from '../fixtures';
+import { ESTACAO_COM_SENSORES, TIPO_CHUVA, LICITACAO_FIXTURE } from '../fixtures';
 import { criarAppDeTeste } from '../helpers';
 
-const USUARIO = { id: 'usuario-1', email: 'user@teste.com', tipo: 'ADMINISTRADOR', ativo: true };
+const USUARIO = { id: 'usuario-1', email: 'user@teste.com', tipo: 'ADMIN_TECSUS', licitacaoId: null, licitacao: null, ativo: true };
 
 describe('Gerenciamento de estações (funcional)', () => {
   let app: INestApplication;
@@ -15,6 +15,9 @@ describe('Gerenciamento de estações (funcional)', () => {
   const tipoParametro = { findMany: jest.fn() };
   const medida = { findFirst: jest.fn() };
   const logAuditoria = { create: jest.fn() };
+  const licitacao = { findUnique: jest.fn() };
+  // As escritas da estação rodam numa transação interativa (junto com o broker).
+  const $transaction = jest.fn();
 
   beforeAll(async () => {
     app = await criarAppDeTeste({
@@ -24,6 +27,8 @@ describe('Gerenciamento de estações (funcional)', () => {
         tipoParametro,
         medida,
         logAuditoria,
+        licitacao,
+        $transaction,
         $connect: jest.fn(),
         $disconnect: jest.fn(),
       },
@@ -36,6 +41,10 @@ describe('Gerenciamento de estações (funcional)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     usuario.findUnique.mockResolvedValue(USUARIO);
+    licitacao.findUnique.mockResolvedValue({ status: 'VIGENTE' });
+    $transaction.mockImplementation((operacao: (tx: unknown) => unknown) =>
+      operacao({ estacao, tipoParametro, medida }),
+    );
     estacao.findUnique.mockResolvedValue(ESTACAO_COM_SENSORES);
     // Como o Prisma, devolve os sensores do include mesmo quando o PATCH não mexe neles.
     estacao.update.mockImplementation(({ data: { parametros: _parametros, ...campos } }) => ({
@@ -48,7 +57,7 @@ describe('Gerenciamento de estações (funcional)', () => {
     }));
     medida.findFirst.mockResolvedValue(null);
     tipoParametro.findMany.mockImplementation(({ where }) =>
-      where.id.in.map((id: string) => ({ id })),
+      where.id.in.map((id: string) => ({ id, licitacaoId: LICITACAO_FIXTURE })),
     );
   });
 
@@ -57,7 +66,14 @@ describe('Gerenciamento de estações (funcional)', () => {
   });
 
   describe('POST /estacoes', () => {
-    const NOVA = { nome: 'Estação Sul', endereco: 'Rua B', vid: '11:22:33:44:55:99', latitude: -23.2, longitude: -45.9 };
+    const NOVA = {
+      nome: 'Estação Sul',
+      endereco: 'Rua B',
+      vid: '11:22:33:44:55:99',
+      latitude: -23.2,
+      longitude: -45.9,
+      licitacaoId: LICITACAO_FIXTURE,
+    };
 
     it('devolve a chave de ingestão uma única vez, sem expor o hash', async () => {
       estacao.findUnique.mockResolvedValue(null);
@@ -76,7 +92,7 @@ describe('Gerenciamento de estações (funcional)', () => {
     });
 
     it('recusa com 403 quem não é administrador, sem cadastrar', async () => {
-      usuario.findUnique.mockResolvedValue({ ...USUARIO, tipo: 'MONITOR' });
+      usuario.findUnique.mockResolvedValue({ ...USUARIO, tipo: 'USUARIO_LICITACAO', licitacaoId: LICITACAO_FIXTURE, licitacao: { status: 'VIGENTE' } });
 
       await request(app.getHttpServer()).post('/estacoes').set('Cookie', cookie).send(NOVA).expect(403);
       expect(estacao.create).not.toHaveBeenCalled();
@@ -104,7 +120,7 @@ describe('Gerenciamento de estações (funcional)', () => {
     });
 
     it('recusa com 403 quem não é administrador', async () => {
-      usuario.findUnique.mockResolvedValue({ ...USUARIO, tipo: 'MONITOR' });
+      usuario.findUnique.mockResolvedValue({ ...USUARIO, tipo: 'USUARIO_LICITACAO', licitacaoId: LICITACAO_FIXTURE, licitacao: { status: 'VIGENTE' } });
 
       await regenerar().expect(403);
       expect(estacao.update).not.toHaveBeenCalled();

@@ -9,7 +9,14 @@ function paraBooleano({ value }: { value: unknown }): unknown {
   return value;
 }
 
-export class ListarAlertasQueryDto extends RegiaoQueryDto {
+/** Região (visitante) e, para a Tecsus, a licitação. */
+export class FiltrosAlertasQueryDto extends RegiaoQueryDto {
+  @IsOptional()
+  @IsUUID('4')
+  licitacaoId?: string;
+}
+
+export class ListarAlertasQueryDto extends FiltrosAlertasQueryDto {
   @IsOptional()
   @IsUUID()
   estacaoId?: string;

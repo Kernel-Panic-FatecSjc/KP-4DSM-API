@@ -2,18 +2,29 @@
 
 import { Plus, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DataTable, type Column } from '@/components/DataTable';
 import { PageHeading } from '@/components/PageHeading';
+import { useUsuario } from '@/components/ProtectedLayout';
+import { SeletorLicitacao } from '@/components/SeletorLicitacao';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
-import { api, ErroApi, type SensorApi, type SensorPayload, type UnidadeSensor } from '@/lib/api';
+import {
+  api,
+  ErroApi,
+  type Paginado,
+  type SensorApi,
+  type SensorPayload,
+  type UnidadeSensor,
+} from '@/lib/api';
 import { formatarFaixa, lerFaixa } from '@/lib/faixa-sensor';
+import { ehTecsus, podeCadastrar } from '@/lib/perfil';
+import { useCodigosLicitacao } from '@/lib/licitacoes';
 
 const ITEMS_PER_PAGE = 10;
-
-type FiltroUso = 'TODOS' | 'EM_USO' | 'SEM_ESTACAO';
+// Espera o usuário parar de digitar antes de consultar a API.
+const ATRASO_BUSCA_MS = 300;
 
 type FormularioSensor = {
   nome: string;
@@ -37,19 +48,28 @@ const FORMULARIO_INICIAL: FormularioSensor = {
 
 export default function SensoresPage() {
   const router = useRouter();
+  const usuario = useUsuario();
+  const tecsus = ehTecsus(usuario);
+  const podeEditar = podeCadastrar(usuario);
+  const codigosLicitacao = useCodigosLicitacao(tecsus);
 
-  const [sensores, setSensores] = useState<SensorApi[]>([]);
+  const [lista, setLista] = useState<Paginado<SensorApi> | null>(null);
   const [unidades, setUnidades] = useState<UnidadeSensor[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [usoFilter, setUsoFilter] = useState<FiltroUso>('TODOS');
+  const [buscaAplicada, setBuscaAplicada] = useState('');
+  const [licitacaoFiltro, setLicitacaoFiltro] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  // Incrementado depois de salvar ou excluir, para reconsultar a página atual.
+  const [recarga, setRecarga] = useState(0);
+  const ultimaConsulta = useRef(0);
 
   const [modalAberto, setModalAberto] = useState(false);
   const [sensorEditando, setSensorEditando] = useState<SensorApi | null>(null);
   const [formulario, setFormulario] = useState<FormularioSensor>(FORMULARIO_INICIAL);
+  const [licitacaoFormulario, setLicitacaoFormulario] = useState('');
   const [erroFormulario, setErroFormulario] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
@@ -72,50 +92,54 @@ export default function SensoresPage() {
   );
 
   const carregarSensores = useCallback(async () => {
+    const consulta = ++ultimaConsulta.current;
     setCarregando(true);
     setErro(null);
 
+    const parametros = new URLSearchParams({ pagina: String(currentPage), tamanho: String(ITEMS_PER_PAGE) });
+    if (buscaAplicada) parametros.set('busca', buscaAplicada);
+    if (licitacaoFiltro) parametros.set('licitacaoId', licitacaoFiltro);
+
     try {
-      const [lista, catalogo] = await Promise.all([
-        api<SensorApi[]>('/sensores'),
-        api<UnidadeSensor[]>('/sensores/unidades'),
-      ]);
-      setSensores(lista);
-      setUnidades(catalogo);
+      const resposta = await api<Paginado<SensorApi>>(`/sensores?${parametros}`);
+      // Uma consulta mais nova (ex.: busca digitada) já está a caminho.
+      if (consulta !== ultimaConsulta.current) return;
+      setLista(resposta);
     } catch (erroCapturado) {
+      if (consulta !== ultimaConsulta.current) return;
       setErro(tratarErro(erroCapturado, 'Não foi possível carregar os sensores.'));
     } finally {
-      setCarregando(false);
+      if (consulta === ultimaConsulta.current) setCarregando(false);
     }
+  }, [tratarErro, currentPage, buscaAplicada, licitacaoFiltro]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- busca a listagem ao montar a página e ao mudar o filtro
+    void carregarSensores();
+    // recarga não é lida aqui: só refaz a consulta depois de salvar ou excluir.
+  }, [carregarSensores, recarga]);
+
+  useEffect(() => {
+    api<UnidadeSensor[]>('/sensores/unidades')
+      .then(setUnidades)
+      .catch((erroCapturado: unknown) => setErro(tratarErro(erroCapturado, 'Não foi possível carregar as unidades de medida.')));
   }, [tratarErro]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- busca a listagem ao montar a página
-    void carregarSensores();
-  }, [carregarSensores]);
+    const espera = setTimeout(() => {
+      setBuscaAplicada(searchTerm.trim());
+      setCurrentPage(1);
+    }, ATRASO_BUSCA_MS);
+    return () => clearTimeout(espera);
+  }, [searchTerm]);
 
-  const sensoresFiltrados = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
-    return sensores.filter((sensor) => {
-      const matchesSearch =
-        !query ||
-        sensor.nome.toLowerCase().includes(query) ||
-        sensor.unidade.toLowerCase().includes(query);
+  const sensores = useMemo(() => lista?.itens ?? [], [lista]);
 
-      const matchesUso =
-        usoFilter === 'TODOS' ||
-        (usoFilter === 'EM_USO' && sensor.estacoesAssociadas > 0) ||
-        (usoFilter === 'SEM_ESTACAO' && sensor.estacoesAssociadas === 0);
-
-      return matchesSearch && matchesUso;
-    });
-  }, [sensores, searchTerm, usoFilter]);
-
+  // A API pagina: só o total é da consulta inteira; o uso é contado na página.
   const stats = useMemo(() => {
-    const total = sensores.length;
     const emUso = sensores.filter((sensor) => sensor.estacoesAssociadas > 0).length;
-    return { total, emUso, semEstacao: total - emUso };
-  }, [sensores]);
+    return { total: lista?.total ?? 0, emUso, semEstacao: sensores.length - emUso };
+  }, [lista, sensores]);
 
   // Agrupa o catálogo por grandeza para o <optgroup>, mantendo a ordem do back.
   const unidadesPorGrandeza = useMemo(() => {
@@ -133,16 +157,13 @@ export default function SensoresPage() {
       ? formulario.unidade
       : null;
 
-  const totalPages = Math.max(1, Math.ceil(sensoresFiltrados.length / ITEMS_PER_PAGE));
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const paginatedSensores = useMemo(() => {
-    const start = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
-    return sensoresFiltrados.slice(start, start + ITEMS_PER_PAGE);
-  }, [sensoresFiltrados, safeCurrentPage]);
+  const totalPages = lista ? Math.max(1, Math.ceil(lista.total / lista.tamanho)) : 1;
 
   const abrirCadastro = () => {
     setSensorEditando(null);
     setFormulario(FORMULARIO_INICIAL);
+    // Quem já filtrou uma licitação provavelmente vai cadastrar nela.
+    setLicitacaoFormulario(licitacaoFiltro);
     setErroFormulario(null);
     setModalAberto(true);
   };
@@ -177,6 +198,11 @@ export default function SensoresPage() {
 
     if (!nome || !unidade) {
       setErroFormulario('Informe o nome e selecione a unidade de medida do sensor.');
+      return;
+    }
+
+    if (!sensorEditando && tecsus && !licitacaoFormulario) {
+      setErroFormulario('Selecione a licitação do sensor.');
       return;
     }
 
@@ -229,21 +255,19 @@ export default function SensoresPage() {
           return;
         }
 
-        const atualizado = await api<SensorApi>(`/sensores/${sensorEditando.id}`, {
+        await api<SensorApi>(`/sensores/${sensorEditando.id}`, {
           method: 'PATCH',
           body: JSON.stringify(alteracoes),
         });
-        setSensores((atual) => atual.map((s) => (s.id === atualizado.id ? atualizado : s)));
       } else {
-        const criado = await api<SensorApi>('/sensores', {
+        // O admin da licitação omite: o backend usa a licitação dele.
+        await api<SensorApi>('/sensores', {
           method: 'POST',
-          body: JSON.stringify(payload),
+          body: JSON.stringify(tecsus ? { ...payload, licitacaoId: licitacaoFormulario } : payload),
         });
-        setSensores((atual) =>
-          [...atual, criado].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
-        );
         setCurrentPage(1);
       }
+      setRecarga((atual) => atual + 1);
       setModalAberto(false);
       setSensorEditando(null);
     } catch (erroCapturado) {
@@ -261,8 +285,8 @@ export default function SensoresPage() {
 
     try {
       await api(`/sensores/${sensorExcluindo.id}`, { method: 'DELETE' });
-      setSensores((atual) => atual.filter((s) => s.id !== sensorExcluindo.id));
       setSensorExcluindo(null);
+      setRecarga((atual) => atual + 1);
     } catch (erroCapturado) {
       setErro(tratarErro(erroCapturado, 'Não foi possível excluir o sensor.'));
       setSensorExcluindo(null);
@@ -270,6 +294,42 @@ export default function SensoresPage() {
       setExcluindo(false);
     }
   }
+
+  const colunaLicitacao: Column<SensorApi> = {
+    header: 'Licitação',
+    key: 'licitacaoId',
+    className: 'whitespace-nowrap font-mono text-xs',
+    render: (licitacaoId) => codigosLicitacao.get(String(licitacaoId)) ?? String(licitacaoId).slice(0, 8),
+  };
+
+  const colunaAcoes: Column<SensorApi> = {
+    header: 'Ações',
+    key: 'id',
+    render: (_, sensor) => (
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => abrirEdicao(sensor)}
+          className="text-xs font-medium text-aqua hover:underline"
+        >
+          Editar
+        </button>
+        <button
+          type="button"
+          onClick={() => setSensorExcluindo(sensor)}
+          disabled={sensor.estacoesAssociadas > 0}
+          title={
+            sensor.estacoesAssociadas > 0
+              ? 'Remova o sensor das estações antes de excluí-lo'
+              : undefined
+          }
+          className="text-xs font-medium text-destructive hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
+        >
+          Excluir
+        </button>
+      </div>
+    ),
+  };
 
   const columns: Column<SensorApi>[] = [
     {
@@ -282,6 +342,7 @@ export default function SensoresPage() {
         </div>
       ),
     },
+    ...(tecsus ? [colunaLicitacao] : []),
     {
       header: 'Unidade',
       key: 'unidade',
@@ -311,34 +372,7 @@ export default function SensoresPage() {
         );
       },
     },
-    {
-      header: 'Ações',
-      key: 'id',
-      render: (_, sensor) => (
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => abrirEdicao(sensor)}
-            className="text-xs font-medium text-aqua hover:underline"
-          >
-            Editar
-          </button>
-          <button
-            type="button"
-            onClick={() => setSensorExcluindo(sensor)}
-            disabled={sensor.estacoesAssociadas > 0}
-            title={
-              sensor.estacoesAssociadas > 0
-                ? 'Remova o sensor das estações antes de excluí-lo'
-                : undefined
-            }
-            className="text-xs font-medium text-destructive hover:underline disabled:cursor-not-allowed disabled:opacity-50 disabled:no-underline"
-          >
-            Excluir
-          </button>
-        </div>
-      ),
-    },
+    ...(podeEditar ? [colunaAcoes] : []),
   ];
 
   return (
@@ -347,10 +381,12 @@ export default function SensoresPage() {
         title="Sensores"
         description="Cadastre os tipos de sensores e a calibração aplicada às leituras."
         action={
-          <Button type="button" onClick={abrirCadastro}>
-            <Plus />
-            Novo sensor
-          </Button>
+          podeEditar ? (
+            <Button type="button" onClick={abrirCadastro}>
+              <Plus />
+              Novo sensor
+            </Button>
+          ) : undefined
         }
       />
 
@@ -364,13 +400,13 @@ export default function SensoresPage() {
         <article className="rounded-lg border border-border bg-card px-4 py-4">
           <p className="font-mono text-[10px] uppercase text-muted-foreground">Em uso</p>
           <p className="mt-2 font-display text-2xl font-semibold">{stats.emUso}</p>
-          <p className="mt-1 text-xs text-muted-foreground">associados a estações</p>
+          <p className="mt-1 text-xs text-muted-foreground">associados a estações, nesta página</p>
         </article>
 
         <article className="rounded-lg border border-border bg-card px-4 py-4">
           <p className="font-mono text-[10px] uppercase text-muted-foreground">Sem estação</p>
           <p className="mt-2 font-display text-2xl font-semibold">{stats.semEstacao}</p>
-          <p className="mt-1 text-xs text-muted-foreground">disponíveis para associação</p>
+          <p className="mt-1 text-xs text-muted-foreground">disponíveis para associação, nesta página</p>
         </article>
       </section>
 
@@ -392,32 +428,30 @@ export default function SensoresPage() {
             id="buscaSensor"
             type="text"
             value={searchTerm}
-            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-            placeholder="Buscar por nome ou unidade..."
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Buscar por nome..."
           />
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="usoSensor" className="font-mono text-[10px] uppercase text-muted-foreground">
-            Uso
-          </label>
-          <select
-            id="usoSensor"
-            value={usoFilter}
-            onChange={(e) => { setUsoFilter(e.target.value as FiltroUso); setCurrentPage(1); }}
-            className="h-9 rounded-md border border-input bg-card px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="TODOS">Todos os sensores</option>
-            <option value="EM_USO">Em uso</option>
-            <option value="SEM_ESTACAO">Sem estação</option>
-          </select>
-        </div>
+        {tecsus && (
+          <div className="flex flex-col gap-1">
+            <label htmlFor="licitacaoSensor" className="font-mono text-[10px] uppercase text-muted-foreground">
+              Licitação
+            </label>
+            <SeletorLicitacao
+              id="licitacaoSensor"
+              valor={licitacaoFiltro}
+              onChange={(licitacaoId) => { setLicitacaoFiltro(licitacaoId); setCurrentPage(1); }}
+              rotuloTodas="Todas as licitações"
+            />
+          </div>
+        )}
       </section>
 
       <DataTable<SensorApi>
         columns={columns}
-        data={paginatedSensores}
-        currentPage={safeCurrentPage}
+        data={sensores}
+        currentPage={lista?.pagina ?? currentPage}
         totalPages={totalPages}
         onPageChange={setCurrentPage}
         isLoading={carregando}
@@ -428,7 +462,7 @@ export default function SensoresPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <form
             onSubmit={salvarSensor}
-            className="w-full max-w-lg rounded-xl bg-card p-6 shadow-xl"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-xl bg-card p-4 shadow-xl sm:p-6"
             role="dialog"
             aria-modal="true"
             aria-labelledby="titulo-modal-sensor"
@@ -456,6 +490,27 @@ export default function SensoresPage() {
             </div>
 
             <div className="space-y-4">
+              {tecsus && !sensorEditando && (
+                <div className="flex flex-col gap-1">
+                  <label htmlFor="sensor-licitacao" className="text-sm font-medium">
+                    Licitação
+                  </label>
+                  <SeletorLicitacao id="sensor-licitacao" valor={licitacaoFormulario} onChange={setLicitacaoFormulario} />
+                  <p className="text-xs text-muted-foreground">
+                    O sensor só pode ser associado às estações desta licitação.
+                  </p>
+                </div>
+              )}
+
+              {tecsus && sensorEditando && (
+                <p className="text-sm text-muted-foreground">
+                  Licitação:{' '}
+                  <span className="font-mono text-foreground">
+                    {codigosLicitacao.get(sensorEditando.licitacaoId) ?? sensorEditando.licitacaoId}
+                  </span>
+                </p>
+              )}
+
               <div className="grid gap-4 sm:grid-cols-[1fr_200px]">
                 <div className="flex flex-col gap-1">
                   <label htmlFor="sensor-nome" className="text-sm font-medium">
@@ -580,7 +635,7 @@ export default function SensoresPage() {
               )}
             </div>
 
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
               <Button type="button" variant="outline" onClick={fecharModal} disabled={salvando}>
                 Cancelar
               </Button>
@@ -609,7 +664,7 @@ export default function SensoresPage() {
               não pode ser desfeita.
             </p>
 
-            <div className="mt-6 flex justify-end gap-3">
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
               <Button
                 type="button"
                 variant="outline"

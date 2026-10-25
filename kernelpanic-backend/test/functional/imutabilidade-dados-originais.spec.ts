@@ -2,7 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { LeiturasBrutasRepositorio } from '../../servicos/ingestao/leituras-brutas.repositorio';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { criarAppDeTeste, emailDeTeste, PREFIXO_TESTE } from '../helpers';
+import { criarAppDeTeste, criarLicitacaoDeTeste, emailDeTeste, PREFIXO_TESTE } from '../helpers';
 
 // Com o banco real: os triggers barram UPDATE e DELETE direto em
 // leituras_brutas e medidas, inclusive fora da API.
@@ -17,11 +17,12 @@ describe('Imutabilidade dos dados originais (funcional)', () => {
     app = await criarAppDeTeste();
     prisma = app.get(PrismaService);
 
+    const { id: licitacaoId } = await criarLicitacaoDeTeste(app);
     const usuario = await prisma.usuario.create({
-      data: { nome: 'Imutabilidade', email: emailDeTeste('imutabilidade'), senhaHash: 'x' },
+      data: { nome: 'Imutabilidade', email: emailDeTeste('imutabilidade'), senhaHash: 'x', tipo: 'ADMIN_TECSUS' },
     });
     const tipo = await prisma.tipoParametro.create({
-      data: { nome: `${PREFIXO_TESTE}chuva`, unidade: 'mm', fator: 1, ganho: 0 },
+      data: { nome: `${PREFIXO_TESTE}chuva`, unidade: 'mm', fator: 1, ganho: 0, licitacaoId },
     });
     const estacao = await prisma.estacao.create({
       data: {
@@ -29,13 +30,14 @@ describe('Imutabilidade dos dados originais (funcional)', () => {
         endereco: 'Rua de teste',
         vid: `${PREFIXO_TESTE}imutavel-${Date.now()}`,
         usuarioId: usuario.id,
+        licitacaoId,
       },
     });
     const parametro = await prisma.parametro.create({
       data: { estacaoId: estacao.id, tipoParametroId: tipo.id },
     });
     const medida = await prisma.medida.create({
-      data: { valor: 1.5, unixtime: 1_760_000_000n, parametroId: parametro.id, estacaoId: estacao.id },
+      data: { valor: 1.5, unixtime: 1_760_000_000n, parametroId: parametro.id, estacaoId: estacao.id, licitacaoId },
     });
 
     leituraBrutaId = randomUUID();
@@ -87,7 +89,7 @@ describe('Imutabilidade dos dados originais (funcional)', () => {
       nomeSensor: 'temperatura',
       parametroId: null,
       valor: 150,
-      unixtime: 1_760_000_000,
+      unixtime: 1_760_000_000n,
       motivo: 'ACIMA_DO_MAXIMO' as const,
       valorMinimo: -40,
       valorMaximo: 60,
@@ -95,14 +97,11 @@ describe('Imutabilidade dos dados originais (funcional)', () => {
 
     it('grava a leitura com a faixa vigente, e regravar o mesmo lote não duplica', async () => {
       const registro = novoErro();
-      await prisma.leituraErro.createMany({
-        data: [{ ...registro, unixtime: BigInt(registro.unixtime) }],
-        skipDuplicates: true,
-      });
-      await prisma.leituraErro.createMany({
-        data: [{ ...registro, unixtime: BigInt(registro.unixtime) }],
-        skipDuplicates: true,
-      });
+      // Como o tratamento grava: createMany com ON CONFLICT DO NOTHING.
+      const gravar = () => prisma.leituraErro.createMany({ data: [registro], skipDuplicates: true });
+
+      await expect(gravar()).resolves.toEqual({ count: 1 });
+      await expect(gravar()).resolves.toEqual({ count: 0 });
 
       const gravadas = await prisma.leituraErro.findMany({ where: { id: registro.id } });
       expect(gravadas).toHaveLength(1);
@@ -116,9 +115,7 @@ describe('Imutabilidade dos dados originais (funcional)', () => {
 
     it('recusa UPDATE e DELETE com mensagem clara', async () => {
       const registro = novoErro();
-      await prisma.leituraErro.create({
-        data: { ...registro, unixtime: BigInt(registro.unixtime) },
-      });
+      await prisma.leituraErro.createMany({ data: [registro] });
 
       await expect(
         prisma.leituraErro.update({ where: { id: registro.id }, data: { valor: 1 } }),

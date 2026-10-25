@@ -1,6 +1,8 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { StatusAlarme } from '../generated/prisma/client';
 import type { Prisma } from '../generated/prisma/client';
+import { garantirAcessoLicitacao, licitacaoDoEscopo } from '../autenticacao/escopo-licitacao';
+import type { UsuarioLogado } from '../autenticacao/payload-jwt.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { EstacoesProximasService } from '../regiao/estacoes-proximas.service';
 import type { Coordenadas } from '../regiao/regiao';
@@ -39,7 +41,12 @@ export class AlarmesService {
     private readonly estacoesProximas: EstacoesProximasService,
   ) {}
 
-  async listarHistorico(query: ListarAlarmesQueryDto, regiao?: Coordenadas): Promise<ListaAlarmesRespostaDto> {
+  /** Como os alertas: visitante por região, usuário pela licitação, Tecsus tudo. */
+  async listarHistorico(
+    query: ListarAlarmesQueryDto,
+    regiao: Coordenadas | undefined,
+    usuario: UsuarioLogado | null,
+  ): Promise<ListaAlarmesRespostaDto> {
     const pagina = query.pagina ?? 1;
     const tamanho = query.tamanho ?? 50;
 
@@ -50,6 +57,7 @@ export class AlarmesService {
         lte: query.ate ? new Date(query.ate) : undefined,
       },
       alerta: {
+        licitacaoId: usuario ? licitacaoDoEscopo(usuario, query.licitacaoId) : undefined,
         severidade: query.severidade,
         parametro: {
           estacaoId: await this.estacoesProximas.filtroEstacao(query.estacaoId, regiao),
@@ -88,21 +96,30 @@ export class AlarmesService {
     return registros.map((registro) => new AlarmeHistoricoRespostaDto(registro));
   }
 
-  async buscarOpcoesFiltro(regiao?: Coordenadas): Promise<OpcoesFiltroRespostaDto> {
+  async buscarOpcoesFiltro(
+    regiao: Coordenadas | undefined,
+    usuario: UsuarioLogado | null,
+    licitacaoIdInformada?: string,
+  ): Promise<OpcoesFiltroRespostaDto> {
     const id = await this.estacoesProximas.filtroEstacao(undefined, regiao);
+    const licitacaoId = usuario ? licitacaoDoEscopo(usuario, licitacaoIdInformada) : undefined;
     const [estacoes, tiposParametro] = await Promise.all([
-      this.prisma.estacao.findMany({ where: { id }, select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
-      this.prisma.tipoParametro.findMany({ select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
+      this.prisma.estacao.findMany({ where: { id, licitacaoId }, select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
+      this.prisma.tipoParametro.findMany({ where: { licitacaoId }, select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
     ]);
 
     return new OpcoesFiltroRespostaDto(estacoes, tiposParametro);
   }
 
-  async atualizarStatus(id: string, dto: AtualizarStatusAlarmeDto): Promise<AlarmeHistoricoRespostaDto> {
-    const alarme = await this.prisma.alarme.findUnique({ where: { id }, select: { status: true } });
+  async atualizarStatus(id: string, dto: AtualizarStatusAlarmeDto, usuario: UsuarioLogado): Promise<AlarmeHistoricoRespostaDto> {
+    const alarme = await this.prisma.alarme.findUnique({
+      where: { id },
+      select: { status: true, alerta: { select: { licitacaoId: true } } },
+    });
     if (!alarme) {
       throw new NotFoundException('Alarme não encontrado');
     }
+    garantirAcessoLicitacao(usuario, alarme.alerta.licitacaoId);
 
     if (ORDEM_STATUS[dto.status] <= ORDEM_STATUS[alarme.status]) {
       throw new ConflictException(

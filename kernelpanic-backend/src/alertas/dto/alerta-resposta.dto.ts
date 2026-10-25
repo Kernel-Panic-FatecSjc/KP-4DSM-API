@@ -14,6 +14,7 @@ export class AlertaRespostaDto {
   severidade: string;
   ativo: boolean;
   criadoEm: Date;
+  licitacaoId: string;
   estacao: { id: string; nome: string };
   parametro: { id: string; nome: string; unidade: string };
 
@@ -24,6 +25,7 @@ export class AlertaRespostaDto {
     this.severidade = alerta.severidade;
     this.ativo = alerta.ativo;
     this.criadoEm = alerta.criadoEm;
+    this.licitacaoId = alerta.licitacaoId;
     this.estacao = { id: alerta.parametro.estacao.id, nome: alerta.parametro.estacao.nome };
     this.parametro = {
       id: alerta.parametro.id,

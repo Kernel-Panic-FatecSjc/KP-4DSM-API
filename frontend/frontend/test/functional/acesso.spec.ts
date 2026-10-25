@@ -11,8 +11,8 @@ const ROTAS_PRIVADAS = [
   '/leituras-brutas',
   '/usuarios',
   '/auditoria',
-  '/contratos',
-  '/orgaos',
+  '/licitacoes',
+  '/leituras-erro',
   '/alarmes',
   '/alertas',
 ];
