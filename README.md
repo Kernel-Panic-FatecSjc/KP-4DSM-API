@@ -233,28 +233,31 @@ A solução combina:
 ```
 KP-4DSM-API
 │
-├── 📁 frontend/               → Aplicação Next.js
+├── 📁 broker/                 → Broker MQTT Mosquitto (VPS 1): configuração e inicialização
+├── 📁 frontend/               → Aplicação Next.js (VPS 6)
 │   ├── 📁 app/               → Páginas e rotas
-│   │   ├── 📁 (protegido)/   → Rotas autenticadas
-│   │   │   └── 📁 usuarios/
+│   │   ├── 📁 (protegido)/   → Rotas autenticadas (e a pública de alertas globais)
 │   │   └── 📁 login/         → Página de login
 │   ├── 📁 components/        → Componentes React reutilizáveis
-│   ├── 📁 lib/               → Utilitários e serviços API
+│   ├── 📁 lib/               → Utilitários, serviços da API e regras de perfil
 │   ├── 📁 public/            → Arquivos estáticos
 │   └── 📁 test/              → Testes unitários (Vitest) e funcionais (Playwright)
 │
-└── 📁 kernelpanic-backend/    → API NestJS
-    ├── 📁 src/
-    │   ├── 📁 autenticacao/   → Autenticação e JWT
-    │   ├── 📁 usuarios/       → Gestão de usuários
-    │   ├── 📁 prisma/         → Configuração do Prisma
-    │   └── 📁 main.ts         → Ponto de entrada
-    ├── 📁 prisma/
-    │   ├── schema.prisma      → Modelo de dados
-    │   ├── seed.ts            → Seed de dados
-    │   └── 📁 migrations/      → Histórico de migrações
-    └── 📁 test/               → Testes E2E
+└── 📁 kernelpanic-backend/
+    ├── 📁 src/                → API NestJS (VPS 5): consultas, CRUD, auditoria
+    │   ├── 📁 autenticacao/   → JWT, perfis e escopo por licitação
+    │   ├── 📁 licitacoes/     → Licitações (contrato e órgão), encerramento e vínculo de estações
+    │   ├── 📁 broker/         → Cadastro das estações no broker (dynamic-security)
+    │   └── 📁 …               → usuarios, estacoes, sensores, alertas, alarmes, dashboard, leituras-brutas, auditoria
+    ├── 📁 servicos/
+    │   ├── 📁 ingestao/       → Serviço de ingestão (VPS 2): assina o broker e grava leituras_brutas
+    │   └── 📁 tratamento/     → Serviço de tratamento (VPS 4): leituras_brutas → medidas
+    ├── 📁 prisma/             → Schema, seed e migrations
+    ├── 📁 teste-carga/        → Simulador de estações (MQTT) e testes de carga
+    └── 📁 test/               → Testes unitários e funcionais
 ```
+
+A cadeia de dados (broker → ingestão → tratamento) está descrita em [docs/mqtt-topico-payload.md](docs/mqtt-topico-payload.md), e o modelo por licitação (perfis, escopo e ciclo de vida) em [docs/regras-licitacao.md](docs/regras-licitacao.md).
 
 ---
 
@@ -274,6 +277,22 @@ KP-4DSM-API
 git clone https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API.git
 cd KP-4DSM-API
 npm install   # ferramentas de commit da raiz; também ativa o hook de validação
+```
+
+### ▶️ Subindo o sistema em desenvolvimento
+
+```bash
+cd kernelpanic-backend
+cp .env.example .env                 # ajuste se precisar
+docker compose up -d                 # Postgres + broker MQTT
+npx prisma migrate deploy && npm run db:seed   # usuário inicial ADMIN_TECSUS
+npm run start:dev                    # API na porta 3001
+npm run build:servicos
+npm run start:ingestao               # outro terminal: ingestão (3002)
+npm run start:tratamento             # outro terminal: tratamento (3003)
+npm run simulador                    # opcional: estações simuladas publicando no broker
+
+cd ../frontend/frontend && npm install && npm run dev   # frontend na porta 3000
 ```
 
 ### 📝 Fazendo commits
