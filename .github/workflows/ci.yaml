@@ -96,6 +96,11 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Serviços da cadeia de dados (servicos/ingestao e servicos/tratamento),
+      # que vão para VPS próprias mas dividem o pacote com a API.
+      - name: Build dos serviços de ingestão e tratamento
+        run: npm run build:servicos
+
   testes:
     name: Testes (NestJS)
     runs-on: ubuntu-latest

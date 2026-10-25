@@ -21,7 +21,8 @@ export function configurarApp(app: INestApplication): void {
     app,
     SwaggerModule.createDocument(app, swaggerConfig),
   );
-  // Sem isso o SIGTERM (ex.: deploy) encerra o processo sem rodar o
-  // onModuleDestroy, e o lote da ingestão ainda em memória se perde.
+  // Sem isso o SIGTERM (ex.: deploy) encerra o processo sem rodar os hooks de
+  // encerramento: na API fecham o LISTEN do tempo real e a conexão com o broker;
+  // nos testes da ingestão, drenam o lote ainda em memória.
   app.enableShutdownHooks();
 }

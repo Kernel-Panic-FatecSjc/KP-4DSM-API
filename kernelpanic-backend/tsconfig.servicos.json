@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./dist-servicos",
+    "incremental": false
+  },
+  "include": ["servicos"],
+  "exclude": ["node_modules", "test", "dist", "dist-servicos", "**/*spec.ts"]
+}

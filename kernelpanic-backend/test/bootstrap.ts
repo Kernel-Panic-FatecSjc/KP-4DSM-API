@@ -14,6 +14,9 @@ const PADROES_DE_TESTE: Record<string, string> = {
   // o LISTEN do tempo real abriria uma conexão real com o banco em toda spec,
   // inclusive nas que usam o Prisma mockado; alarmes-tempo-real.spec.ts liga.
   ALARMES_TEMPO_REAL: 'false',
+  // sem broker nos testes: o backend pula o cadastro das estações e a ingestão
+  // recebe só pela rota HTTP (o caminho MQTT tem teste próprio, com broker de verdade)
+  MQTT_URL: '',
 };
 
 // Atribui, em vez de só preencher o que falta: o .env de desenvolvimento

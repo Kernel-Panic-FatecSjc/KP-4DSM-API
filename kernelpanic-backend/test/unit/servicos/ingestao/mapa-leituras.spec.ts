@@ -1,7 +1,7 @@
 import {
   MAXIMO_SENSORES_POR_LEITURA,
   ehMapaDeLeituras,
-} from '../../../src/ingestao/mapa-leituras.validator';
+} from '../../../../servicos/ingestao/validacao/mapa-leituras.validator';
 
 describe('ehMapaDeLeituras', () => {
   it('aceita pares nomeDoSensor/valor', () => {

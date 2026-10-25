@@ -1,12 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { IngestaoService } from '../ingestao/ingestao.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 export type EstadoComponente = 'ok' | 'falha';
 
+// A ingestão saiu do backend (serviços próprios, com /saude próprio): aqui
+// só o banco importa.
 export interface EstadoSaude {
   banco: EstadoComponente;
-  ingestao: EstadoComponente;
 }
 
 // Banco travado não pode deixar o health check pendurado: sem resposta, o
@@ -17,13 +17,10 @@ export const TIMEOUT_BANCO_MS = 3000;
 export class SaudeService {
   private readonly logger = new Logger(SaudeService.name);
 
-  constructor(
-    private readonly prisma: PrismaService,
-    private readonly ingestao: IngestaoService,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async verificar(): Promise<EstadoSaude> {
-    return { banco: await this.verificarBanco(), ingestao: this.ingestao.obterEstadoFlush() };
+    return { banco: await this.verificarBanco() };
   }
 
   private async verificarBanco(): Promise<EstadoComponente> {

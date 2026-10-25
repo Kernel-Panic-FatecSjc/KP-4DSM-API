@@ -1,11 +1,11 @@
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { calcularHashChaveIngestao } from '../../../src/ingestao/chave-ingestao';
+import { calcularHashChaveIngestao } from '../../../../src/estacoes/chave-ingestao';
 import {
   GuardaChaveIngestao,
   HEADER_CHAVE_INGESTAO,
-} from '../../../src/ingestao/guarda-chave-ingestao.guard';
-import { PrismaService } from '../../../src/prisma/prisma.service';
+} from '../../../../servicos/ingestao/http/guarda-chave-ingestao.guard';
+import { PrismaService } from '../../../../src/prisma/prisma.service';
 
 const CHAVE = 'chave-da-estacao-1';
 const HASH_POR_VID: Record<string, string | null> = {

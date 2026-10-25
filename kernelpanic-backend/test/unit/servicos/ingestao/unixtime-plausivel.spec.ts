@@ -2,7 +2,7 @@ import {
   TOLERANCIA_FUTURO_SEGUNDOS,
   UNIXTIME_MINIMO,
   unixtimeEhPlausivel,
-} from '../../../src/ingestao/unixtime-plausivel.validator';
+} from '../../../../servicos/ingestao/validacao/unixtime-plausivel.validator';
 
 describe('unixtimeEhPlausivel', () => {
   const agora = Date.parse('2026-09-16T12:00:00Z');

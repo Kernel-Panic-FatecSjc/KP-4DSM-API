@@ -2,7 +2,7 @@ import {
   calcularHashChaveIngestao,
   chaveIngestaoConfere,
   gerarChaveIngestao,
-} from '../../../src/ingestao/chave-ingestao';
+} from '../../../src/estacoes/chave-ingestao';
 
 describe('chave de ingestão', () => {
   it('gera chaves diferentes e guarda só o hash', () => {
