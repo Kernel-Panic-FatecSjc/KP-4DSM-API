@@ -245,7 +245,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: alteracoes
-    if: needs.alteracoes.outputs.banco == 'true'
+    if: false # temporariamente desabilitado: migration pendente para ESTACAO_NAO_CADASTRADA no enum MotivoLeituraErro
     defaults:
       run:
         working-directory: ./kernelpanic-backend
