@@ -10,6 +10,7 @@ export class SensorRespostaDto {
   valorMinimo: number | null;
   valorMaximo: number | null;
   estacoesAssociadas?: number;
+  licitacaoId: string;
 
   constructor(sensor: TipoParametro & { _count?: { parametros: number } }) {
     this.id = sensor.id;
@@ -21,5 +22,15 @@ export class SensorRespostaDto {
     this.valorMinimo = sensor.valorMinimo;
     this.valorMaximo = sensor.valorMaximo;
     this.estacoesAssociadas = sensor._count?.parametros;
+    this.licitacaoId = sensor.licitacaoId;
   }
+}
+
+export class ListaSensoresRespostaDto {
+  constructor(
+    public itens: SensorRespostaDto[],
+    public total: number,
+    public pagina: number,
+    public tamanho: number,
+  ) {}
 }

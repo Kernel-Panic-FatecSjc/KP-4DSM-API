@@ -10,7 +10,7 @@ import { AutenticacaoService } from './autenticacao.service';
 import { obterOpcoesCookie } from './cookie.config';
 import { LoginDto } from './dto/login.dto';
 import { GuardaJwt } from './guarda-jwt.guard';
-import type { PayloadJwt } from './payload-jwt.interface';
+import type { UsuarioLogado } from './payload-jwt.interface';
 import { UsuarioAutenticado } from './usuario-autenticado.decorator';
 
 const NOME_COOKIE = 'access_token';
@@ -39,10 +39,12 @@ export class AutenticacaoController {
       acao: 'autenticacao.login',
       entidade: 'Autenticacao',
       usuarioId: usuario.id,
+      licitacaoId: usuario.licitacaoId,
       detalhes: { email: usuario.email },
     });
 
-    return new UsuarioRespostaDto(usuario);
+    // Com a licitação: o front decide o menu pelo perfil e pelo status dela.
+    return new UsuarioRespostaDto(await this.usuariosService.buscarPorId(usuario.id));
   }
 
   @HttpCode(HttpStatus.OK)
@@ -55,8 +57,8 @@ export class AutenticacaoController {
 
   @UseGuards(GuardaJwt)
   @Get('perfil')
-  async perfil(@UsuarioAutenticado() usuarioLogado: PayloadJwt): Promise<UsuarioRespostaDto> {
+  async perfil(@UsuarioAutenticado() usuarioLogado: UsuarioLogado): Promise<UsuarioRespostaDto> {
     const usuario = await this.usuariosService.buscarPorId(usuarioLogado.sub);
-    return new UsuarioRespostaDto(usuario);
+    return new UsuarioRespostaDto(usuario, usuarioLogado.somenteLeitura);
   }
 }

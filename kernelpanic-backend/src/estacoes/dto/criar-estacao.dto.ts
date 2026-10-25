@@ -33,8 +33,14 @@ export class CriarEstacaoDto {
   @IsLongitude()
   longitude!: number;
 
+  // Obrigatória para a Tecsus; o admin da licitação pode omitir (vale a dele).
+  // Não existe estação sem licitação.
+  @IsOptional()
+  @IsUUID('4')
+  licitacaoId?: string;
+
   // Opcional: a estação pode ser cadastrada antes de os sensores existirem e
-  // recebê-los depois por PATCH.
+  // recebê-los depois por PATCH. Os sensores são da licitação da estação.
   @IsOptional()
   @IsArray()
   @IsUUID('4', { each: true })

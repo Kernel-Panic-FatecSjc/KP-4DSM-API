@@ -1,15 +1,17 @@
-import { INestApplication, Type } from '@nestjs/common';
+import { INestApplication, type Type } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Test, TestingModuleBuilder } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { configurarApp } from '../src/configurar-app';
+import type { TipoUsuario } from '../src/generated/prisma/client';
 import { PrismaService } from '../src/prisma/prisma.service';
 
 export interface OpcoesAppDeTeste {
   prismaMock?: unknown;
-  modulo?: Type<unknown>;
+  /** Padrão: a API (AppModule). Os serviços próprios passam o módulo deles (ex.: IngestaoAppModule). */
+  modulo?: Type;
 }
 
 export async function criarAppDeTeste(opcoes: OpcoesAppDeTeste = {}): Promise<INestApplication> {
@@ -59,10 +61,39 @@ export function gerarCnpj(): string {
   return digitos.join('');
 }
 
-/** Cria o usuário direto no banco (bootstrap) e devolve o cookie de uma sessão dele. */
+/** Cria uma licitação direto no banco, com código, processo e contrato únicos. */
+export async function criarLicitacaoDeTeste(
+  app: INestApplication,
+  dados: { status?: 'RASCUNHO' | 'VIGENTE' | 'SUSPENSA' | 'ENCERRADA' } = {},
+): Promise<{ id: string; codigoIdentificador: string }> {
+  const codigo = `T-${randomUUID().slice(0, 8).toUpperCase()}`;
+  return app.get(PrismaService).licitacao.create({
+    data: {
+      codigoIdentificador: codigo,
+      numeroProcesso: `P-${codigo}`,
+      modalidade: 'PREGAO',
+      objeto: 'Licitação de teste',
+      numeroContrato: `C-${codigo}`,
+      inicioVigencia: new Date('2026-01-01T00:00:00.000Z'),
+      fimVigencia: new Date('2099-12-31T23:59:59.999Z'),
+      status: dados.status ?? 'VIGENTE',
+      orgaoNome: 'Órgão de teste',
+      orgaoEsfera: 'MUNICIPAL',
+      orgaoMunicipio: 'São José dos Campos',
+      orgaoUf: 'SP',
+    },
+    select: { id: true, codigoIdentificador: true },
+  });
+}
+
+/**
+ * Cria o usuário direto no banco (bootstrap) e devolve o cookie de uma sessão
+ * dele. Os perfis de licitação precisam de licitacaoId (check no banco).
+ */
 export async function criarSessaoDeTeste(
   app: INestApplication,
-  tipo: 'ADMINISTRADOR' | 'MONITOR',
+  tipo: TipoUsuario,
+  licitacaoId: string | null = null,
 ): Promise<{ cookie: string[]; usuarioId: string }> {
   const credenciais = { email: emailDeTeste(`sessao-${randomUUID().slice(0, 8)}`), senha: 'senha12345' };
   const usuario = await app.get(PrismaService).usuario.create({
@@ -72,6 +103,7 @@ export async function criarSessaoDeTeste(
       email: credenciais.email,
       senhaHash: await bcrypt.hash(credenciais.senha, 10),
       tipo,
+      licitacaoId,
     },
   });
   return { cookie: await autenticar(app, credenciais), usuarioId: usuario.id };

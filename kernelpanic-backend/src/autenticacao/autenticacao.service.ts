@@ -31,7 +31,12 @@ export class AutenticacaoService {
   }
 
   gerarToken(usuario: Usuario): string {
-    const payload: PayloadJwt = { sub: usuario.id, email: usuario.email };
+    const payload: PayloadJwt = {
+      sub: usuario.id,
+      email: usuario.email,
+      tipo: usuario.tipo,
+      licitacaoId: usuario.licitacaoId,
+    };
     return this.jwtService.sign(payload);
   }
 }

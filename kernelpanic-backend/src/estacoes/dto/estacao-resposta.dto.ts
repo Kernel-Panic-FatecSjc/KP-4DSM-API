@@ -4,7 +4,7 @@ import { ApiProperty } from '@nestjs/swagger';
 type EstacaoComSensores = Prisma.EstacaoGetPayload<{
   include: {
     parametros: { include: { tipoParametro: true } };
-    contrato: { select: { id: true; numero: true } };
+    licitacao: { select: { id: true; codigoIdentificador: true } };
   };
 }>;
 
@@ -28,11 +28,10 @@ export class EstacaoRespostaDto {
   @ApiProperty({ type: 'array', items: { type: 'object' } })
   sensores: Array<{ id: string; nome: string; unidade: string }>;
   @ApiProperty({
-    nullable: true,
-    description: 'Contrato ao qual a estação está vinculada, se houver',
-    example: { id: 'uuid', numero: 'CTR-2026-001' },
+    description: 'Licitação à qual a estação pertence',
+    example: { id: 'uuid', codigoIdentificador: 'PMSJC-2026' },
   })
-  contrato: { id: string; numero: string } | null;
+  licitacao: { id: string; codigoIdentificador: string };
   @ApiProperty({ format: 'date-time' })
   criadoEm: Date;
   @ApiProperty({ format: 'date-time' })
@@ -52,11 +51,21 @@ export class EstacaoRespostaDto {
       nome: tipoParametro.nome,
       unidade: tipoParametro.unidade,
     }));
-    this.contrato = estacao.contrato ?? null;
+    this.licitacao = estacao.licitacao;
     this.criadoEm = estacao.criadoEm;
     this.atualizadoEm = estacao.atualizadoEm;
   }
 }
+
+export class ListaEstacoesRespostaDto {
+  constructor(
+    public itens: EstacaoRespostaDto[],
+    public total: number,
+    public pagina: number,
+    public tamanho: number,
+  ) {}
+}
+
 /** Resposta do cadastro: única vez em que a chave de ingestão aparece. */
 export class EstacaoCriadaRespostaDto extends EstacaoRespostaDto {
   chaveIngestao: string;

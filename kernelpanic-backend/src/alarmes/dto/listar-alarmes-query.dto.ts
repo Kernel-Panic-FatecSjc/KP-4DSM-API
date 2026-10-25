@@ -3,7 +3,14 @@ import { IsDateString, IsEnum, IsInt, IsOptional, IsUUID, Max, Min } from 'class
 import { SeveridadeAlerta, StatusAlarme } from '../../generated/prisma/client';
 import { RegiaoQueryDto } from '../../regiao/regiao';
 
-export class ListarAlarmesQueryDto extends RegiaoQueryDto {
+/** Região (visitante) e, para a Tecsus, a licitação. */
+export class FiltrosAlarmesQueryDto extends RegiaoQueryDto {
+  @IsOptional()
+  @IsUUID('4')
+  licitacaoId?: string;
+}
+
+export class ListarAlarmesQueryDto extends FiltrosAlarmesQueryDto {
   @IsOptional()
   @IsUUID()
   estacaoId?: string;

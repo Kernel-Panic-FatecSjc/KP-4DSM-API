@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { garantirAcessoLicitacao, licitacaoDoEscopo } from '../autenticacao/escopo-licitacao';
+import type { UsuarioLogado } from '../autenticacao/payload-jwt.interface';
 import type { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { EstacoesProximasService } from '../regiao/estacoes-proximas.service';
@@ -26,8 +28,9 @@ export class AlertasService {
     private readonly estacoesProximas: EstacoesProximasService,
   ) {}
 
-  async criar(dto: CriarAlertaDto) {
-    await this.garantirParametroExistente(dto.parametroId);
+  /** O alerta é da licitação da estação do parâmetro monitorado. */
+  async criar(dto: CriarAlertaDto, usuario: UsuarioLogado) {
+    const licitacaoId = await this.licitacaoDoParametro(dto.parametroId, usuario);
 
     return this.prisma.alerta.create({
       data: {
@@ -35,15 +38,20 @@ export class AlertasService {
         valorLimite: dto.valorLimite,
         severidade: dto.severidade,
         parametroId: dto.parametroId,
+        licitacaoId,
       },
       include: INCLUDE_RELACOES,
     });
   }
 
-  async atualizar(id: string, dto: AtualizarAlertaDto) {
-    const existente = await this.prisma.alerta.findUnique({ where: { id } });
-    if (!existente) throw new NotFoundException('Alerta não encontrado');
-    if (dto.parametroId) await this.garantirParametroExistente(dto.parametroId);
+  async atualizar(id: string, dto: AtualizarAlertaDto, usuario: UsuarioLogado) {
+    const existente = await this.buscar(id, usuario);
+    if (dto.parametroId && dto.parametroId !== existente.parametroId) {
+      const licitacaoId = await this.licitacaoDoParametro(dto.parametroId, usuario);
+      if (licitacaoId !== existente.licitacaoId) {
+        throw new BadRequestException('O parâmetro monitorado precisa ser da licitação do alerta');
+      }
+    }
 
     return this.prisma.alerta.update({
       where: { id },
@@ -52,9 +60,8 @@ export class AlertasService {
     });
   }
 
-  async inativar(id: string) {
-    const existente = await this.prisma.alerta.findUnique({ where: { id } });
-    if (!existente) throw new NotFoundException('Alerta não encontrado');
+  async inativar(id: string, usuario: UsuarioLogado) {
+    await this.buscar(id, usuario);
 
     // Apagar o alerta levaria junto os alarmes que ele disparou
     // (onDelete: Cascade), destruindo o histórico de ocorrências que a
@@ -66,11 +73,20 @@ export class AlertasService {
     });
   }
 
-  async listar(query: ListarAlertasQueryDto, regiao?: Coordenadas): Promise<ListaAlertasRespostaDto> {
+  /**
+   * Visitante vê os alertas perto dele (de qualquer licitação: é a página
+   * pública); quem está logado vê os da própria licitação, e a Tecsus todos.
+   */
+  async listar(
+    query: ListarAlertasQueryDto,
+    regiao: Coordenadas | undefined,
+    usuario: UsuarioLogado | null,
+  ): Promise<ListaAlertasRespostaDto> {
     const pagina = query.pagina ?? 1;
     const tamanho = query.tamanho ?? 50;
 
     const where: Prisma.AlertaWhereInput = {
+      licitacaoId: usuario ? licitacaoDoEscopo(usuario, query.licitacaoId) : undefined,
       severidade: query.severidade,
       ativo: query.ativo,
       parametro: {
@@ -98,13 +114,26 @@ export class AlertasService {
     );
   }
 
-  async buscarOpcoesFiltro(regiao?: Coordenadas): Promise<OpcoesFiltroAlertasRespostaDto> {
+  async buscarOpcoesFiltro(
+    regiao: Coordenadas | undefined,
+    usuario: UsuarioLogado | null,
+    licitacaoIdInformada?: string,
+  ): Promise<OpcoesFiltroAlertasRespostaDto> {
     const estacaoId = await this.estacoesProximas.filtroEstacao(undefined, regiao);
+    const licitacaoId = usuario ? licitacaoDoEscopo(usuario, licitacaoIdInformada) : undefined;
     const [estacoes, tiposParametro, parametros] = await Promise.all([
-      this.prisma.estacao.findMany({ where: { id: estacaoId }, select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
-      this.prisma.tipoParametro.findMany({ select: { id: true, nome: true }, orderBy: { nome: 'asc' } }),
+      this.prisma.estacao.findMany({
+        where: { id: estacaoId, licitacaoId },
+        select: { id: true, nome: true },
+        orderBy: { nome: 'asc' },
+      }),
+      this.prisma.tipoParametro.findMany({
+        where: { licitacaoId },
+        select: { id: true, nome: true },
+        orderBy: { nome: 'asc' },
+      }),
       this.prisma.parametro.findMany({
-        where: { estacaoId },
+        where: { estacaoId, estacao: { licitacaoId } },
         include: {
           estacao: { select: { id: true, nome: true } },
           tipoParametro: { select: { nome: true, unidade: true } },
@@ -126,10 +155,22 @@ export class AlertasService {
     );
   }
 
-  private async garantirParametroExistente(parametroId: string): Promise<void> {
-    const parametro = await this.prisma.parametro.findUnique({ where: { id: parametroId } });
+  private async buscar(id: string, usuario: UsuarioLogado) {
+    const alerta = await this.prisma.alerta.findUnique({ where: { id } });
+    if (!alerta) throw new NotFoundException('Alerta não encontrado');
+    garantirAcessoLicitacao(usuario, alerta.licitacaoId);
+    return alerta;
+  }
+
+  private async licitacaoDoParametro(parametroId: string, usuario: UsuarioLogado): Promise<string> {
+    const parametro = await this.prisma.parametro.findUnique({
+      where: { id: parametroId },
+      select: { estacao: { select: { licitacaoId: true } } },
+    });
     if (!parametro) {
       throw new BadRequestException('O parâmetro monitorado selecionado não existe');
     }
+    garantirAcessoLicitacao(usuario, parametro.estacao.licitacaoId);
+    return parametro.estacao.licitacaoId;
   }
 }
