@@ -28,6 +28,13 @@ Este documento estabelece as regras de negócio, os padrões técnicos, os contr
 
 As versões do PostgreSQL, PostGIS, Prisma e das dependências relevantes devem ser fixadas e documentadas para reduzir incompatibilidades entre os ambientes de Desenvolvimento, Staging e Produção.
 
+O versionamento do banco possui duas partes distintas, que devem ser controladas no repositório:
+
+1. **Versão do mecanismo e ferramentas:** fixar a imagem PostgreSQL/PostGIS usada em desenvolvimento e CI (tag explícita, nunca `latest`), registrar a versão do Prisma nas dependências e manter os arquivos de lock. Uma atualização de PostgreSQL, PostGIS ou Prisma exige uma tarefa técnica, avaliação de compatibilidade, teste de migrations e revisão antes de ser adotada nos ambientes compartilhados.
+2. **Versão do schema:** o `prisma/schema.prisma` representa o estado desejado atual; cada mudança estrutural é uma nova migration em `prisma/migrations/`, com nome descritivo e timestamp gerado pelo Prisma. Migrations aplicadas em ambiente compartilhado são imutáveis. Correções e mudanças posteriores entram em novas migrations, preservando o histórico necessário para recriar o banco desde o estado inicial.
+
+O número da versão do mecanismo não substitui o histórico de migrations: devem ser registrados e verificáveis tanto a versão do PostgreSQL/PostGIS em execução quanto as migrations aplicadas em cada ambiente. Não se deve atualizar a imagem de banco de um ambiente sem primeiro validar a compatibilidade da aplicação, das extensões e do conjunto completo de migrations.
+
 A pipeline de CI deve utilizar uma configuração compatível com a versão do banco prevista para o ambiente de destino, executando os testes necessários para verificar a integridade do schema, das migrations e das funcionalidades dependentes de recursos geográficos.
 
 Atualizações dessas dependências devem ser tratadas como mudanças técnicas, com testes e revisão antes da implantação.
@@ -97,6 +104,8 @@ O desenvolvedor deve:
 3. Inspecionar o SQL produzido pelo Prisma.  
 4. Executar e validar a migration no ambiente local.  
 5. Incluir os testes e scripts SQL necessários.
+
+Cada mudança de schema deve criar uma migration nova e autocontida. Não se deve renomear, apagar, reordenar ou editar uma migration já compartilhada; o CI deve detectar alterações em migrations existentes. Em revisão, deve ser possível identificar a partir do diff qual migration será aplicada e qual estado do schema ela produz. Para reconstruir um banco vazio, usar `npx prisma migrate deploy`; para conferir se o schema declarado e o histórico versionado divergem, executar a validação de diff configurada no CI.
 
 Quando recursos específicos do PostgreSQL não puderem ser representados diretamente pelo Prisma, será permitido complementar ou ajustar o SQL da migration.
 
@@ -339,6 +348,21 @@ Os limites de alerta devem ser definidos de acordo com a capacidade do ambiente 
 
 Incidentes devem gerar registros com causa identificada quando possível, impacto observado, ações executadas e medidas preventivas.
 
+### **7.1. Testes de carga e desempenho do banco**
+
+Mudanças que possam alterar o volume de escrita ou leitura, o uso de índices, triggers, consultas, locks ou o tempo de processamento devem considerar testes de carga antes da aprovação. Os testes devem usar um banco isolado identificado para carga (por exemplo, `kernelpanic_carga`), nunca Desenvolvimento compartilhado, Staging ou Produção.
+
+O teste deve descrever e registrar:
+
+* A versão do PostgreSQL/PostGIS, configuração relevante, recursos da máquina e se aplicação, gerador e banco compartilham o mesmo host.
+* O volume e o formato dos dados, a taxa oferecida, a duração, o aquecimento e a ferramenta ou script utilizado.
+* Latência p50/p95/p99, taxa efetiva, erros, filas/atrasos e conferência de perda ou duplicidade de dados.
+* O resultado antes/depois quando a mudança pretende melhorar desempenho, além de limitações que impeçam extrapolar a medição para Produção.
+
+Para a cadeia de ingestão, o critério de referência documentado é p95 ponta a ponta abaixo de 2 segundos, sem perda de pacotes. O procedimento, scripts, resultados e limitações atuais estão em [Teste de carga da ingestão](teste-de-carga-ingestao.md); esse relatório deve ser atualizado quando uma nova medição substituir ou complementar a linha de base. Os resultados existentes foram medidos em ambiente local e não representam garantia de capacidade em Produção.
+
+Em alterações específicas de banco, como criação de índice ou modificação de consulta, também devem ser comparados planos e tempos de consultas representativas e custo de escrita, usando volume de dados que represente o cenário avaliado. A decisão de adotar ou não a mudança e os riscos operacionais devem constar na tarefa ou no Pull Request.
+
 ## **8\. Definition of Ready (DoR) para Tarefas de Banco de Dados**
 
 Antes de iniciar uma tarefa que altere o banco de dados, devem estar definidos:
@@ -350,6 +374,7 @@ Antes de iniciar uma tarefa que altere o banco de dados, devem estar definidos:
 * Os riscos de compatibilidade, locks e alterações de dados foram considerados.  
 * A necessidade de Expand/Contract foi avaliada.  
 * Os critérios de teste e aceite estão definidos.  
+* A necessidade de teste de carga ou medição de consulta foi avaliada; quando aplicável, cenário, critério e ambiente isolado estão definidos.  
 * A estratégia de recuperação está identificada para mudanças de alto risco.
 
 ## **9\. Definition of Done (DoD) para Tarefas de Banco de Dados**
@@ -363,6 +388,8 @@ Para que uma tarefa seja aprovada no Code Review e possa ser mergeada, devem ser
 - [ ] O SQL gerado pelo Prisma foi revisado.  
 - [ ] Alterações manuais em SQL estão justificadas, documentadas e testadas.  
 - [ ] Os riscos de locks, perda de dados, índices e integridade foram avaliados.
+- [ ] A versão PostgreSQL/PostGIS e do Prisma usada na validação está identificada.
+- [ ] Quando a mudança puder afetar desempenho, a evidência de teste de carga ou medição representativa foi registrada, incluindo limites da medição.
 
 ### **9.2. Testes e compatibilidade**
 
