@@ -285,6 +285,7 @@ enum MotivoLeituraErro {
   SENSOR_NAO_CONFIGURADO
   ABAIXO_DO_MINIMO
   ACIMA_DO_MAXIMO
+  ESTACAO_NAO_CADASTRADA
 }
 
 /// Leitura que a ingestão recebeu mas não gravou como medida. Sem chaves
