@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 
 export class ListarAuditoriaQueryDto {
   @IsOptional()
@@ -17,6 +17,11 @@ export class ListarAuditoriaQueryDto {
   @IsOptional()
   @IsString()
   usuarioId?: string;
+
+  // Só a Tecsus escolhe; o admin da licitação lê sempre a dele.
+  @IsOptional()
+  @IsUUID('4')
+  licitacaoId?: string;
 
   @IsOptional()
   @IsDateString()

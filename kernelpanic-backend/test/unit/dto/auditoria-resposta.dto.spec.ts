@@ -10,8 +10,12 @@ function resposta(enderecoIp: string | null): AuditoriaRespostaDto {
     entidadeId: null,
     detalhes: { status: 401, email: 'privado@example.com', senha: 'segredo' },
     enderecoIp,
+    licitacaoId: null,
     usuario: null,
-  } satisfies Pick<Prisma.LogAuditoriaModel, 'id' | 'criadoEm' | 'acao' | 'entidade' | 'entidadeId' | 'detalhes' | 'enderecoIp'> & {
+  } satisfies Pick<
+    Prisma.LogAuditoriaModel,
+    'id' | 'criadoEm' | 'acao' | 'entidade' | 'entidadeId' | 'detalhes' | 'enderecoIp' | 'licitacaoId'
+  > & {
     usuario: null;
   };
 

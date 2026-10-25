@@ -3,10 +3,25 @@ import type { NextFunction, Request, Response } from 'express';
 import { AuditoriaService } from './auditoria.service';
 
 type RequisicaoComUsuario = Request & {
-  user?: { id?: string; sub?: string };
+  user?: { id?: string; sub?: string; licitacaoId?: string | null };
 };
 
-const ROTAS_SEM_AUDITORIA = ['/ingestao', '/saude'];
+// /saude: o monitoramento chama de poucos em poucos segundos. GET /auditoria:
+// consultar a trilha não pode criar linha nova nela (a tela recarregaria a
+// lista e veria a própria consulta no topo).
+const ROTAS_SEM_AUDITORIA: { metodo?: string; prefixo: string }[] = [
+  { prefixo: '/saude' },
+  { metodo: 'GET', prefixo: '/auditoria' },
+];
+
+function semAuditoria(metodo: string, url: string): boolean {
+  const caminho = url.split('?')[0];
+  return ROTAS_SEM_AUDITORIA.some(
+    (rota) =>
+      (!rota.metodo || rota.metodo === metodo) &&
+      (caminho === rota.prefixo || caminho.startsWith(`${rota.prefixo}/`)),
+  );
+}
 
 @Injectable()
 export class AuditoriaAcessoMiddleware implements NestMiddleware {
@@ -16,10 +31,8 @@ export class AuditoriaAcessoMiddleware implements NestMiddleware {
 
   use(request: RequisicaoComUsuario, response: Response, next: NextFunction): void {
     // originalUrl, e não path: com forRoutes('*') o Express corta o prefixo que
-    // casou, então request.path chega aqui como '/' e este desvio nunca disparava
-    // (cada POST do datalogger gerava uma linha de auditoria). O /saude entra
-    // pelo mesmo motivo: o monitoramento chama de poucos em poucos segundos.
-    if (ROTAS_SEM_AUDITORIA.some((rota) => request.originalUrl.startsWith(rota))) {
+    // casou, então request.path chega aqui como '/' e este desvio nunca disparava.
+    if (semAuditoria(request.method, request.originalUrl)) {
       next();
       return;
     }
@@ -36,6 +49,7 @@ export class AuditoriaAcessoMiddleware implements NestMiddleware {
         acao: 'acesso.http',
         entidade: request.path,
         usuarioId,
+        licitacaoId: request.user?.licitacaoId ?? null,
         enderecoIp: request.ip ?? request.socket.remoteAddress,
         detalhes: {
           metodo: request.method,

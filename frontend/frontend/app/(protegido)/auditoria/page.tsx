@@ -4,43 +4,59 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, CalendarDays, ChevronLeft, ChevronRight, ClipboardList, Clock3, Database, Download, FileSearch, FileSpreadsheet, Filter, Hash, RefreshCw, ShieldCheck, UserRound, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { PageHeading } from '@/components/PageHeading';
+import { useUsuario } from '@/components/ProtectedLayout';
+import { SeletorLicitacao } from '@/components/SeletorLicitacao';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { baixarPlanilha } from '@/lib/baixar-planilha';
-import { api, ErroApi, type ListaAuditoria, type RegistroAuditoria } from '@/lib/api';
+import { api, baixarDaApi, ErroApi, type ListaAuditoria, type RegistroAuditoria } from '@/lib/api';
+import { ehTecsus } from '@/lib/perfil';
 import { cn } from '@/lib/utils';
+import { useCodigosLicitacao } from '@/lib/licitacoes';
 
 const TAMANHO_PAGINA = 25;
-const FILTROS_INICIAIS = { acao: '', entidade: '', entidadeId: '', usuarioId: '', de: '', ate: '', pagina: 1 };
-const TAMANHO_EXPORTACAO = 200;
+const FILTROS_INICIAIS = { acao: '', entidade: '', entidadeId: '', usuarioId: '', licitacaoId: '', de: '', ate: '', pagina: 1 };
+// O Excel formatado é montado no navegador (exceljs), sem streaming: acima
+// disso a aba trava. Para volumes maiores existe o CSV gerado pela API.
+const LIMITE_PLANILHA = 5000;
+const TAMANHO_LOTE_PLANILHA = 200;
 
-function parametrosConsulta(filtros: typeof FILTROS_INICIAIS, pagina: number, tamanho: number): URLSearchParams {
-  const parametros = new URLSearchParams({ tamanho: String(tamanho), pagina: String(pagina) });
+function parametrosFiltro(filtros: typeof FILTROS_INICIAIS): URLSearchParams {
+  const parametros = new URLSearchParams();
   if (filtros.acao.trim()) parametros.set('acao', filtros.acao.trim());
   if (filtros.entidade.trim()) parametros.set('entidade', filtros.entidade.trim());
   if (filtros.entidadeId.trim()) parametros.set('entidadeId', filtros.entidadeId.trim());
   if (filtros.usuarioId.trim()) parametros.set('usuarioId', filtros.usuarioId.trim());
+  if (filtros.licitacaoId) parametros.set('licitacaoId', filtros.licitacaoId);
   if (filtros.de) parametros.set('de', new Date(`${filtros.de}T00:00:00`).toISOString());
   if (filtros.ate) parametros.set('ate', new Date(`${filtros.ate}T23:59:59.999`).toISOString());
   return parametros;
 }
 
-function valorCsv(valor: unknown): string {
-  const texto = typeof valor === 'string' ? valor : JSON.stringify(valor ?? '');
-  const protegido = /^[=+@\-]/.test(texto) ? `'${texto}` : texto;
-  return `"${protegido.replaceAll('"', '""')}"`;
+function parametrosConsulta(filtros: typeof FILTROS_INICIAIS, pagina: number, tamanho: number): URLSearchParams {
+  const parametros = parametrosFiltro(filtros);
+  parametros.set('tamanho', String(tamanho));
+  parametros.set('pagina', String(pagina));
+  return parametros;
 }
 
-function detalhesCsv(valor: unknown, caminho = ''): string[] {
+/** A API recusa exportar sem período (varreria a trilha inteira); aqui o aviso vem antes do clique virar navegação. */
+function problemaPeriodoExportacao(filtros: typeof FILTROS_INICIAIS): string | null {
+  if (!filtros.de || !filtros.ate) return 'Informe a data inicial e a data final para exportar o CSV.';
+  if (filtros.de > filtros.ate) return 'A data inicial deve ser anterior ou igual à data final.';
+  return null;
+}
+
+function detalhesEmTexto(valor: unknown, caminho = ''): string[] {
   if (Array.isArray(valor)) {
-    return valor.flatMap((item, indice) => detalhesCsv(item, `${caminho ? `${caminho} / ` : ''}Item ${indice + 1}`));
+    return valor.flatMap((item, indice) => detalhesEmTexto(item, `${caminho ? `${caminho} / ` : ''}Item ${indice + 1}`));
   }
 
   if (valor && typeof valor === 'object') {
     return Object.entries(valor).flatMap(([chave, conteudo]) => {
       if (chave === 'IP de origem (mascarado)') return [];
       const nome = caminho ? `${caminho} / ${nomeCampo(chave)}` : nomeCampo(chave);
-      return detalhesCsv(conteudo, nome);
+      return detalhesEmTexto(conteudo, nome);
     });
   }
 
@@ -110,7 +126,12 @@ function nomeAcao(acao: string): string {
 }
 
 function Filtro({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div className="flex min-w-0 flex-col gap-1"><label className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{label}</label>{children}</div>;
+  return <label className="flex min-w-0 flex-col gap-1"><span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">{label}</span>{children}</label>;
+}
+
+function nomeLicitacao(licitacaoId: string | null, codigos: Map<string, string>): string {
+  if (!licitacaoId) return 'Tecsus / visitante';
+  return codigos.get(licitacaoId) ?? licitacaoId.slice(0, 8);
 }
 
 function Indicador({ icon: Icon, label, value, tone }: { icon: typeof Activity; label: string; value: string; tone: string }) {
@@ -119,11 +140,13 @@ function Indicador({ icon: Icon, label, value, tone }: { icon: typeof Activity; 
 
 export default function AuditoriaPage() {
   const router = useRouter();
+  const tecsus = ehTecsus(useUsuario());
+  const codigosLicitacao = useCodigosLicitacao(tecsus);
   const [lista, setLista] = useState<ListaAuditoria | null>(null);
   const [selecionadoId, setSelecionadoId] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
-  const [exportando, setExportando] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
   const [exportandoPlanilha, setExportandoPlanilha] = useState(false);
   const [filtros, setFiltros] = useState(FILTROS_INICIAIS);
 
@@ -155,6 +178,7 @@ export default function AuditoriaPage() {
 
   function consultar(evento?: React.FormEvent<HTMLFormElement>) {
     evento?.preventDefault();
+    setAviso(null);
     const consulta = { ...filtros, pagina: 1 };
     setFiltros(consulta);
     void carregar(consulta, 1);
@@ -162,24 +186,30 @@ export default function AuditoriaPage() {
 
   function limparFiltros() {
     setFiltros(FILTROS_INICIAIS);
+    setAviso(null);
     void carregar(FILTROS_INICIAIS, 1);
   }
 
-  async function buscarRegistrosFiltrados(): Promise<RegistroAuditoria[]> {
-    const primeiraPagina = await api<ListaAuditoria>(`/auditoria?${parametrosConsulta(filtros, 1, TAMANHO_EXPORTACAO)}`);
-    const registros = [...primeiraPagina.itens];
-    const totalPaginas = Math.ceil(primeiraPagina.total / primeiraPagina.tamanho);
-
-    for (let pagina = 2; pagina <= totalPaginas; pagina += 1) {
-      const proximaPagina = await api<ListaAuditoria>(`/auditoria?${parametrosConsulta(filtros, pagina, TAMANHO_EXPORTACAO)}`);
-      registros.push(...proximaPagina.itens);
+  /** Até LIMITE_PLANILHA registros; acima disso devolve null e avisa, sem baixar nada. */
+  async function buscarRegistrosDaPlanilha(): Promise<RegistroAuditoria[] | null> {
+    const primeiraPagina = await api<ListaAuditoria>(`/auditoria?${parametrosConsulta(filtros, 1, TAMANHO_LOTE_PLANILHA)}`);
+    if (primeiraPagina.total > LIMITE_PLANILHA) {
+      setAviso(`A consulta tem ${primeiraPagina.total.toLocaleString('pt-BR')} registros e o Excel formatado vai até ${LIMITE_PLANILHA.toLocaleString('pt-BR')}. Reduza o período ou use o CSV, que não tem esse limite.`);
+      return null;
     }
 
-    return registros;
+    const registros = [...primeiraPagina.itens];
+    const totalPaginas = Math.ceil(primeiraPagina.total / TAMANHO_LOTE_PLANILHA);
+    for (let pagina = 2; pagina <= totalPaginas; pagina += 1) {
+      const proximaPagina = await api<ListaAuditoria>(`/auditoria?${parametrosConsulta(filtros, pagina, TAMANHO_LOTE_PLANILHA)}`);
+      registros.push(...proximaPagina.itens);
+    }
+    return registros.slice(0, LIMITE_PLANILHA);
   }
 
   function resumoFiltros(): string {
     const ativos = [
+      filtros.licitacaoId && `Licitação: ${nomeLicitacao(filtros.licitacaoId, codigosLicitacao)}`,
       filtros.acao.trim() && `Ação: ${filtros.acao.trim()}`,
       filtros.entidade.trim() && `Recurso: ${filtros.entidade.trim()}`,
       filtros.entidadeId.trim() && `ID do recurso: ${filtros.entidadeId.trim()}`,
@@ -190,42 +220,21 @@ export default function AuditoriaPage() {
     return ativos.length ? `Filtros: ${ativos.join(' · ')}` : 'Filtros: nenhum';
   }
 
-  async function exportarCsv() {
-    setExportando(true);
+  function exportarCsv() {
     setErro(null);
-    try {
-      const registros = await buscarRegistrosFiltrados();
-      const cabecalho = ['ID do registro', 'Data e hora', 'Usuário', 'ID do usuário', 'Ação', 'Recurso afetado', 'ID do recurso', 'IP de origem (mascarado)', 'Detalhes do evento'];
-      const linhas = registros.map((registro) => [
-        registro.id,
-        formatarDataHora(registro.criadoEm),
-        registro.usuario?.nome ?? '',
-        registro.usuario?.id ?? '',
-        registro.acao,
-        registro.entidade,
-        registro.entidadeId ?? '',
-        registro.enderecoIp ?? '',
-        detalhesCsv(registro.detalhes).join(' | '),
-      ]);
-      const conteudo = `\uFEFF${[cabecalho, ...linhas].map((linha) => linha.map(valorCsv).join(';')).join('\r\n')}`;
-      const arquivo = URL.createObjectURL(new Blob([conteudo], { type: 'text/csv;charset=utf-8' }));
-      const link = document.createElement('a');
-      link.href = arquivo;
-      link.download = 'auditoria.csv';
-      link.click();
-      URL.revokeObjectURL(arquivo);
-    } catch (erroCapturado) {
-      setErro(erroCapturado instanceof ErroApi ? erroCapturado.message : 'Não foi possível gerar o CSV da auditoria.');
-    } finally {
-      setExportando(false);
-    }
+    const problema = problemaPeriodoExportacao(filtros);
+    setAviso(problema);
+    if (problema) return;
+    baixarDaApi(`/auditoria/exportar?${parametrosFiltro(filtros)}`);
   }
 
   async function exportarPlanilha() {
     setExportandoPlanilha(true);
     setErro(null);
+    setAviso(null);
     try {
-      const registros = await buscarRegistrosFiltrados();
+      const registros = await buscarRegistrosDaPlanilha();
+      if (!registros) return;
       const linhas = registros.map((registro) => [
         registro.id,
         new Date(registro.criadoEm),
@@ -235,7 +244,8 @@ export default function AuditoriaPage() {
         registro.entidade,
         registro.entidadeId ?? '',
         registro.enderecoIp ?? 'Não registrado',
-        detalhesCsv(registro.detalhes).join(' | '),
+        nomeLicitacao(registro.licitacaoId, codigosLicitacao),
+        detalhesEmTexto(registro.detalhes).join(' | '),
       ]);
 
       await baixarPlanilha({
@@ -243,11 +253,11 @@ export default function AuditoriaPage() {
         nomeAba: 'Auditoria',
         titulo: 'Relatório de auditoria',
         subtitulo: `${resumoFiltros()} · Gerado em ${formatarDataHora(new Date().toISOString())}`,
-        cabecalhos: ['ID do registro', 'Data e hora', 'Usuário', 'ID do usuário', 'Ação', 'Recurso afetado', 'ID do recurso', 'IP mascarado', 'Detalhes do evento'],
+        cabecalhos: ['ID do registro', 'Data e hora', 'Usuário', 'ID do usuário', 'Ação', 'Recurso afetado', 'ID do recurso', 'IP mascarado', 'Licitação', 'Detalhes do evento'],
         linhas,
-        larguras: [40, 22, 26, 40, 22, 30, 40, 24, 64],
+        larguras: [40, 22, 26, 40, 22, 30, 40, 24, 20, 64],
         colunasData: [2],
-        colunasComQuebra: [9],
+        colunasComQuebra: [10],
       });
     } catch (erroCapturado) {
       setErro(erroCapturado instanceof ErroApi ? erroCapturado.message : 'Não foi possível gerar a planilha da auditoria.');
@@ -262,7 +272,7 @@ export default function AuditoriaPage() {
   const usuariosNaPagina = useMemo(() => new Set(lista?.itens.map((item) => item.usuario?.id).filter(Boolean)).size, [lista]);
 
   return <div className="space-y-5">
-    <PageHeading title="Auditoria" description="Rastreabilidade das ações realizadas no sistema, disponível somente para administradores." action={<div className="flex flex-wrap items-center gap-2"><span className="hidden items-center gap-2 rounded-md border border-lime/30 bg-lime/10 px-3 py-2 text-xs font-semibold text-lime sm:inline-flex"><ShieldCheck className="size-4" />Acesso restrito</span><Button type="button" variant="outline" onClick={() => void exportarCsv()} disabled={!lista?.total || exportando || exportandoPlanilha || carregando}><Download />{exportando ? 'Exportando...' : 'CSV'}</Button><Button type="button" onClick={() => void exportarPlanilha()} disabled={!lista?.total || exportando || exportandoPlanilha || carregando}><FileSpreadsheet />{exportandoPlanilha ? 'Gerando...' : 'Excel formatado'}</Button></div>} />
+    <PageHeading title="Auditoria" description={tecsus ? 'Rastreabilidade das ações realizadas no sistema, em todas as licitações. Acesso restrito aos administradores.' : 'Rastreabilidade das ações da sua licitação. Ações da Tecsus e de outras licitações não aparecem aqui.'} action={<span className="hidden items-center gap-2 rounded-md border border-lime/30 bg-lime/10 px-3 py-2 text-xs font-semibold text-lime sm:inline-flex"><ShieldCheck className="size-4" />Acesso restrito</span>} />
 
     <section className="rise delay-1 grid gap-3 sm:grid-cols-3">
       <Indicador icon={ClipboardList} label="Registros encontrados" value={lista ? String(lista.total) : '—'} tone="text-aqua" />
@@ -277,27 +287,33 @@ export default function AuditoriaPage() {
         <Filtro label="Recurso"><Input placeholder="ex.: Usuario" value={filtros.entidade} onChange={(e) => setFiltros((atual) => ({ ...atual, entidade: e.target.value }))} /></Filtro>
         <Filtro label="ID do recurso"><Input placeholder="UUID do recurso" value={filtros.entidadeId} onChange={(e) => setFiltros((atual) => ({ ...atual, entidadeId: e.target.value }))} /></Filtro>
         <Filtro label="ID do usuário"><Input placeholder="UUID do usuário" value={filtros.usuarioId} onChange={(e) => setFiltros((atual) => ({ ...atual, usuarioId: e.target.value }))} /></Filtro>
+        {tecsus && <Filtro label="Licitação"><SeletorLicitacao valor={filtros.licitacaoId} onChange={(licitacaoId) => setFiltros((atual) => ({ ...atual, licitacaoId }))} rotuloTodas="Todas as licitações" /></Filtro>}
         <Filtro label="Data inicial"><Input type="date" value={filtros.de} onChange={(e) => setFiltros((atual) => ({ ...atual, de: e.target.value }))} /></Filtro>
         <Filtro label="Data final"><Input type="date" value={filtros.ate} onChange={(e) => setFiltros((atual) => ({ ...atual, ate: e.target.value }))} /></Filtro>
-        <div className="flex items-end sm:col-span-2"><Button type="submit" className="w-full sm:w-auto" disabled={carregando}><FileSearch />{carregando ? 'Consultando...' : 'Consultar registros'}</Button></div>
+        <div className={cn('flex items-end', tecsus ? 'lg:col-span-1' : 'sm:col-span-2')}><Button type="submit" className="w-full sm:w-auto" disabled={carregando}><FileSearch />{carregando ? 'Consultando...' : 'Consultar registros'}</Button></div>
+      </div>
+      <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs text-muted-foreground">A exportação usa os filtros acima. O CSV exige data inicial e final; o Excel formatado vai até {LIMITE_PLANILHA.toLocaleString('pt-BR')} registros.</p>
+        <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={exportarCsv} disabled={exportandoPlanilha}><Download />CSV</Button><Button type="button" onClick={() => void exportarPlanilha()} disabled={exportandoPlanilha}><FileSpreadsheet />{exportandoPlanilha ? 'Gerando...' : 'Excel formatado'}</Button></div>
       </div>
     </form>
 
-    {erro && <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"><span>{erro}</span><Button type="button" variant="outline" size="sm" onClick={() => void carregar(filtros)}>Tentar novamente</Button></div>}
+    {erro && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive"><span>{erro}</span><Button type="button" variant="outline" size="sm" onClick={() => void carregar(filtros)}>Tentar novamente</Button></div>}
+    {aviso && <div role="status" className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-foreground">{aviso}</div>}
 
     <section className="rise delay-3 grid gap-5 xl:grid-cols-[minmax(0,1.55fr)_minmax(300px,0.75fr)]" aria-label="Registros de auditoria">
       <article className="overflow-hidden rounded-lg border border-border bg-card">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3"><div className="flex items-center gap-2"><Database className="size-4 text-aqua" /><div><h2 className="font-display text-sm font-semibold">Linha do tempo de atividades</h2><p className="font-mono text-[10px] text-muted-foreground">{lista ? `${lista.total} registro(s) · página ${lista.pagina} de ${totalPaginas}` : 'Carregando registros...'}</p></div></div>{carregando && <RefreshCw className="size-4 animate-spin text-muted-foreground" />}</div>
-        {carregando && !lista ? <div className="grid min-h-64 place-items-center px-6 text-center text-sm text-muted-foreground">Carregando auditoria...</div> : lista?.itens.length ? <div className="overflow-x-auto"><table className="w-full min-w-[780px] text-left text-sm"><thead className="border-b border-border bg-muted/30 font-mono text-[10px] uppercase tracking-wide text-muted-foreground"><tr><th className="px-4 py-3 font-medium">Data/hora</th><th className="px-4 py-3 font-medium">Usuário</th><th className="px-4 py-3 font-medium">Ação</th><th className="px-4 py-3 font-medium">Recurso</th><th className="px-4 py-3 font-medium">Detalhes</th></tr></thead><tbody>{lista.itens.map((registro) => <tr key={registro.id} onClick={() => setSelecionadoId(registro.id)} className={cn('cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-muted/40', registro.id === selecionadoId && 'bg-muted/60')}><td className="whitespace-nowrap px-4 py-3 align-top"><div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground"><Clock3 className="size-3.5 text-aqua" />{formatarDataHora(registro.criadoEm)}</div></td><td className="px-4 py-3 align-top"><div className="flex items-center gap-2"><span className="grid size-7 place-items-center rounded-full bg-aqua/10 text-aqua"><UserRound className="size-3.5" /></span><div><p className="max-w-32 truncate font-medium">{registro.usuario?.nome ?? 'Sistema'}</p>{registro.usuario && <p className="font-mono text-[10px] text-muted-foreground">{registro.usuario.id.slice(0, 8)}...</p>}</div></div></td><td className="px-4 py-3 align-top"><span className="inline-flex rounded border border-aqua/30 bg-aqua/10 px-2 py-1 font-mono text-[11px] font-medium text-aqua">{nomeAcao(registro.acao)}</span></td><td className="px-4 py-3 align-top"><p className="font-medium">{registro.entidade}</p>{registro.entidadeId && <p className="mt-1 flex items-center gap-1 font-mono text-[10px] text-muted-foreground"><Hash className="size-3" />{registro.entidadeId.slice(0, 12)}...</p>}</td><td className="max-w-64 px-4 py-3 align-top"><p className="line-clamp-2 whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">{formatarDetalhes(registro.detalhes)}</p></td></tr>)}</tbody></table></div> : <div className="grid min-h-64 place-items-center px-6 text-center"><div><ShieldCheck className="mx-auto mb-3 size-8 text-aqua" /><p className="font-display text-sm font-semibold">Nenhum registro encontrado</p><p className="mt-1 text-xs text-muted-foreground">Ajuste os filtros e faça uma nova consulta.</p></div></div>}
+        {carregando && !lista ? <div className="grid min-h-64 place-items-center px-6 text-center text-sm text-muted-foreground">Carregando auditoria...</div> : lista?.itens.length ? <div className="overflow-x-auto"><table className={cn('w-full text-left text-sm', tecsus ? 'min-w-[880px]' : 'min-w-[780px]')}><thead className="border-b border-border bg-muted/30 font-mono text-[10px] uppercase tracking-wide text-muted-foreground"><tr><th className="px-4 py-3 font-medium">Data/hora</th><th className="px-4 py-3 font-medium">Usuário</th><th className="px-4 py-3 font-medium">Ação</th><th className="px-4 py-3 font-medium">Recurso</th>{tecsus && <th className="px-4 py-3 font-medium">Licitação</th>}<th className="px-4 py-3 font-medium">Detalhes</th></tr></thead><tbody>{lista.itens.map((registro) => <tr key={registro.id} onClick={() => setSelecionadoId(registro.id)} className={cn('cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-muted/40', registro.id === selecionadoId && 'bg-muted/60')}><td className="whitespace-nowrap px-4 py-3 align-top"><div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground"><Clock3 className="size-3.5 text-aqua" />{formatarDataHora(registro.criadoEm)}</div></td><td className="px-4 py-3 align-top"><div className="flex items-center gap-2"><span className="grid size-7 place-items-center rounded-full bg-aqua/10 text-aqua"><UserRound className="size-3.5" /></span><div><p className="max-w-32 truncate font-medium">{registro.usuario?.nome ?? 'Sistema'}</p>{registro.usuario && <p className="font-mono text-[10px] text-muted-foreground">{registro.usuario.id.slice(0, 8)}...</p>}</div></div></td><td className="px-4 py-3 align-top"><span className="inline-flex rounded border border-aqua/30 bg-aqua/10 px-2 py-1 font-mono text-[11px] font-medium text-aqua">{nomeAcao(registro.acao)}</span></td><td className="px-4 py-3 align-top"><p className="font-medium">{registro.entidade}</p>{registro.entidadeId && <p className="mt-1 flex items-center gap-1 font-mono text-[10px] text-muted-foreground"><Hash className="size-3" />{registro.entidadeId.slice(0, 12)}...</p>}</td>{tecsus && <td className="whitespace-nowrap px-4 py-3 align-top font-mono text-[11px]">{nomeLicitacao(registro.licitacaoId, codigosLicitacao)}</td>}<td className="max-w-64 px-4 py-3 align-top"><p className="line-clamp-2 whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">{formatarDetalhes(registro.detalhes)}</p></td></tr>)}</tbody></table></div> : <div className="grid min-h-64 place-items-center px-6 text-center"><div><ShieldCheck className="mx-auto mb-3 size-8 text-aqua" /><p className="font-display text-sm font-semibold">Nenhum registro encontrado</p><p className="mt-1 text-xs text-muted-foreground">Ajuste os filtros e faça uma nova consulta.</p></div></div>}
         {lista && lista.total > 0 && <div className="flex items-center justify-between border-t border-border px-4 py-3"><span className="font-mono text-[10px] text-muted-foreground">Página {lista.pagina} de {totalPaginas}</span><div className="flex gap-1"><Button type="button" variant="outline" size="icon" className="size-7" disabled={lista.pagina <= 1 || carregando} onClick={() => { const consulta = { ...filtros, pagina: lista.pagina - 1 }; setFiltros(consulta); void carregar(consulta, lista.pagina - 1); }} aria-label="Página anterior"><ChevronLeft /></Button><Button type="button" variant="outline" size="icon" className="size-7" disabled={lista.pagina >= totalPaginas || carregando} onClick={() => { const consulta = { ...filtros, pagina: lista.pagina + 1 }; setFiltros(consulta); void carregar(consulta, lista.pagina + 1); }} aria-label="Próxima página"><ChevronRight /></Button></div></div>}
       </article>
 
-      <DetalheAuditoria registro={selecionado} />
+      <DetalheAuditoria registro={selecionado} licitacao={tecsus && selecionado ? nomeLicitacao(selecionado.licitacaoId, codigosLicitacao) : null} />
     </section>
   </div>;
 }
 
-function DetalheAuditoria({ registro }: { registro: RegistroAuditoria | null }) {
+function DetalheAuditoria({ registro, licitacao }: { registro: RegistroAuditoria | null; licitacao: string | null }) {
   const detalhes = registro?.detalhes && typeof registro.detalhes === 'object' && !Array.isArray(registro.detalhes)
     ? Object.fromEntries(Object.entries(registro.detalhes).filter(([chave]) => chave !== 'IP de origem (mascarado)'))
     : registro?.detalhes;
@@ -332,6 +348,10 @@ function DetalheAuditoria({ registro }: { registro: RegistroAuditoria | null }) 
           <dt className="font-mono text-[10px] uppercase text-muted-foreground">Ação</dt>
           <dd className="mt-1 break-words font-mono text-sm text-lime">{registro.acao}</dd>
         </div>
+        {licitacao && <div className="min-w-0 border-l-2 border-aqua/50 pl-3 sm:col-span-2">
+          <dt className="font-mono text-[10px] uppercase text-muted-foreground">Licitação</dt>
+          <dd className="mt-1 break-words font-mono text-sm">{licitacao}</dd>
+        </div>}
         <div className="min-w-0 border-l-2 border-border pl-3 sm:col-span-2">
           <dt className="font-mono text-[10px] uppercase text-muted-foreground">Recurso afetado</dt>
           <dd className="mt-1 break-words text-sm">{registro.entidade}</dd>
