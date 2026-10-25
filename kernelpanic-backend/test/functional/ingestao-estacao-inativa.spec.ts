@@ -1,7 +1,8 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { HEADER_CHAVE_INGESTAO } from '../../src/ingestao/guarda-chave-ingestao.guard';
-import { IngestaoService } from '../../src/ingestao/ingestao.service';
+import { HEADER_CHAVE_INGESTAO } from '../../servicos/ingestao/http/guarda-chave-ingestao.guard';
+import { IngestaoAppModule } from '../../servicos/ingestao/ingestao.module';
+import { IngestaoService } from '../../servicos/ingestao/ingestao.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { CHAVE_INGESTAO, HASH_CHAVE_INGESTAO } from '../fixtures';
 import { criarAppDeTeste, emailDeTeste, PREFIXO_TESTE } from '../helpers';
@@ -62,7 +63,7 @@ describe('Ingestão de estação inativa (funcional)', () => {
   let tipoParametroId: string;
 
   beforeAll(async () => {
-    app = await criarAppDeTeste();
+    app = await criarAppDeTeste({ modulo: IngestaoAppModule });
     prisma = app.get(PrismaService);
     const usuario = await prisma.usuario.create({
       data: { nome: 'Inativa', email: emailDeTeste('inativa'), senhaHash: 'x' },

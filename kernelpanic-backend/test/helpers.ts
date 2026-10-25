@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, Type } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Test, TestingModuleBuilder } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
@@ -9,10 +9,11 @@ import { PrismaService } from '../src/prisma/prisma.service';
 
 export interface OpcoesAppDeTeste {
   prismaMock?: unknown;
+  modulo?: Type<unknown>;
 }
 
 export async function criarAppDeTeste(opcoes: OpcoesAppDeTeste = {}): Promise<INestApplication> {
-  let builder: TestingModuleBuilder = Test.createTestingModule({ imports: [AppModule] });
+  let builder: TestingModuleBuilder = Test.createTestingModule({ imports: [opcoes.modulo ?? AppModule] });
 
   if (opcoes.prismaMock) {
     builder = builder.overrideProvider(PrismaService).useValue(opcoes.prismaMock);

@@ -6,7 +6,7 @@ import {
 import { Test, TestingModule } from '@nestjs/testing';
 import { AtualizarEstacaoDto } from '../../../src/estacoes/dto/atualizar-estacao.dto';
 import { EstacoesService } from '../../../src/estacoes/estacoes.service';
-import { chaveIngestaoConfere } from '../../../src/ingestao/chave-ingestao';
+import { chaveIngestaoConfere } from '../../../src/estacoes/chave-ingestao';
 import { PrismaService } from '../../../src/prisma/prisma.service';
 import { TIPO_CHUVA, TIPO_TEMPERATURA } from '../../fixtures';
 

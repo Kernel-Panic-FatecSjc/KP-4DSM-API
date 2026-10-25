@@ -1,4 +1,4 @@
-import { motivoForaDaFaixa } from '../../../src/ingestao/faixa-fisica';
+import { motivoForaDaFaixa } from '../../../servicos/ingestao/validacao/faixa-fisica';
 
 describe('motivoForaDaFaixa', () => {
   it('aceita valor dentro da faixa', () => {

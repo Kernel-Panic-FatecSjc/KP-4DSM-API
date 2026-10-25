@@ -1,4 +1,4 @@
-import { calcularHashChaveIngestao } from '../../src/ingestao/chave-ingestao';
+import { calcularHashChaveIngestao } from '../../src/estacoes/chave-ingestao';
 import type { Executor } from './simulador-esp32';
 
 export const PREFIXO_VID_HTTP = 'CARGA-HTTP-';

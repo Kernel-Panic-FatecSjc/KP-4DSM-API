@@ -9,7 +9,7 @@ import {
   StatusContrato,
   StatusOperacionalEstacao,
 } from '../generated/prisma/client';
-import { gerarChaveIngestao } from '../ingestao/chave-ingestao';
+import { gerarChaveIngestao } from './chave-ingestao';
 import { PrismaService } from '../prisma/prisma.service';
 import { AtualizarEstacaoDto } from './dto/atualizar-estacao.dto';
 import { CriarEstacaoDto } from './dto/criar-estacao.dto';

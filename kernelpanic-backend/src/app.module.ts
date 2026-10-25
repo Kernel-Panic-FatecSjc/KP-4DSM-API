@@ -10,7 +10,6 @@ import { AppService } from './app.service';
 import { AutenticacaoModule } from './autenticacao/autenticacao.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { EstacoesModule } from './estacoes/estacoes.module';
-import { IngestaoModule } from './ingestao/ingestao.module';
 import { LeiturasBrutasModule } from './leituras-brutas/leituras-brutas.module';
 import { LimiteRequisicoesModule } from './limite-requisicoes/limite-requisicoes.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -34,7 +33,6 @@ import { OrgaosModule } from './orgaos/orgaos.module';
     DashboardModule,
     ContratosModule,
     EstacoesModule,
-    IngestaoModule,
     SaudeModule,
     OrgaosModule,
     LeiturasBrutasModule,
