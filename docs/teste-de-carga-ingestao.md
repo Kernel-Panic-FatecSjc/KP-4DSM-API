@@ -1,8 +1,82 @@
 # Teste de carga da ingestão
 
-Medição do `POST /ingestao/telemetria` sob carga HTTP e do armazenamento de séries temporais (SCRUM-43). A meta do plano de QA é **p95 de resposta abaixo de 2 s, sem perda de pacotes**.
+Medições da cadeia de dados sob carga. A meta do plano de QA é **p95 abaixo de 2 s, sem perda de pacotes**.
 
-> **TODO (SCRUM-43):** repetir a medição quando as tarefas que mudam o caminho da ingestão entrarem na `main`: SCRUM-38 (retry do lote em memória), SCRUM-40 (faixa física e `leituras_erro`) e SCRUM-41 (estação inativa). Os números abaixo são da `main` de antes delas.
+- [Cadeia nova: broker → ingestão → tratamento](#cadeia-nova-broker--ingestão--tratamento-outubro2026) (outubro/2026): o caminho atual, depois da separação em serviços ([docs/mqtt-topico-payload.md](mqtt-topico-payload.md)). Substitui o TODO da SCRUM-43: as regras de retry, faixa física e estação inativa (SCRUM-38/40/41) estão todas no caminho medido.
+- [Ingestão HTTP no monólito](#medição-anterior-ingestão-http-no-monólito-scrum-43) (SCRUM-43): a medição anterior, com a API recebendo a telemetria e gerando as medidas na hora. Fica como histórico.
+
+## Cadeia nova: broker → ingestão → tratamento (outubro/2026)
+
+### Resumo
+
+| | Resultado |
+| --- | --- |
+| Maior taxa sustentada (p95 de ponta a ponta ≤ 2 s, sem erro nem perda) | **1.000 mensagens/s** (6.000 medidas/s) |
+| p95 de ponta a ponta a 1.000 msg/s (publicação → medida no banco) | **551 ms** (p50 428 ms, máx. 610 ms) |
+| Confirmação do broker (PUBACK) | p95 de 1 ms em todos os degraus |
+| Perda | **zero** em todos os degraus, inclusive acima do pico |
+| Ingestão fora do ar | 500 mensagens publicadas com a ingestão parada chegaram todas (`leituras_brutas` e `medidas`) cerca de 1 s depois de ela voltar |
+| Rota HTTP alternativa (só grava `leituras_brutas`) | 500 req/s com p95 de 5 ms e perda zero |
+
+Em frota: 1.000 mensagens/s equivalem a 60 mil estações enviando a cada 1 minuto. A meta de p95 < 2 s foi atingida com folga e sem perda. O critério do guia da sprint ("a leitura aparece em `leituras_brutas` e em `medidas` em até 2 s") vale também com o sistema parado: 290 ms do publish à medida.
+
+### Ambiente e método
+
+- **Máquina:** AMD Ryzen 5 PRO 4650G (12 threads), 15,4 GB de RAM, Linux (Fedora). Broker (Mosquitto 2.0.21 com dynamic-security, em contêiner Podman), Postgres (`postgis/postgis:16-3.4` em Docker), serviço de ingestão, serviço de tratamento e o gerador **na mesma máquina**, por loopback. Os números mostram o comportamento da cadeia, e não o de VPS separadas.
+- **Banco:** só de carga (`kernelpanic_carga`), com as migrations da `main`. O script recusa rodar em banco cujo nome não tenha `carga`.
+- **Gerador** (`teste-carga/teste-carga-mqtt.ts`): 1.000 estações, **cada uma com a própria conexão MQTT e credencial** (cadastradas no broker como o backend faz), publicando com QoS 1 no próprio tópico. Carga **aberta** em degraus de taxa (15 s por degrau, mais um aquecimento fora da medição): as mensagens saem no ritmo do degrau mesmo que a cadeia atrase. Cada mensagem traz 6 sensores, todos configurados na estação.
+- **Ponta a ponta:** em 1 de cada 10 mensagens, o gerador consulta o banco a cada 50 ms até a medida daquela estação e daquele `unixtime` existir. A latência inclui o lote da ingestão (250 ms), o aviso ao tratamento e a transação dele.
+- **Perda:** publicadas x `leituras_brutas` x leituras que viraram 6 medidas, contadas no fim, depois de a cadeia esvaziar.
+- **Sustentado:** p95 de ponta a ponta ≤ 2 s, sem erros, todas as amostras viraram medida, nada perdido e a taxa efetiva em pelo menos 95% do alvo.
+
+### Resultados
+
+| Taxa alvo (msg/s) | Taxa efetiva | PUBACK p95 (ms) | Ponta a ponta p50 (ms) | p95 (ms) | p99 (ms) | máx (ms) | Publicadas | `leituras_brutas` | Leituras com medidas | Perda |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 100 | 100 | 1 | 219 | 336 | 350 | 358 | 1.499 | 1.499 | 1.499 | 0 |
+| 500 | 500 | 1 | 312 | 438 | 563 | 704 | 7.499 | 7.499 | 7.499 | 0 |
+| 1.000 | 1.000 | 1 | 428 | **551** | 584 | 610 | 14.999 | 14.999 | 14.999 | 0 |
+| 1.500 | 1.500 | 1 | 4.045 | 6.658 | 6.913 | 7.081 | 22.497 | 22.497 | 22.497 | 0 |
+
+A 1.500 msg/s o broker continua confirmando em 1 ms e nada se perde, mas a fila cresce depois dele: a medida chega com segundos de atraso e a cadeia só esvazia depois que a carga para. Não isolei se o teto é a ingestão ou o tratamento (os dois disputam a CPU da mesma máquina com o broker, o Postgres e o gerador).
+
+**Rota HTTP** (`teste-carga-http.ts`, agora contra o serviço de ingestão), um degrau de 500 req/s por 10 s com 1.000 estações: 4.999/4.999 respostas 202, p50 3 ms, p95 5 ms, p99 14 ms, perda zero e todas as medidas geradas pelo tratamento. O p95 caiu de 200 a 300 ms (medição antiga) para 5 ms porque a rota não consulta mais os parâmetros nem monta medidas: só põe o pacote no lote.
+
+### Limites desta medição e próximos passos
+
+- Tudo na mesma máquina. Separados em VPS, cada serviço tem a CPU só para ele, mas ganha a latência de rede entre ingestão, banco e tratamento.
+- O tratamento é um processo, e duas instâncias se revezam no mesmo marcador (`SELECT … FOR UPDATE`), sem dividir o trabalho. Se a frota passar do pico medido, o caminho é aumentar o lote (`TRATAMENTO_LOTE_TAMANHO`) e medir de novo; dividir a fila por estação é a mudança seguinte.
+- A ingestão confirma a mensagem ao recebê-la; num `kill -9` ou queda da máquina perde no máximo um intervalo de lote (250 ms). No encerramento normal nada se perde (ver [garantias](mqtt-topico-payload.md#garantias)).
+- Uma rodada só por degrau. Entre execuções da medição antiga o p95 variou até 2×; a folga daqui (551 ms contra 2 s) cobre isso.
+
+### Como rodar
+
+```bash
+cd kernelpanic-backend
+docker compose up -d broker postgres
+createdb kernelpanic_carga      # ou CREATE DATABASE kernelpanic_carga
+export DATABASE_URL="postgresql://…/kernelpanic_carga?schema=public"
+npx prisma migrate deploy
+npm run build:servicos
+npm run start:ingestao          # em outro terminal, com o mesmo DATABASE_URL e MQTT_*
+npm run start:tratamento        # em outro terminal, com o mesmo DATABASE_URL
+
+# escada de carga (padrão: 1.000 estações; degraus 100…1500 msg/s; 15 s cada)
+npm run teste:carga:mqtt
+# um degrau só, mais longo
+TAXAS=1000 DURACAO_POR_TAXA=120 npm run teste:carga:mqtt
+
+# rota HTTP alternativa (URL_API padrão: http://localhost:3002, o serviço de ingestão)
+npm run teste:carga:http
+```
+
+Variáveis do teste MQTT: `MQTT_URL`, `MQTT_ADMIN_USUARIO`/`MQTT_ADMIN_SENHA` (para cadastrar as estações no broker), `NUM_ESTACOES`, `TAXAS`, `DURACAO_POR_TAXA`, `LIMITE_P95_MS` (2000), `AMOSTRA` (10), `INTERVALO_SONDAGEM_MS` (50).
+
+---
+
+# Medição anterior: ingestão HTTP no monólito (SCRUM-43)
+
+Medição do `POST /ingestao/telemetria` quando a ingestão ainda era um módulo da API e gerava as medidas na hora, e do armazenamento de séries temporais. Os números de armazenamento (índice em `medidas(unixtime)`) continuam valendo. Os comandos de "Como rodar" desta seção são da época (a API recebia a telemetria); para rodar hoje, use os da seção acima.
 
 ## Resumo
 
