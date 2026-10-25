@@ -4,11 +4,19 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Search, Users, UserCheck, UserX, X } from 'lucide-react';
-import { api, ErroApi, type Usuario } from '@/lib/api';
+import { useUsuario } from '@/components/ProtectedLayout';
+import { SeletorLicitacao } from '@/components/SeletorLicitacao';
+import { api, ErroApi, type TipoUsuario, type Usuario } from '@/lib/api';
+import { ehTecsus, ROTULO_PERFIL } from '@/lib/perfil';
 
 const ITEMS_PER_PAGE = 6;
 
 type FiltroStatus = 'TODOS' | 'ATIVOS' | 'INATIVOS';
+
+const PERFIS: TipoUsuario[] = ['ADMIN_TECSUS', 'ADMIN_LICITACAO', 'USUARIO_LICITACAO'];
+
+const CLASSE_FILTRO =
+  'rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20';
 
 function StatusBadge({ ativo }: { ativo: boolean }) {
   return (
@@ -81,29 +89,33 @@ function TableSkeleton() {
 export default function BuscarUsuariosPage() {
   const router = useRouter();
 
-  const [perfil, setPerfil] = useState<Usuario | null>(null);
+  const usuarioLogado = useUsuario();
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<FiltroStatus>('TODOS');
+  const [filtroLicitacao, setFiltroLicitacao] = useState('');
+  const [filtroPerfil, setFiltroPerfil] = useState<TipoUsuario | ''>('');
   const [currentPage, setCurrentPage] = useState(1);
+
+  const tecsus = ehTecsus(usuarioLogado);
+  const administrador = tecsus || usuarioLogado?.tipo === 'ADMIN_LICITACAO';
 
   const loadUsers = useCallback(async () => {
     setIsLoading(true);
     setError(null);
 
-    try {
-      const [perfilAtual, lista] = await Promise.all([
-        api<Usuario>('/autenticacao/perfil'),
-        api<Usuario[]>('/usuarios'),
-      ]);
+    const parametros = new URLSearchParams();
+    if (filtroLicitacao) parametros.set('licitacaoId', filtroLicitacao);
+    if (filtroPerfil) parametros.set('tipo', filtroPerfil);
+    const query = parametros.toString();
 
-      setPerfil(perfilAtual);
-      setUsuarios(lista);
+    try {
+      setUsuarios(await api<Usuario[]>(`/usuarios${query ? `?${query}` : ''}`));
     } catch (erroCapturado) {
       if (erroCapturado instanceof ErroApi && erroCapturado.status === 401) {
-        router.replace('/login?proximo=/buscar-usuarios');
+        router.replace('/login?proximo=/usuarios/listar');
         return;
       }
 
@@ -115,12 +127,13 @@ export default function BuscarUsuariosPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [router]);
+  }, [filtroLicitacao, filtroPerfil, router]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- busca perfil e listagem ao montar a página
+    if (!administrador) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- busca a listagem ao montar a página e ao mudar os filtros
     void loadUsers();
-  }, [loadUsers]);
+  }, [administrador, loadUsers]);
 
   const filteredUsers = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -165,28 +178,32 @@ export default function BuscarUsuariosPage() {
   }, [filteredUsers, safeCurrentPage]);
 
   const hasActiveFilters = Boolean(
-    searchTerm.trim() || statusFilter !== 'TODOS',
+    searchTerm.trim() || statusFilter !== 'TODOS' || filtroLicitacao || filtroPerfil,
   );
 
   function handleClearFilters() {
     setSearchTerm('');
     setStatusFilter('TODOS');
+    setFiltroLicitacao('');
+    setFiltroPerfil('');
     setCurrentPage(1);
   }
 
-  async function handleLogout() {
-    try {
-      await api('/autenticacao/logout', {
-        method: 'POST',
-      });
-    } finally {
-      router.replace('/login');
-    }
+  if (!usuarioLogado) {
+    return <p className="p-6 text-sm text-slate-500">Carregando perfil...</p>;
+  }
+
+  if (!administrador) {
+    return (
+      <div role="alert" className="rounded-xl border border-slate-200/80 bg-white p-6 text-sm shadow-sm">
+        Esta página está disponível somente para administradores.
+      </div>
+    );
   }
 
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <main className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-6 py-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col py-2 md:px-6 md:py-8">
           <div className="mb-8">
             <span className="text-xs font-bold uppercase tracking-wider text-emerald-600">
               Gestão de Acessos
@@ -198,7 +215,7 @@ export default function BuscarUsuariosPage() {
 
             <p className="mt-1 max-w-xl text-sm text-slate-500">
               Consulte os usuários cadastrados e filtre os registros por
-              nome, e-mail ou status.
+              nome, e-mail, status{tecsus ? ', perfil ou licitação' : ''}.
             </p>
           </div>
 
@@ -227,8 +244,8 @@ export default function BuscarUsuariosPage() {
 
           <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-sm">
             <div className="space-y-3 border-b border-slate-100 bg-slate-50/50 p-4 sm:flex sm:items-center sm:justify-between sm:space-y-0 sm:gap-4">
-              <div className="flex flex-1 flex-col gap-3 sm:flex-row">
-                <div className="relative flex-1">
+              <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:flex-wrap">
+                <div className="relative flex-1 sm:min-w-56">
                   <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
                     <Search size={18} />
                   </div>
@@ -260,17 +277,47 @@ export default function BuscarUsuariosPage() {
                 </div>
 
                 <select
+                  aria-label="Status"
                   value={statusFilter}
                   onChange={(event) => {
                     setStatusFilter(event.target.value as FiltroStatus);
                     setCurrentPage(1);
                   }}
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  className={CLASSE_FILTRO}
                 >
                   <option value="TODOS">Todos os status</option>
                   <option value="ATIVOS">Ativos</option>
                   <option value="INATIVOS">Inativos</option>
                 </select>
+
+                {tecsus && (
+                  <>
+                    <SeletorLicitacao
+                      valor={filtroLicitacao}
+                      onChange={(licitacaoId) => {
+                        setFiltroLicitacao(licitacaoId);
+                        setCurrentPage(1);
+                      }}
+                      rotuloTodas="Todas as licitações"
+                      className={`h-auto w-auto ${CLASSE_FILTRO}`}
+                    />
+
+                    <select
+                      aria-label="Perfil"
+                      value={filtroPerfil}
+                      onChange={(event) => {
+                        setFiltroPerfil(event.target.value as TipoUsuario | '');
+                        setCurrentPage(1);
+                      }}
+                      className={CLASSE_FILTRO}
+                    >
+                      <option value="">Todos os perfis</option>
+                      {PERFIS.map((perfil) => (
+                        <option key={perfil} value={perfil}>{ROTULO_PERFIL[perfil]}</option>
+                      ))}
+                    </select>
+                  </>
+                )}
               </div>
 
               {hasActiveFilters && (
@@ -329,31 +376,41 @@ export default function BuscarUsuariosPage() {
             ) : (
               <>
                 <div className="hidden grid-cols-12 gap-4 border-b border-slate-100 bg-slate-50/80 px-6 py-3 text-xs font-semibold uppercase tracking-wider text-slate-400 sm:grid">
-                  <span className="col-span-5">Nome</span>
-                  <span className="col-span-4">E-mail</span>
-                  <span className="col-span-3 text-right">Status</span>
+                  <span className="col-span-4">Nome</span>
+                  <span className="col-span-3">E-mail</span>
+                  <span className="col-span-3">Perfil / licitação</span>
+                  <span className="col-span-2 text-right">Status</span>
                 </div>
 
                 <ul className="divide-y divide-slate-100">
                   {paginatedUsers.map((usuario) => (
                     <li
                       key={usuario.id}
-                      className="px-6 py-4 transition hover:bg-slate-50/60"
+                      className="px-4 py-4 transition hover:bg-slate-50/60 sm:px-6"
                     >
                       <div className="flex flex-col gap-2 sm:grid sm:grid-cols-12 sm:items-center sm:gap-4">
-                        <div className="sm:col-span-5">
+                        <div className="sm:col-span-4">
                           <p className="text-sm font-semibold text-slate-800">
                             {usuario.nome}
                           </p>
                         </div>
 
-                        <div className="sm:col-span-4">
-                          <p className="text-xs text-slate-500">
+                        <div className="min-w-0 sm:col-span-3">
+                          <p className="break-words text-xs text-slate-500">
                             {usuario.email}
                           </p>
                         </div>
 
-                        <div className="flex justify-start sm:col-span-3 sm:justify-end">
+                        <div className="sm:col-span-3">
+                          <p className="text-xs text-slate-700">
+                            {ROTULO_PERFIL[usuario.tipo]}
+                          </p>
+                          <p className="font-mono text-xs text-slate-500" title={usuario.licitacao?.orgaoNome}>
+                            {usuario.licitacao?.codigoIdentificador ?? 'Tecsus'}
+                          </p>
+                        </div>
+
+                        <div className="flex justify-start sm:col-span-2 sm:justify-end">
                           <StatusBadge ativo={usuario.ativo} />
                         </div>
                       </div>
@@ -364,7 +421,7 @@ export default function BuscarUsuariosPage() {
             )}
 
             {!isLoading && !error && filteredUsers.length > 0 && (
-              <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/50 px-6 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/50 px-4 py-3 sm:px-6">
                 <p className="text-xs text-slate-500">
                   Mostrando{' '}
                   <span className="font-medium text-slate-700">
@@ -409,7 +466,7 @@ export default function BuscarUsuariosPage() {
               </div>
             )}
           </div>
-        </main>
+        </div>
     </div>
   );
 }
