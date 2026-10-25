@@ -1,12 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ArrayNotEmpty, IsArray, IsUUID } from 'class-validator';
 
-export class VincularEstacoesContratoDto {
+export class VincularEstacoesDto {
   @ApiProperty({
     type: [String],
     format: 'uuid',
     minItems: 1,
-    description: 'Identificadores das estações a vincular ao contrato',
+    description: 'Estações que passam a pertencer à licitação',
   })
   @IsArray()
   @ArrayNotEmpty()

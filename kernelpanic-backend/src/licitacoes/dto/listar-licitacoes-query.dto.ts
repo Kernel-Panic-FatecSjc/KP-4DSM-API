@@ -1,26 +1,26 @@
-import { Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
-import { StatusContrato } from '../../generated/prisma/client';
+import { EsferaOrgao, StatusLicitacao } from '../../generated/prisma/client';
 
 export const PAGINA_PADRAO = 1;
 export const TAMANHO_PADRAO = 10;
 
-export class ListarContratosQueryDto {
-  @ApiPropertyOptional({ description: 'Busca por número, objeto ou nome do órgão' })
+export class ListarLicitacoesQueryDto {
+  @ApiPropertyOptional({ description: 'Busca por código, processo, contrato, objeto, órgão ou município' })
   @IsOptional()
   @IsString()
   busca?: string;
 
-  @ApiPropertyOptional({ enum: StatusContrato })
+  @ApiPropertyOptional({ enum: StatusLicitacao })
   @IsOptional()
-  @IsEnum(StatusContrato)
-  status?: StatusContrato;
+  @IsEnum(StatusLicitacao)
+  status?: StatusLicitacao;
 
-  @ApiPropertyOptional({ format: 'uuid' })
+  @ApiPropertyOptional({ enum: EsferaOrgao })
   @IsOptional()
-  @IsString()
-  orgaoId?: string;
+  @IsEnum(EsferaOrgao)
+  esfera?: EsferaOrgao;
 
   @ApiPropertyOptional({ minimum: 1, default: PAGINA_PADRAO })
   @IsOptional()

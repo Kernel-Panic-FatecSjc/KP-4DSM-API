@@ -1,6 +1,5 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ContratosModule } from './contratos/contratos.module';
 import { AlarmesModule } from './alarmes/alarmes.module';
 import { AlertasModule } from './alertas/alertas.module';
 import { AuditoriaModule } from './auditoria/auditoria.module';
@@ -17,13 +16,15 @@ import { RegiaoModule } from './regiao/regiao.module';
 import { SensoresModule } from './sensores/sensores.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { SaudeModule } from './saude/saude.module';
-import { OrgaosModule } from './orgaos/orgaos.module';
+import { LicitacoesModule } from './licitacoes/licitacoes.module';
+import { BrokerModule } from './broker/broker.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     LimiteRequisicoesModule,
     PrismaModule,
+    BrokerModule,
     RegiaoModule,
     UsuariosModule,
     AutenticacaoModule,
@@ -31,10 +32,9 @@ import { OrgaosModule } from './orgaos/orgaos.module';
     AlertasModule,
     AuditoriaModule,
     DashboardModule,
-    ContratosModule,
+    LicitacoesModule,
     EstacoesModule,
     SaudeModule,
-    OrgaosModule,
     LeiturasBrutasModule,
     SensoresModule,
   ],
