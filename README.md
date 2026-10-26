@@ -369,14 +369,14 @@ _Adicionar os IDs e títulos das tasks correspondentes no Jira._
 <a id="arquitetura-do-projeto"></a>
 ## 🛠  Arquitetura do Projeto
 
-![Diagrama da arquitetura do projeto](docs/images/arquitetura.jpeg)
+![Diagrama da arquitetura do projeto](docs/images/arquitetura.png)
 
 ---
 
 <a id="modelo-de-dados"></a>
 ## 📊  Modelagem de Dados do Projeto
 
-![Diagrama do modelo de dados do projeto](docs/images/modelo-de-dados.jpg)
+![Diagrama do modelo de dados do projeto](docs/images/Modelo-de-dados.jpg)
 
 ---
 
