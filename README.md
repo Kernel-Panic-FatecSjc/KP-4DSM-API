@@ -11,8 +11,8 @@
 [A Dor do Cliente](#a-dor) | 
 [A Solução](#a-solução) |
 [O Desafio](#o-desafio) | 
-[DoR](#dor) |
-[DoD](#dod) | 
+[DoR](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Definition-Of-Ready) |
+[DoD](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Definition-Of-Done) | 
 [Backlog de Produto](#backlog-de-produto) | 
 [Backlog da Sprint](#backlog-da-sprint) | 
 [Tecnologias](#tecnologias-utilizadas) |
@@ -29,68 +29,26 @@
 <a id="a-dor"></a>
 ## 🎯 A Dor do Cliente
 
-A Defesa Civil enfrenta desafios críticos na prevenção e resposta a desastres naturais:
+Tecsus — Expansão para o mercado de licitações
 
-- **Falta de visibilidade em tempo real** sobre condições meteorológicas em múltiplas regiões
-- **Monitoramento fragmentado** com dados de diferentes fontes não integradas
-- **Atrasos na detecção de anomalias** que levam a perda de vidas e danos materiais
-- **Impossibilidade de correlacionar eventos** entre estações para identificar padrões de risco
-- **Falta de auditoria e rastreabilidade** dos dados meteorológicos para fins legais e de compliance (LGPD)
-- **Indisponibilidade de dados abertos** para integração com sistemas estaduais e federais
+A Tecsus busca explorar o mercado de licitações públicas, oferecendo soluções tecnológicas voltadas ao monitoramento e à prevenção de desastres naturais. Para isso, precisa de uma plataforma que reúna funcionalidades relevantes para atender às necessidades dos órgãos públicos e apoiar sua participação nesse mercado.
 
-Impacto: Sem visibilidade consolidada sobre os parâmetros meteorológicos críticos e alertas automáticos, a instituição sofre com resposta lenta a emergências, falta de confiança nos dados e dificuldade em coordenar ações com outros órgãos governamentais.
+Defesa Civil municipal — Monitoramento e resposta a desastres
+
+Desastres naturais, como enchentes e deslizamentos, exigem monitoramento contínuo, dados confiáveis e respostas rápidas. A fragmentação das informações meteorológicas dificulta a identificação de riscos em tempo hábil, enquanto a falta de dados consolidados e de históricos acessíveis limita a análise das condições monitoradas e o apoio à tomada de decisão.
 
 ---
 
 <a id="a-solução"></a>
 ## 🚀 A Solução
 
-A nossa solução é uma plataforma SaaS integrada de monitoramento e alerta de desastres naturais desenvolvida para comercialização junto ao setor público, com foco prioritário em Defesa Civil municipal e estadual.
+A equipe Kernel Panic propõe uma plataforma integrada de monitoramento e alerta de desastres naturais, que atende à estratégia de negócio da Tecsus e às necessidades operacionais das Defesas Civis municipais.
 
-A solução opera de ponta a ponta: centraliza o ciclo de vida comercial e operacional dos contratos licitatórios, controla o inventário de hardware em campo e fornece aos gestores públicos um ambiente robusto para acompanhamento de telemetria, detecção antecipada de eventos críticos e gestão de riscos em tempo real.
+A solução reúne o gerenciamento de estações meteorológicas e sensores, a recepção e persistência de telemetria, a visualização centralizada de dados e a configuração de alertas para identificar condições que ultrapassem limites definidos.
 
-### Componentes Principais da Solução
+Além disso, contempla funcionalidades de gestão de usuários e níveis de acesso, auditoria e rastreabilidade, gerenciamento de licitações e contratos e associação dos equipamentos aos respectivos contratos e órgãos públicos.
 
-#### 1. Gestão de Contratos, Licitações e Clientes
-- **Gestão de Processos Licitatórios e Contratos:** Cadastro de licitações ganhas, vigência contratual, SLAs, termos de referência e aditivos.
-- **Hierarquia e Vínculo de Ativos:** Associação de cada contrato/órgão às suas respectivas estações meteorológicas e sensores.
-- **Isolamento de Dados (*Multi-tenant*):** Ambientes seguros e isolados para cada órgão contratante (ex.: Defesa Civil Municipal de diferentes cidades), permitindo visão global para a Tecsus e visão dedicada para o cliente final.
-
-#### 2. Gestão de Infraestrutura e Ativos de Campo
-
-- **CRUD e Inventário de Estações:** Cadastro de estações com geolocalização exata, área de cobertura e microclima atendido.
-- **Composição Dinâmica de Sensores:** Mapeamento de periféricos por estação (pluviômetros de báscula, anemômetros, termômetros, barômetros, sensores de umidade do solo e do ar).
-- **Parametrização Flexível de Hardware:** Suporte a diferentes arquiteturas de baixo custo e firmware modular, reduzindo custos de implantação em contratos públicos.
-
-#### 3. Coleta e Ingestão de Telemetria
-
-- **Recepção Físico-Digital:** Suporte a dataloggers IoT físicos (ESP32 e similares) via protocolos leves (MQTT / HTTP REST seguro).
-- **Validação e Persistência Otimizada:** Ingestão de alto rendimento com persistência direta em banco de dados para séries temporais (*time-series*).
-- **Resiliência e Tolerância a Falhas:** Mecanismos de buffer em campo, filas de processamento e políticas de retentativa.
-
-#### 4. Monitoramento em Tempo Real e Sala de Situação
-
-- **Dashboard Operacional da Defesa Civil:** Painel com visualização de dados e gráficos em tempo real.
-- **Filtros Paramétricos:** Consulta dinâmica por contrato, estação meteorológica ou zona de risco geológico/hidrológico.
-- **Indicadores Estatísticos Instantâneos:** Cálculo automatizado de médias móveis, acúmulos de chuva (1h, 24h, 72h), valores extremos e desvios padrão.
-
-#### 5. Motor de Regras e Sistema de Alertas Críticos
-
-- **Parametrização de Gatilhos Dinâmicos:** Configuração flexível de limiares (ex.: volume pluviométrico crítico em 72h para risco de deslizamento).
-- **Escala de Severidade Padronizada:** Classificação por níveis de risco (*Atenção*, *Alerta* e *Emergência/Ação Imediata*).
-- **Disparo Multicanal Automatizado:** Notificações no painel do operador, webhook para centrais de comando e disparo de avisos emergenciais.
-- **Trilha de Auditoria:** Registro imutável de disparo de alertas para respaldo jurídico, relatórios pós-desastre e auditorias de órgãos de controle.
-
-#### 6. Inteligência de Dados e Relatórios Gerenciais
-
-- **Histórico Climático Consolidado:** Consolidação periódica para alimentar planos de contingência municipais e estudos de impacto urbano.
-- **Relatório de Incidentes e Resposta:** Métricas de tempo de resposta entre a detecção do limiar e disparo de alerta.
-- **Análise Comparativa Interestações:** Correlação estatística entre diferentes regiões e estações para entender o deslocamento de tempestades e frentes frias.
-
-#### 7. Interoperabilidade e Padrões Governamentais
-
-- **APIs Abertas Documentadas:** Especificação OpenAPI/Swagger para integração simples com sistemas legados dos municípios ou estados.
-- **Alinhamento com Padrões Públicos:** Conformidade com diretrizes do e-PING e padrões de dados abertos para prestação de contas e transparência pública.
+A plataforma também prevê a disponibilização de dados por APIs, a exportação de informações e a geração de relatórios históricos, de incidentes e de análises estatísticas comparativas. Dessa forma, busca oferecer uma visão consolidada das condições monitoradas, facilitar a identificação de situações de risco e apoiar a tomada de decisão.
 
 ---
 
@@ -104,31 +62,6 @@ A solução combina:
 - **Frontend**: Next.js com interface responsiva
 - **Banco de Dados**: Otimizado para séries temporais
 - **Conformidade**: LGPD e e-PING para setor público
-
----
-
-<a id="dor"></a>
-## ❕ DoR
-
-- US definida com seus requisitos necessários e caso de uso
-- Estar descrito como a task deve ser entregue para ser considerada aceita
-- Fazer mockups se aplicável
-- Regras de negócio documentadas e validadas
-- Cenários de sucesso/erro bem definidos para as US
-- US possuem prioridade definida
-- Não existem bloqueios conhecidos para iniciar o desenvolvimento
-- RF (requisito funcional) e RNF (requisito não funcional) relevantes bem identificados
-
----
-
-<a id="dod"></a>
-## ✔ DoD
-
-- Cumprir todos critérios de aceitação definidos pela US
-- Seguir padrões de commit, branches, arquitetura e etc
-- Garantir que alterações/implementações no código não tenham causado regressões em funcionalidades já existentes
-- Atualizar a documentação técnica e/ou funcional quando aplicável
-- Não podem existem pendências, bloqueios ou ações obrigatórias relacionadas à entrega de uma task
 
 ---
 
