@@ -312,32 +312,57 @@ _Adicionar os IDs e títulos das tasks correspondentes no Jira._
 | IE15  | Protótipo e Atualização de Telas | Alta | 2 | 9 | ✅ |  Não é meta |
 
 ---
-
 <a id="tecnologias-utilizadas"></a>
 ## 💻 Tecnologias Utilizadas
 
-### 🎨 Frontend
-<p>
-<img src="https://cdn.simpleicons.org/typescript/3178C6" height="32"/>
-<img src="https://cdn.simpleicons.org/react/61DAFB" height="32"/>
-<img src="https://cdn.simpleicons.org/tailwindcss/06B6D4" height="32"/>
-<img src="https://cdn.simpleicons.org/nodedotjs/339933" height="32"/>
-</p>
+### Frontend
+![Next.js](https://img.shields.io/badge/Next.js-000000?style=for-the-badge&logo=next.js&logoColor=white)
+![React](https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
+![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)
+![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white)
 
-### ⚙️ Backend
-<p>
-<img src="https://cdn.simpleicons.org/nestjs/E0234E" height="32"/>
-<img src="https://cdn.simpleicons.org/typescript/3178C6" height="32"/>
-<img src="https://cdn.simpleicons.org/prisma/2D3748" height="32"/>
-<img src="https://cdn.simpleicons.org/nodedotjs/339933" height="32"/>
-</p>
+- **Next.js** organiza a aplicação web e suas rotas.
+- **React** compõe a interface com componentes reutilizáveis.
+- **TypeScript** adiciona tipagem estática ao código do frontend.
+- **Tailwind CSS** aplica estilos utilitários à interface.
 
-### 📊 Dados & DevOps
-<p>
-<img src="https://cdn.simpleicons.org/postgresql/336791" height="32"/>
-<img src="https://cdn.simpleicons.org/git/F05032" height="32"/>
-<img src="https://cdn.simpleicons.org/github/4B4B4B" height="32"/>
-</p>
+### Backend
+![NestJS](https://img.shields.io/badge/NestJS-E0234E?style=for-the-badge&logo=nestjs&logoColor=white)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-2D3748?style=for-the-badge&logo=prisma&logoColor=white)
+
+- **NestJS** estrutura a API REST e os processos de ingestão e tratamento de telemetria.
+- **Node.js** executa os serviços do backend.
+- **Prisma** define o modelo de dados e gerencia o acesso ao banco e as migrations.
+
+### Comunicacao
+![MQTT](https://img.shields.io/badge/MQTT-660066?style=for-the-badge&logo=mqtt&logoColor=white)
+![Eclipse Mosquitto](https://img.shields.io/badge/Eclipse_Mosquitto-3C5280?style=for-the-badge&logo=eclipsemosquitto&logoColor=white)
+![Socket.IO](https://img.shields.io/badge/Socket.IO-010101?style=for-the-badge&logo=socketdotio&logoColor=white)
+
+- **MQTT** transporta as mensagens de telemetria das estações.
+- **Eclipse Mosquitto** é o broker MQTT usado para receber e distribuir essas mensagens.
+- **Socket.IO** envia atualizações de alarmes em tempo real para a interface.
+
+### Dados e ambiente
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL_16-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
+![PostGIS](https://img.shields.io/badge/PostGIS-336791?style=for-the-badge&logo=postgresql&logoColor=white)
+![Docker Compose](https://img.shields.io/badge/Docker_Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white)
+
+- **PostgreSQL 16** armazena os dados relacionais do sistema.
+- **PostGIS** habilita recursos geográficos no PostgreSQL.
+- **Docker Compose** inicia o banco e o broker MQTT no ambiente local.
+
+### Qualidade e testes
+![Jest](https://img.shields.io/badge/Jest-C21325?style=for-the-badge&logo=jest&logoColor=white)
+![Vitest](https://img.shields.io/badge/Vitest-6E9F18?style=for-the-badge&logo=vitest&logoColor=white)
+![Playwright](https://img.shields.io/badge/Playwright-2EAD33?style=for-the-badge&logo=playwright&logoColor=white)
+![ESLint](https://img.shields.io/badge/ESLint-4B32C3?style=for-the-badge&logo=eslint&logoColor=white)
+
+- **Jest** executa testes unitários e funcionais do backend.
+- **Vitest** executa testes unitários do frontend.
+- **Playwright** automatiza testes funcionais do frontend no navegador.
+- **ESLint** e **Oxlint** analisam o código em busca de problemas e inconsistências.
 
 ---
 
