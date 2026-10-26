@@ -86,22 +86,22 @@ A solução é uma aplicação web full-stack, com back-end desenvolvido em Nest
 
 <a id="backlog-da-spint"></a>
 ## 📋 Backlog da Sprint 1
-| ID | User Story | Épico | Prioridade | Sprint | Pontos | Status | Meta da Sprint |
-|----|-----------|-------|-----------|--------|--------|--------|----------------|
-| US01 | Gestão de Usuários, Autenticação e Níveis de Acesso | Governança & Segurança | Alta | 1 | 11 | ✅ | Meta |
-| US02 | Cadastro e Gerenciamento Dinâmico de Estações e Sensores | Infraestrutura & Modelo Dinâmico | Alta | 1 | 11 | ✅ | Meta |
-| US05 | Dashboard Interativo com Filtros e Indicadores Estatísticos | Monitoramento Operacional | Alta | 1 | 12 | ✅ | Meta |
-| US06 | Parametrização, Detecção e Histórico de Alertas de Risco | Gestão de Alertas | Alta | 1 | 16 | ✅ | Meta |
-| US07 | Trilha de Auditoria Forense e Rastreabilidade | Interoperabilidade & Auditoria | Alta | 1 | 13 | ✅ | Não é meta |
+| ID | User Story | Prioridade | Sprint | Pontos | Status | Meta da Sprint |
+|----|-----------|-----------|--------|--------|--------|----------------|
+| US01 | Gestão de Usuários, Autenticação e Níveis de Acesso | Alta | 1 | 11 | ✅ | Meta |
+| US02 | Cadastro e Gerenciamento Dinâmico de Estações e Sensores | Alta | 1 | 11 | ✅ | Meta |
+| US05 | Dashboard Interativo com Filtros e Indicadores Estatísticos | Alta | 1 | 12 | ✅ | Meta |
+| US06 | Parametrização, Detecção e Histórico de Alertas de Risco | Alta | 1 | 16 | ✅ | Meta |
+| US07 | Trilha de Auditoria Forense e Rastreabilidade | Alta | 1 | 13 | ✅ | Não é meta |
 
 ## 📋 Backlog da Sprint 2
-| ID | User Story | Épico | Prioridade | Sprint | Pontos | Status | Meta da Sprint |
-|----|-----------|-------|-----------|--------|--------|--------|----------------|
-| US04 | Serviço de Recepção, Validação e Persistência de Telemetria | IoT & Recepção de Dados | Alta | 2 | 11 | ⏳ | Meta |
-| US12 | Cadastro e Gestão de Licitações e Contratos | Licitações e Contratos | Alta | 2 | 9 | ⏳ | Meta |
-| US13 | Vínculo de Estações e Sensores aos Contratos | Licitações e Contratos | Alta | 2 | 9 | ⏳ | Meta |
-| 9 | IE14 | Planejamento e DevOps | Alta | 2 | 9 | ⏳ |
-| 10 | IE15 | Protótipo e Atualização de Telas | Alta | 2 | 9 | ⏳ |
+| ID | User Story | Prioridade | Sprint | Pontos | Status | Meta da Sprint |
+|----|-----------|-----------|--------|--------|--------|----------------|
+| US04 | Serviço de Recepção, Validação e Persistência de Telemetria | Alta | 2 | 11 | ✅ | Meta |
+| US12 | Cadastro e Gestão de Licitações e Contratos | Alta | 2 | 9 | ✅ | Meta |
+| US13 | Vínculo de Estações e Sensores aos Contratos | Alta | 2 | 9 | ✅ | Meta |
+| IE14 | Planejamento e DevOps | Alta | 2 | 9 | ✅ |  Não é meta |
+| IE15  | Protótipo e Atualização de Telas | Alta | 2 | 9 | ✅ |  Não é meta |
 
 ---
 
