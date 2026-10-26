@@ -55,47 +55,32 @@ A plataforma também prevê a disponibilização de dados por APIs, a exportaç�
 <a id="o-desafio"></a>
 ## 🧩 O Desafio Proposto
 
-Desenvolver uma aplicação web full-stack que integre coleta de dados meteorológicos de múltiplas estações, processamento em tempo real, detecção automática de anomalias e disponibilização de dados para órgãos governamentais.
+O Sistema de Monitoramento e Alertas de Desastres Naturais tem como objetivo centralizar e integrar dados meteorológicos e geográficos provenientes de múltiplas estações de monitoramento, permitindo a detecção de anomalias e a emissão de alertas sobre enchentes, deslizamentos de terra e outros eventos extremos. A proposta busca ampliar a capacidade de prevenção e resposta dos órgãos governamentais, fornecendo informações confiáveis e atualizadas para a tomada de decisão.
 
-A solução combina:
-- **Backend**: NestJS com Prisma para modelagem dinâmica
-- **Frontend**: Next.js com interface responsiva
-- **Banco de Dados**: Otimizado para séries temporais
-- **Conformidade**: LGPD e e-PING para setor público
+A solução é uma aplicação web full-stack, com back-end desenvolvido em NestJS que disponibiliza APIs REST e executa processos de ingestão e tratamento de telemetria, além de um front-end responsivo. O sistema coleta, processa e disponibiliza dados de estações de monitoramento e mantém funcionalidades de alertas, rastreabilidade e auditoria. A proposta também considera a interoperabilidade com sistemas governamentais, as diretrizes e-PING e a proteção de dados conforme a LGPD; a implementação desses requisitos deve ser avaliada conforme o escopo entregue.
 
 ---
 
-<a id="backlog-de-produto"></a>
+ <a id="backlog-de-produto"></a>
 ## 📋 Backlog de Produto
 
-| Rank | ID | User Story | Critérios de Aceitação | Prioridade | Sprint | Pontos | Status |
-|------|----|-----------|--------------------------|-----------|--------|--------|--------|
-| 1 | US01 | Gestão de Usuários, Autenticação e Níveis de Acesso | - Autenticação por credenciais com geração de token seguro (JWT/Sessão). - Disponibilização de dois perfis: Administrador (gestão total de estações, alertas e usuários) e Público (acesso somente leitura a dados agregados). - Armazenamento de senhas com algoritmo criptográfico robusto e controle de acesso restrito a dados pessoais em conformidade com a LGPD.| Alta | 1 | 11 | ✅ |
-| 2 | US02 | Cadastro e Gerenciamento Dinâmico de Estações e Sensores | - CRUD completo de estações contendo identificador único (UUID/MAC), coordenadas geográficas (latitude/longitude), endereço/região e status operacional. - Modelo de dados dinâmico permitindo vincular sensores específicos a cada estação (pluviômetro, anemômetro, termômetro, barômetro, higrômetro) com suas respectivas unidades de medida. - Interface de listagem e busca por região, status e tipo de parâmetro instalado. | Alta | 1 | 11 | ✅ |
-| 3 | US05 | Dashboard Interativo com Filtros e Indicadores Estatísticos | - Gráficos em tempo real e históricos dos parâmetros (volume de chuva acumulado, rajadas de vento, temperatura e umidade). - Filtros por período selecionável (últimas 24h, 7 dias, mês ou intervalo customizado) e por estação/localização. - Exibição de síntese estatística calculada automaticamente: médias móveis, valores máximos, mínimos e desvio padrão. | Alta | 1 | 12 | ✅ |
-| 4 | US06 | Parametrização, Detecção e Histórico de Alertas de Risco | - CRUD alerta associando parâmetros, e níveis de severidade (ex.: Atenção, Alerta, Emergência). - Disparo de alerta automático no painel assim que um pacote recebido violar um limiar configurado. - Módulo de consulta de histórico de alertas permitindo rastrear data, hora, estação afetada, parâmetro violado e status do evento. | Alta | 1 | 16 | ✅ |
-| 5 | US07 | Trilha de Auditoria Forense e Rastreabilidade | Persistência de logs para auditoria. | Alta | 1 | 13 | ✅ |
-| 6 | US04 | Serviço de Recepção, Validação e Persistência de Telemetria | - Endpoint de ingestão de dados com alta disponibilidade e resposta rápida aos nós sensores. - Persistência histórica garantindo imutabilidade dos dados originais associados à estação e momento exato de recebimento. | Alta | 2 | 10 | ⏳ |
-| 7 | US12 | Cadastro e Gestão de Licitações e Contratos | - CRUD de Licitações/Contratos (número do contrato, órgão público, datas de vigência, status). - Listagem com filtros por status do contrato e órgão. | Alta | 2 | 9 | ⏳ |
-| 8 | US13 | Vínculo de Estações e Sensores aos Contratos | - Mapeamento da relação Contrato ➔ Estação(ões) ➔ Sensor(es) (ex: pluviômetro, anemômetro, termômetro). | Alta | 2 | 9 | ⏳ |
-| 9 | US03 | Coleta e Transmissão via Datalogger Físico | - Leitura precisa dos sensores conectados (ex.: ESP32). - Montagem de payload padronizado. - Mecanismo de buffer/retentativa em caso de falha transitória de comunicação com a rede de envio. | Alta | 3 | 13 | ⏳ |
-| 10 | US08 | Disponibilização de Dados Abertos e Interoperabilidade (e-PING) | - Documentação completa da API via OpenAPI/Swagger com descrição de endpoints, schemas de dados e exemplos funcionais. - Disponibilização de rotas públicas de exportação em JSON e CSV com dados consolidados. - Aderência às diretrizes de arquitetura de dados e-PING para o setor público. | Alta | 3 | 13 | ⏳ |
-| 11 | US09 | Relatório de Histórico e Condições Climáticas Consolidadas | - Seleção flexível de período, granularidade temporal (horária/diária) e seleção de estações específicas. - Apresentação tabular e gráfica com totalizadores (ex.: acumulado pluviométrico diário). - Exportação nos formatos PDF e CSV para inclusão em processos administrativos. | Média | 3 | 9 | ⏳ |
-| 12 | US10 | Relatório de Incidentes e Ocorrências de Alertas | - Filtro por severidade do alerta, período da ocorrência e região geográfica afetada. - Discriminação do parâmetro que superou o limiar de risco, tempo de duração da anomalia e ações correlacionadas. - Emissão de laudo consolidado para anexação a decretos municipais/estaduais de emergência. | Média | 3 | 9 | ⏳ |
-| 13 | US11 | Relatório Estatístico e Análise Comparativa | - Comparação lado a lado entre duas ou mais estações para identificação de discrepâncias locais. - Cálculo de métricas de dispersão e tendência central (desvio padrão, variância, mediana e quartis). - Exportação com sumário executivo visual e tabelas de síntese estatística. | Média | 3 | 9 | ⏳ |
-
----
-
-<a id="itens-tecnicos"></a>
-## 📝 Itens Técnicos
-
-- Arquitetura do projeto ✅
-- Modelagem de banco de dados ✅
-- Modelagem de protótipo do produto ✅
-- Definição de padrão de documentação ✅
-- Montagem da Pipeline de CI ✅
-- Elaboração de Deploy Automatizado / CD ✅
-- Mapeamento de Requisitos ✅
+| Rank | ID | User Story | Prioridade | Sprint | Pontos | Status |
+|------|----|-----------|-----------|--------|--------|--------|
+| 1 | US01 | Gestão de Usuários, Autenticação e Níveis de Acesso | Alta | 1 | 11 | ✅ |
+| 2 | US02 | Cadastro e Gerenciamento Dinâmico de Estações e Sensores | Alta | 1 | 11 | ✅ |
+| 3 | US05 | Dashboard Interativo com Filtros e Indicadores Estatísticos | Alta | 1 | 12 | ✅ |
+| 4 | US06 | Parametrização, Detecção e Histórico de Alertas de Risco | Alta | 1 | 16 | ✅ |
+| 5 | US07 | Trilha de Auditoria Forense e Rastreabilidade | Alta | 1 | 13 | ✅ |
+| 6 | US04 | Serviço de Recepção, Validação e Persistência de Telemetria | Alta | 2 | 10 | ⏳ |
+| 7 | US12 | Cadastro e Gestão de Licitações e Contratos | Alta | 2 | 9 | ⏳ |
+| 8 | US13 | Vínculo de Estações e Sensores aos Contratos | Alta | 2 | 9 | ⏳ |
+| 9 | IE14 | Planejamento e DevOps | Alta | 2 | 9 | ⏳ |
+| 10 | IE15 | Protótipo e Atualização de Telas | Alta | 2 | 9 | ⏳ |
+| 11 | US03 | Coleta e Transmissão via Datalogger Físico | Alta | 3 | 13 | ⏳ |
+| 12 | US08 | Disponibilização de Dados Abertos e Interoperabilidade (e-PING) | Alta | 3 | 13 | ⏳ |
+| 13 | US09 | Relatório de Histórico e Condições Climáticas Consolidadas | Média | 3 | 9 | ⏳ |
+| 14 | US10 | Relatório de Incidentes e Ocorrências de Alertas | Média | 3 | 9 | ⏳ |
+| 15 | US11 | Relatório Estatístico e Análise Comparativa | Média | 3 | 9 | ⏳ |
 
 ---
 
@@ -115,6 +100,8 @@ A solução combina:
 | US04 | Serviço de Recepção, Validação e Persistência de Telemetria | IoT & Recepção de Dados | Alta | 2 | 11 | ⏳ | Meta |
 | US12 | Cadastro e Gestão de Licitações e Contratos | Licitações e Contratos | Alta | 2 | 9 | ⏳ | Meta |
 | US13 | Vínculo de Estações e Sensores aos Contratos | Licitações e Contratos | Alta | 2 | 9 | ⏳ | Meta |
+| 9 | IE14 | Planejamento e DevOps | Alta | 2 | 9 | ⏳ |
+| 10 | IE15 | Protótipo e Atualização de Telas | Alta | 2 | 9 | ⏳ |
 
 ---
 
