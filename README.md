@@ -410,9 +410,6 @@ KP-4DSM-API
     └── 📁 test/               → Testes unitários e funcionais
 ```
 
-A cadeia de dados (broker → ingestão → tratamento) está descrita em [docs/mqtt-topico-payload.md](docs/mqtt-topico-payload.md), e o modelo por licitação (perfis, escopo e ciclo de vida) em [docs/regras-licitacao.md](docs/regras-licitacao.md).
-
-
 <a id="documentos"></a>
 ## Documentação da equipe
 
@@ -435,13 +432,13 @@ A cadeia de dados (broker → ingestão → tratamento) está descrita em [docs/
 
 Equipe de Desenvolvimento 4DSM - FATEC São José dos Campos
 
-| Nome | Função | DevOps| Contato |
-|------|--------|--------|--------|
-| [Rebeca Lima] | Product Owner | QA (Quality Assurance) | [GitHub](https://github.com/rebeca-lima-ti) |
-| [Vitor Serpa] | Scrum Master | CI | [GitHub](https://github.com/VitorSerpa) |
-| [Gabriel Lázaro] | Desenvolvedor | Testes | [GitHub](https://github.com/gabsact4) |
-| [Henry Tito] | Desenvolvedor | CD | [GitHub](https://github.com/HenryTito) |
-| [Miguel Nonaka] | Desenvolvedor | BD (Banco de Dados) | [GitHub](https://github.com/miguelnonaka) |
-| [Maria Fernanda Laboissiere] | Desenvolvedor | Monitoramento | [GitHub](https://github.com/mariaflbss) |
-| [Paula Tamay] | Desenvolvedor | Docs | [GitHub](https://github.com/PaulaEmy/PaulaEmy) |
-| [João Victor dos Reis] | Desenvolvedor | Rastreabilidade de Requisitos | [GitHub](https://github.com/Templasan) |
+| Foto | Nome | Função | DevOps | Contato |
+|------|------|--------|--------|--------|
+| <img src="https://github.com/rebeca-lima-ti.png" width="48" alt="Rebeca Lima" /> | Rebeca Lima | Product Owner | QA (Quality Assurance) | [GitHub](https://github.com/rebeca-lima-ti) |
+| <img src="https://github.com/VitorSerpa.png" width="48" alt="Vitor Serpa" /> | Vitor Serpa | Scrum Master | CI | [GitHub](https://github.com/VitorSerpa) |
+| <img src="https://github.com/gabsact4.png" width="48" alt="Gabriel Lázaro" /> | Gabriel Lázaro | Desenvolvedor | Testes | [GitHub](https://github.com/gabsact4) |
+| <img src="https://github.com/HenryTito.png" width="48" alt="Henry Tito" /> | Henry Tito | Desenvolvedor | CD | [GitHub](https://github.com/HenryTito) |
+| <img src="https://github.com/miguelnonaka.png" width="48" alt="Miguel Nonaka" /> | Miguel Nonaka | Desenvolvedor | BD (Banco de Dados) | [GitHub](https://github.com/miguelnonaka) |
+| <img src="https://github.com/mariaflbss.png" width="48" alt="Maria Fernanda Laboissiere" /> | Maria Fernanda Laboissiere | Desenvolvedor | Monitoramento | [GitHub](https://github.com/mariaflbss) |
+| <img src="https://github.com/PaulaEmy.png" width="48" alt="Paula Tamay" /> | Paula Tamay | Desenvolvedor | Docs | [GitHub](https://github.com/PaulaEmy/PaulaEmy) |
+| <img src="https://github.com/Templasan.png" width="48" alt="João Victor dos Reis" /> | João Victor dos Reis | Desenvolvedor | Rastreabilidade de Requisitos | [GitHub](https://github.com/Templasan) |
