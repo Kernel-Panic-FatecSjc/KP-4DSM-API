@@ -1,4 +1,4 @@
-# KP-4DSM-API — Sistema de Monitoramento e Alertas de Desastres Naturais
+# Data Panic — Sistema de Monitoramento e Alertas de Desastres Naturais
 
 ## Equipe Kernel Panic
 
@@ -16,8 +16,7 @@
 [Tecnologias](#tecnologias-utilizadas) |
 [Arquitetura](#arquitetura-do-projeto) |
 [Modelagem de Dados](#modelo-de-dados) |
-[Estrutura do Projeto](#estrutura-do-projeto) | 
-[Instalação](#manual-de-instalação) | 
+[Estrutura do Projeto](#estrutura-do-projeto) |
 [Documentação da equipe](#documentos) |
 [Equipe](#autores)
 
@@ -41,7 +40,7 @@ Desastres naturais, como enchentes e deslizamentos, exigem monitoramento contín
 <a id="a-solução"></a>
 ## 🚀 A Solução
 
-A equipe Kernel Panic propõe uma plataforma integrada de monitoramento e alerta de desastres naturais, que atende à estratégia de negócio da Tecsus e às necessidades operacionais das Defesas Civis municipais.
+A equipe Kernel Panic desenvolve o Data Panic, uma plataforma integrada de monitoramento e alerta de desastres naturais que atende à estratégia de negócio da Tecsus e às necessidades operacionais das Defesas Civis municipais.
 
 A solução reúne o gerenciamento de estações meteorológicas e sensores, a recepção e persistência de telemetria, a visualização centralizada de dados e a configuração de alertas para identificar condições que ultrapassem limites definidos.
 
