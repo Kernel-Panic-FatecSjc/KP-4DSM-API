@@ -71,16 +71,225 @@ A solução é uma aplicação web full-stack, com back-end desenvolvido em Nest
 | 3 | US05 | Dashboard Interativo com Filtros e Indicadores Estatísticos | Alta | 1 | 12 | ✅ |
 | 4 | US06 | Parametrização, Detecção e Histórico de Alertas de Risco | Alta | 1 | 16 | ✅ |
 | 5 | US07 | Trilha de Auditoria Forense e Rastreabilidade | Alta | 1 | 13 | ✅ |
-| 6 | US04 | Serviço de Recepção, Validação e Persistência de Telemetria | Alta | 2 | 10 | ⏳ |
-| 7 | US12 | Cadastro e Gestão de Licitações e Contratos | Alta | 2 | 9 | ⏳ |
-| 8 | US13 | Vínculo de Estações e Sensores aos Contratos | Alta | 2 | 9 | ⏳ |
-| 9 | IE14 | Planejamento e DevOps | Alta | 2 | 9 | ⏳ |
-| 10 | IE15 | Protótipo e Atualização de Telas | Alta | 2 | 9 | ⏳ |
+| 6 | US04 | Serviço de Recepção, Validação e Persistência de Telemetria | Alta | 2 | 10 | ✅ |
+| 7 | US12 | Cadastro e Gestão de Licitações e Contratos | Alta | 2 | 9 | ✅ |
+| 8 | US13 | Vínculo de Estações e Sensores aos Contratos | Alta | 2 | 9 | ✅ |
+| 9 | IE14 | Planejamento e DevOps | Alta | 2 | 9 | ✅ |
+| 10 | IE15 | Protótipo e Atualização de Telas | Alta | 2 | 9 | ✅ |
 | 11 | US03 | Coleta e Transmissão via Datalogger Físico | Alta | 3 | 13 | ⏳ |
 | 12 | US08 | Disponibilização de Dados Abertos e Interoperabilidade (e-PING) | Alta | 3 | 13 | ⏳ |
 | 13 | US09 | Relatório de Histórico e Condições Climáticas Consolidadas | Média | 3 | 9 | ⏳ |
 | 14 | US10 | Relatório de Incidentes e Ocorrências de Alertas | Média | 3 | 9 | ⏳ |
 | 15 | US11 | Relatório Estatístico e Análise Comparativa | Média | 3 | 9 | ⏳ |
+
+---
+
+### Tasks por item do backlog
+
+<details>
+<summary><strong>US01 — Gestão de Usuários, Autenticação e Níveis de Acesso</strong></summary>
+
+**Tasks vinculadas**
+
+- Criação da página de login
+- Endpoint de login (token armazenado http only)
+- Modelagem do banco (tabela de usuários)
+- Proteção global de login
+- Busca e listagem de usuários
+- Criação da tela de busca e listagem
+- Cadastro de novos usuários
+
+</details>
+
+<details>
+<summary><strong>US02 — Cadastro e Gerenciamento Dinâmico de Estações e Sensores</strong></summary>
+
+**Tasks vinculadas**
+
+- Criação da tela de cadastro de novas placas (estações meteorológicas e sensores)
+- Cadastro de novas estações
+- Modelagem do banco (tabelas relacionadas a estações)
+- Busca e listagem de estações
+- Tela de busca e listagem de estações
+- Endpoint de recebimento dos dados das estações
+- Criação de tela para cadastro de sensores
+
+</details>
+
+<details>
+<summary><strong>US05 — Dashboard Interativo com Filtros e Indicadores Estatísticos</strong></summary>
+
+**Tasks vinculadas**
+
+- Criação da página do Dashboard
+- Implementação dos filtros de período e estação
+- Filtros de período e estação
+- Implementação dos gráficos de dados metereológicos
+- Implementação dos indicadores estatísticos
+- Integração do Dashboard com os dados das estações
+
+</details>
+
+<details>
+<summary><strong>US06 — Parametrização, Detecção e Histórico de Alertas de Risco</strong></summary>
+
+**Tasks vinculadas**
+
+- Criação da página de cadastro e gerenciamento dos alertas
+- Cadastro de novos alertas
+- Listagem de alertas
+- Tela de busca e listagem de alertas
+- Criação da tela de logs de alertas disparados (global)
+- Criação da tela de logs de alertas disparados (específico)
+- Back para recebimento de alertas
+
+</details>
+
+<details>
+<summary><strong>US07 — Trilha de Auditoria Forense e Rastreabilidade</strong></summary>
+
+**Tasks vinculadas**
+
+- Modelagem do banco (tabela de logs de auditoria)
+- Implementação do serviço de auditoria
+- Criação da tela de consulta dos logs de auditoria
+- Endpoint de consulta dos logs de auditoria
+- Integração de auditoria com as funcionalidades da Sprint
+
+</details>
+
+<details>
+<summary><strong>US04 — Serviço de Recepção, Validação e Persistência de Telemetria</strong></summary>
+
+**Tasks vinculadas**
+
+- **SCRUM-37** — Tornar as leituras brutas imutáveis no banco
+- **SCRUM-38** — Evitar perda do lote em memória da ingestão
+- **SCRUM-39** — Deduplicar reenvios do datalogger
+- **SCRUM-40** — Validar a faixa física das leituras por tipo de parâmetro
+- **SCRUM-41** — Tratar telemetria recebida de estação inativa
+- **SCRUM-42** — Criar chave de ingestão individual por estação
+- **SCRUM-43** — Medir ingestão via HTTP sob carga e otimizar o armazenamento de séries temporais
+- **SCRUM-44** — Criar endpoint de health check da API e do banco
+- **SCRUM-101** — Definir o formato do tópico e do payload MQTT
+- **SCRUM-102** — Subir o broker Mosquitto com cadastro e ACL por estação
+- **SCRUM-103** — Serviço de ingestão (subscriber MQTT) gravando só em leituras_brutas
+- **SCRUM-104** — Serviço de tratamento em lotes com controle_tratamento, leituras_erro e licitacaoId
+- **SCRUM-105** — Simulador de estações publicando no broker
+- **SCRUM-106** — Repetir o teste de carga na nova cadeia (broker, ingestão e tratamento)
+- **SCRUM-107** — Atualizar modelo de dados
+
+</details>
+
+<details>
+<summary><strong>US12 — Cadastro e Gestão de Licitações e Contratos</strong></summary>
+
+**Tasks vinculadas**
+
+- **SCRUM-70** — Modelar órgãos públicos, licitações e contratos no banco
+- **SCRUM-111** — Telas de licitações e de detalhe da licitação (no lugar de contratos e órgãos)
+- **SCRUM-71** — CRUD de órgãos públicos no backend
+- **SCRUM-72** — CRUD de contratos com validações de vigência no backend
+- **SCRUM-73** — Listagem de contratos com filtros por status e órgão
+- **SCRUM-74** — Criar tela de órgãos públicos
+- **SCRUM-75** — Criar telas de listagem e cadastro de contratos
+- **SCRUM-76** — Testes funcionais de órgãos e contratos
+- **SCRUM-98** — Tornar as leituras brutas imutáveis no banco de dados
+- **SCRUM-108** — Escrever as regras da licitação e revisar a US12 com o PO
+- **SCRUM-109** — Migration do modelo por licitação (licitação com contrato e órgão, perfis e consistência)
+- **SCRUM-110** — Módulo de licitações no backend: CRUD, encerrar e vincular estações
+- **SCRUM-112** — Usuários por licitação: a Tecsus cadastra admins e o admin da licitação cadastra usuários comuns
+- **SCRUM-113** — Telas com escopo por licitação, paginação, alertas ligados à API e responsividade
+
+</details>
+
+<details>
+<summary><strong>US13 — Vínculo de Estações e Sensores aos Contratos</strong></summary>
+
+**Tasks vinculadas**
+
+- **SCRUM-77** — Modelar o vínculo entre contratos e estações no banco
+- **SCRUM-78** — Rotas para vincular e desvincular estações de um contrato
+- **SCRUM-80** — Tela de detalhe do contrato com estações e sensores vinculados
+- **SCRUM-79** — Rota de hierarquia Contrato -> Estações -> Sensores
+- **SCRUM-81** — Testes funcionais do vínculo entre contrato e estações
+
+</details>
+
+<details>
+<summary><strong>IE14 — Planejamento e DevOps</strong></summary>
+
+**Tasks vinculadas**
+
+- **SCRUM-14** — Padronização inicial dos documentos de centralização de conhecimento
+- **SCRUM-84** — Criação e edição da documentação DevOps para banco de dados
+- **SCRUM-93** — Limpeza e correção de arquivos na pasta docs e do README
+- **SCRUM-89** — Criação de testes unitários e funcionais no frontend
+- **SCRUM-85** — Definição de Pipeline CI seguindo os padrões de documentação e fluxo do time
+- **SCRUM-90** — Criação de integração da pipeline com o fluxo de rastreabilidade de requisitos
+- **SCRUM-91** — Aplicação das regras definidas de forma automática, correções nas actions e regras do repositório
+- **SCRUM-94** — Integração de Pipeline com o JIRA: Mover ticket para concluído quando PR aprovado
+- **SCRUM-95** — Fix de divergência entre versões do node na pipeline de CI
+- **SCRUM-96** — Processo de Monitoramento de DevOps
+- **SCRUM-115** — Aplicação e documentação sobre banco de dados na branch principal
+
+</details>
+
+<details>
+<summary><strong>IE15 — Protótipo e Atualização de Telas</strong></summary>
+
+**Tasks vinculadas**
+
+- **SCRUM-97** — Estilização da tela de login
+- **SCRUM-83** — Criar novas telas no protótipo do projeto
+- **SCRUM-92** — Atualizar NavBar
+
+</details>
+
+<details>
+<summary><strong>US03 — Coleta e Transmissão via Datalogger Físico</strong></summary>
+
+**Tasks vinculadas**
+
+_Adicionar os IDs e títulos das tasks correspondentes no Jira._
+
+</details>
+
+<details>
+<summary><strong>US08 — Disponibilização de Dados Abertos e Interoperabilidade (e-PING)</strong></summary>
+
+**Tasks vinculadas**
+
+_Adicionar os IDs e títulos das tasks correspondentes no Jira._
+
+</details>
+
+<details>
+<summary><strong>US09 — Relatório de Histórico e Condições Climáticas Consolidadas</strong></summary>
+
+**Tasks vinculadas**
+
+_Adicionar os IDs e títulos das tasks correspondentes no Jira._
+
+</details>
+
+<details>
+<summary><strong>US10 — Relatório de Incidentes e Ocorrências de Alertas</strong></summary>
+
+**Tasks vinculadas**
+
+_Adicionar os IDs e títulos das tasks correspondentes no Jira._
+
+</details>
+
+<details>
+<summary><strong>US11 — Relatório Estatístico e Análise Comparativa</strong></summary>
+
+**Tasks vinculadas**
+
+_Adicionar os IDs e títulos das tasks correspondentes no Jira._
+
+</details>
 
 ---
 
