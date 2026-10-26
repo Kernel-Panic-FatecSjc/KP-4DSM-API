@@ -291,6 +291,12 @@ _Adicionar os IDs e títulos das tasks correspondentes no Jira._
 
 ---
 
+## 🗓️ Cronograma e Sprints do projeto
+
+[Cronograma e Video MVP](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Cronograma-e-Sprints-do-projeto)
+
+
+
 <a id="backlog-da-spint"></a>
 ## 📋 Backlog da Sprint 1
 | ID | User Story | Prioridade | Sprint | Pontos | Status | Meta da Sprint |
