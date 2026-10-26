@@ -11,8 +11,6 @@
 [A Dor do Cliente](#a-dor) | 
 [A Solução](#a-solução) |
 [O Desafio](#o-desafio) | 
-[DoR](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Definition-Of-Ready) |
-[DoD](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Definition-Of-Done) | 
 [Backlog de Produto](#backlog-de-produto) | 
 [Backlog da Sprint](#backlog-da-sprint) | 
 [Tecnologias](#tecnologias-utilizadas) |
@@ -20,6 +18,7 @@
 [Modelagem de Dados](#modelo-de-dados) |
 [Estrutura do Projeto](#estrutura-do-projeto) | 
 [Instalação](#manual-de-instalação) | 
+[Documentação da equipe](#documentos) |
 [Equipe](#autores)
 
 </div>
@@ -143,7 +142,7 @@ A solução é uma aplicação web full-stack, com back-end desenvolvido em Nest
 <a id="modelo-de-dados"></a>
 ## 📊  Modelagem de Dados do Projeto
 
-![Diagrama do modelo de dados do projeto](docs/images/modelo_de_dados.jpeg)
+![Diagrama do modelo de dados do projeto](docs/images/modelo-de-dados.jpg)
 
 ---
 
@@ -248,6 +247,20 @@ npx cz --retry
 
 Esse comando permite refazer o processo de criação do commit utilizando as respostas informadas anteriormente.
 
+<a id="documentos"></a>
+## Documentação da equipe
+
+- [DoR (Definition of Ready)](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Definition-Of-Ready)
+- [DoD (Definition of Done)](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Definition-Of-Done)
+- [Padrão de Commit](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Padr%C3%A3o-de-Commit)
+- [Rastreabilidade de Requisitos](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Rastreabilidade-de-requisitos)
+- [Mapeamento e Especificação Técnica de Requisitos](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Requisitos)
+- [Estratégia de Branch](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Estrat%C3%A9gia-de-Branch)
+- [Entrega contínua e deploy (CD)](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Entrega-continua-e-deploy)
+- [Integração contínua (CI)](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Integracao-continua)
+- [Banco de dados](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Banco-de-dados)
+- [Gestão de Documentos](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Gest%C3%A3o-de-Documentos)
+- [Gestão de Processo](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Gest%C3%A3o-de-Processo)
 
 ---
 
