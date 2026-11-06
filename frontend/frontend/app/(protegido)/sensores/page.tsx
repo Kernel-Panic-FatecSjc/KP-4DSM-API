@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import {
   api,
+  type AgregacaoParametroApi,
   ErroApi,
   type Paginado,
   type SensorApi,
@@ -29,6 +30,7 @@ const ATRASO_BUSCA_MS = 300;
 type FormularioSensor = {
   nome: string;
   unidade: string;
+  agregacao: AgregacaoParametroApi;
   fator: string;
   ganho: string;
   valorMinimo: string;
@@ -40,6 +42,7 @@ type FormularioSensor = {
 const FORMULARIO_INICIAL: FormularioSensor = {
   nome: '',
   unidade: '',
+  agregacao: 'MEDIA',
   fator: '1',
   ganho: '0',
   valorMinimo: '',
@@ -173,6 +176,7 @@ export default function SensoresPage() {
     setFormulario({
       nome: sensor.nome,
       unidade: sensor.unidade,
+      agregacao: sensor.agregacao,
       fator: String(sensor.fator),
       ganho: String(sensor.ganho),
       valorMinimo: sensor.valorMinimo == null ? '' : String(sensor.valorMinimo),
@@ -230,6 +234,7 @@ export default function SensoresPage() {
     const payload: SensorPayload = {
       nome,
       unidade,
+      agregacao: formulario.agregacao,
       fator,
       ganho,
       valorMinimo: faixa.minimo,
@@ -349,6 +354,11 @@ export default function SensoresPage() {
       render: (unidade) => (
         <span className="rounded-md bg-muted px-2 py-1 font-mono text-xs">{String(unidade)}</span>
       ),
+    },
+    {
+      header: 'Agregação',
+      key: 'agregacao',
+      render: (agregacao) => (agregacao === 'SOMA' ? 'Soma' : 'Média'),
     },
     { header: 'Fator', key: 'fator', className: 'font-mono text-xs' },
     { header: 'Ganho', key: 'ganho', className: 'font-mono text-xs' },
@@ -535,7 +545,13 @@ export default function SensoresPage() {
                     id="sensor-unidade"
                     required
                     value={formulario.unidade}
-                    onChange={(e) => setFormulario((anterior) => ({ ...anterior, unidade: e.target.value }))}
+                    onChange={(e) =>
+                      setFormulario((anterior) => ({
+                        ...anterior,
+                        unidade: e.target.value,
+                        agregacao: e.target.value === 'mm' ? 'SOMA' : 'MEDIA',
+                      }))
+                    }
                   >
                     <option value="" disabled>
                       Selecione
@@ -554,6 +570,26 @@ export default function SensoresPage() {
                     ))}
                   </Select>
                 </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label htmlFor="sensor-agregacao" className="text-sm font-medium">
+                  Agregação nos relatórios
+                </label>
+                <Select
+                  id="sensor-agregacao"
+                  required
+                  value={formulario.agregacao}
+                  onChange={(e) =>
+                    setFormulario((anterior) => ({
+                      ...anterior,
+                      agregacao: e.target.value as AgregacaoParametroApi,
+                    }))
+                  }
+                >
+                  <option value="SOMA">Soma</option>
+                  <option value="MEDIA">Média</option>
+                </Select>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2">

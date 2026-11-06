@@ -6,7 +6,7 @@ import { criarAppDeTeste } from '../helpers';
 
 const USUARIO = { id: 'usuario-1', email: 'user@teste.com', tipo: 'ADMIN_TECSUS', licitacaoId: null, licitacao: null, ativo: true };
 
-const NOVO_SENSOR = { nome: 'Pluviômetro', unidade: 'mm', fator: 1, ganho: 0.2, licitacaoId: LICITACAO_FIXTURE };
+const NOVO_SENSOR = { nome: 'Pluviômetro', unidade: 'mm', fator: 1, ganho: 0.2, agregacao: 'SOMA', licitacaoId: LICITACAO_FIXTURE };
 const SENSOR = {
   id: 'sensor-1',
   ...NOVO_SENSOR,
@@ -72,6 +72,7 @@ describe('Cadastro de sensores (funcional)', () => {
           unidade: 'mm',
           fator: 1,
           ganho: 0.2,
+          agregacao: 'SOMA',
           json: null,
           valorMinimo: null,
           valorMaximo: null,
@@ -115,7 +116,7 @@ describe('Cadastro de sensores (funcional)', () => {
       .send(NOVO_SENSOR)
       .expect(201);
 
-    expect(resposta.body).toMatchObject({ id: 'sensor-1', nome: 'Pluviômetro', unidade: 'mm' });
+    expect(resposta.body).toMatchObject({ id: 'sensor-1', nome: 'Pluviômetro', unidade: 'mm', agregacao: 'SOMA' });
     expect(logAuditoria.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
         acao: 'sensores.criar',
@@ -186,6 +187,16 @@ describe('Cadastro de sensores (funcional)', () => {
       .expect(200);
 
     expect(resposta.body.ganho).toBe(0.5);
+  });
+
+  it('atualiza a agregação do sensor', async () => {
+    const resposta = await request(app.getHttpServer())
+      .patch('/sensores/sensor-1')
+      .set('Cookie', cookie)
+      .send({ agregacao: 'MEDIA' })
+      .expect(200);
+
+    expect(resposta.body.agregacao).toBe('MEDIA');
   });
 
   it('remove sensor sem uso e recusa com 409 o que está associado', async () => {

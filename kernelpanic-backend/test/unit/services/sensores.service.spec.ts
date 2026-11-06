@@ -11,6 +11,7 @@ const SENSOR = {
   unidade: 'mm',
   fator: 1,
   ganho: 0.2,
+  agregacao: 'SOMA',
   json: null,
   valorMinimo: null,
   valorMaximo: null,
@@ -52,10 +53,18 @@ describe('SensoresService', () => {
 
       expect(prismaMock.tipoParametro.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ nome: 'Pluviômetro', unidade: 'mm', fator: 1, ganho: 0.2 }),
+          data: expect.objectContaining({ nome: 'Pluviômetro', unidade: 'mm', fator: 1, ganho: 0.2, agregacao: 'MEDIA' }),
         }),
       );
       expect(sensor).toBe(SENSOR);
+    });
+
+    it('persiste a agregação escolhida', async () => {
+      await service.criar({ nome: 'Pluviômetro', unidade: UnidadeSensor.MILIMETRO, fator: 1, ganho: 0.2, agregacao: 'SOMA' }, ADMIN_A);
+
+      expect(prismaMock.tipoParametro.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ agregacao: 'SOMA' }) }),
+      );
     });
 
     it('cadastra a faixa física, e mínimo igual ao máximo é uma faixa de um valor só', async () => {

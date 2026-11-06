@@ -72,6 +72,11 @@ enum StatusLicitacao {
   ENCERRADA
 }
 
+enum AgregacaoParametro {
+  SOMA
+  MEDIA
+}
+
 /// Usuário do sistema. licitacaoId nulo = usuário da Tecsus (ADMIN_TECSUS);
 /// os outros perfis pertencem a exatamente uma licitação (check no banco).
 model Usuario {
@@ -161,12 +166,14 @@ model Estacao {
 /// Tipos de sensores/métricas (ex.: pluviômetro, temperatura) de uma licitação:
 /// cada licitação mantém os seus, e o nome é único dentro dela.
 model TipoParametro {
-  id          String @id @default(uuid())
+  id          String             @id @default(uuid())
   nome        String
   unidade     String
   fator       Float
   ganho       Float
   json        Json?
+  /// Regra dos relatórios: SOMA para precipitação em mm; MEDIA por padrão.
+  agregacao   AgregacaoParametro @default(MEDIA)
   /// Faixa física válida da leitura (inclusiva e opcional): fora dela a
   /// ingestão não grava medida e registra a leitura em leituras_erro.
   valorMinimo Float?

@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
-import { StatusLicitacao } from '../generated/prisma/client';
+import { AgregacaoParametro, StatusLicitacao } from '../generated/prisma/client';
 import { ehTecsus, garantirAcessoLicitacao, licitacaoDoEscopo } from '../autenticacao/escopo-licitacao';
 import type { UsuarioLogado } from '../autenticacao/payload-jwt.interface';
 import { PrismaService } from '../prisma/prisma.service';
@@ -58,6 +58,7 @@ export class SensoresService {
         unidade: dto.unidade,
         fator: dto.fator,
         ganho: dto.ganho,
+        agregacao: dto.agregacao ?? AgregacaoParametro.MEDIA,
         valorMinimo: dto.valorMinimo,
         valorMaximo: dto.valorMaximo,
         json: dto.json as Prisma.InputJsonValue | undefined,
@@ -88,6 +89,7 @@ export class SensoresService {
         unidade: dto.unidade,
         fator: dto.fator,
         ganho: dto.ganho,
+        agregacao: dto.agregacao,
         valorMinimo: dto.valorMinimo,
         valorMaximo: dto.valorMaximo,
         json: dto.json as Prisma.InputJsonValue | undefined,

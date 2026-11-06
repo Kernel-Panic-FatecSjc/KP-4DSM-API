@@ -50,7 +50,7 @@ export class SensoresController {
       entidade: 'TipoParametro',
       entidadeId: sensor.id,
       ...autoria(usuario),
-      detalhes: { nome: dto.nome, unidade: dto.unidade, licitacaoId: sensor.licitacaoId },
+      detalhes: { nome: dto.nome, unidade: dto.unidade, agregacao: sensor.agregacao, licitacaoId: sensor.licitacaoId },
     });
     return new SensorRespostaDto(sensor);
   }

@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import { IsEnum, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, MaxLength, NotEquals } from 'class-validator';
+import { AgregacaoParametro } from '../../generated/prisma/client';
 import { UnidadeSensor } from '../unidade-sensor';
 import { aparar, MENSAGEM_UNIDADE } from './criar-sensor.dto';
 
@@ -14,6 +15,10 @@ export class AtualizarSensorDto {
   @IsOptional()
   @IsEnum(UnidadeSensor, { message: MENSAGEM_UNIDADE })
   unidade?: UnidadeSensor;
+
+  @IsOptional()
+  @IsEnum(AgregacaoParametro)
+  agregacao?: AgregacaoParametro;
 
   @IsOptional()
   @IsNumber({ allowInfinity: false, allowNaN: false })

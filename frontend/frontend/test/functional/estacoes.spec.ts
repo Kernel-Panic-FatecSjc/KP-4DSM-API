@@ -42,6 +42,7 @@ function umSensor(dados: Partial<SensorApi> = {}): SensorApi {
     unidade: 'mm',
     fator: 1,
     ganho: 0,
+    agregacao: 'SOMA',
     valorMinimo: null,
     valorMaximo: null,
     estacoesAssociadas: 0,
