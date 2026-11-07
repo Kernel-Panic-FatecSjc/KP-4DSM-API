@@ -14,6 +14,7 @@ import { EstatisticaService } from './estatica.service';
 @ApiCookieAuth('access_token')
 @Controller('relatorios')
 @UseGuards(GuardaJwt, GuardaPerfil)
+
 export class EstatisticaController {
   constructor(
     private readonly estatisticaService: EstatisticaService,
