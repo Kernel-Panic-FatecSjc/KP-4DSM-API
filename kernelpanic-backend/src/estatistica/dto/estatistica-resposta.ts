@@ -1,10 +1,12 @@
-import { IsArray, IsDateString, IsNotEmpty, IsString, ArrayMinSize } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
+import { ArrayMinSize, IsArray, IsNotEmpty, IsString } from 'class-validator';
 
 export class ConsultarEstatisticasDto {
-  @ApiProperty({ type: [String], minItems: 2, description: 'IDs das estações; repita o parâmetro para cada estação.' })
+  @ApiProperty({ type: [String], minItems: 1, description: 'IDs das estações; repita o parâmetro para cada estação.' })
+  @Transform(({ value }) => Array.isArray(value) ? value : [value])
   @IsArray()
-  @ArrayMinSize(2)
+  @ArrayMinSize(1)
   @IsString({ each: true })
   estacaoIds: string[];
 
@@ -13,11 +15,13 @@ export class ConsultarEstatisticasDto {
   @IsNotEmpty()
   parametroId: string;
 
-  @ApiProperty({ format: 'date-time', example: '2026-01-01T00:00:00.000Z' })
-  @IsDateString()
-  dataInicio: string;
-
-  @ApiProperty({ format: 'date-time', example: '2026-01-31T23:59:59.000Z' })
-  @IsDateString()
-  dataFim: string;
+  @ApiProperty({
+    type: [String],
+    minItems: 2,
+    description: 'Repita para cada intervalo, no formato ISO_INICIO|ISO_FIM. A ordem define a referência (primeiro período). Ex.: 2026-01-01T00:00:00.000Z|2026-01-31T23:59:59.999Z',
+  })
+  @IsArray()
+  @ArrayMinSize(2)
+  @IsString({ each: true })
+  periodos: string[];
 }
