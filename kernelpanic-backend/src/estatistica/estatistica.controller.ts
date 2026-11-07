@@ -22,9 +22,9 @@ export class EstatisticaController {
 
   @Get('estatisticas')
   @ApiOperation({
-    summary: 'Compara estatísticas de duas ou mais estações',
+    summary: 'Compara estatísticas entre períodos em uma ou mais estações',
     description:
-      'Calcula as estatísticas das leituras no período. Variância (VAR_POP) e desvio padrão (STDDEV_POP) são populacionais. Informe estacaoIds repetido na query string para cada estação.',
+      'Informe periodos repetido na query string, cada um como ISO_INICIO|ISO_FIM. O primeiro período é a referência; cada período seguinte é comparado a ele. Períodos inclusivos sobrepostos são rejeitados. Diferença absoluta = comparado - referência; percentual = diferença / valor absoluto da referência × 100; percentual fica null quando a referência é zero. Variância (VAR_POP) e desvio padrão (STDDEV_POP) são populacionais.',
   })
   @ApiResponse({ status: 200, type: RelatorioEstatisticoDto })
   async comparar(
@@ -36,7 +36,7 @@ export class EstatisticaController {
       acao: 'relatorios.estatisticas.consultar',
       entidade: 'RelatorioEstatistico',
       ...autoria(usuario),
-      detalhes: { estacaoIds: query.estacaoIds, parametroId: query.parametroId, dataInicio: query.dataInicio, dataFim: query.dataFim },
+      detalhes: { estacaoIds: query.estacaoIds, parametroId: query.parametroId, periodos: query.periodos },
     });
     return relatorio;
   }
