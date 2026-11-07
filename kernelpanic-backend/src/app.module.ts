@@ -18,6 +18,7 @@ import { UsuariosModule } from './usuarios/usuarios.module';
 import { SaudeModule } from './saude/saude.module';
 import { LicitacoesModule } from './licitacoes/licitacoes.module';
 import { BrokerModule } from './broker/broker.module';
+import { EstatisticasModule } from './estatistica/estatisticas.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { BrokerModule } from './broker/broker.module';
     LimiteRequisicoesModule,
     PrismaModule,
     BrokerModule,
+    EstatisticasModule,
     RegiaoModule,
     UsuariosModule,
     AutenticacaoModule,
