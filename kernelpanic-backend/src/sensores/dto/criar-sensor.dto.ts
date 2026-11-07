@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import { IsEnum, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, IsUUID, MaxLength, NotEquals } from 'class-validator';
+import { AgregacaoParametro } from '../../generated/prisma/client';
 import { UnidadeSensor } from '../unidade-sensor';
 
 // Sem isso, um nome só com espaços passaria pelo @IsNotEmpty e "Pluviômetro "
@@ -19,6 +20,10 @@ export class CriarSensorDto {
 
   @IsEnum(UnidadeSensor, { message: MENSAGEM_UNIDADE })
   unidade!: UnidadeSensor;
+
+  @IsOptional()
+  @IsEnum(AgregacaoParametro)
+  agregacao?: AgregacaoParametro;
 
   // O fator multiplica a leitura bruta: zero apagaria toda medição do sensor.
   @IsNumber({ allowInfinity: false, allowNaN: false })

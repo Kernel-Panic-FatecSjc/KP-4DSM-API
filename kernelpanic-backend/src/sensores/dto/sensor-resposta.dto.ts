@@ -6,6 +6,7 @@ export class SensorRespostaDto {
   unidade: string;
   fator: number;
   ganho: number;
+  agregacao: TipoParametro['agregacao'];
   json: unknown;
   valorMinimo: number | null;
   valorMaximo: number | null;
@@ -18,6 +19,7 @@ export class SensorRespostaDto {
     this.unidade = sensor.unidade;
     this.fator = sensor.fator;
     this.ganho = sensor.ganho;
+    this.agregacao = sensor.agregacao;
     this.json = sensor.json;
     this.valorMinimo = sensor.valorMinimo;
     this.valorMaximo = sensor.valorMaximo;

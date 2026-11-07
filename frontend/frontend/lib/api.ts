@@ -244,11 +244,14 @@ export interface SensorApi {
   unidade: string;
   fator: number;
   ganho: number;
+  agregacao: AgregacaoParametroApi;
   valorMinimo: number | null;
   valorMaximo: number | null;
   estacoesAssociadas: number;
   licitacaoId: string;
 }
+
+export type AgregacaoParametroApi = 'SOMA' | 'MEDIA';
 
 
 export interface UnidadeSensor {
@@ -263,6 +266,7 @@ export interface SensorPayload {
   unidade: string;
   fator: number;
   ganho: number;
+  agregacao: AgregacaoParametroApi;
   valorMinimo: number | null;
   valorMaximo: number | null;
   /** Obrigatória para a Tecsus no cadastro; o admin da licitação pode omitir. */
@@ -392,4 +396,3 @@ export interface DashboardDados {
 
 
 export type EsferaOrgaoApi = 'MUNICIPAL' | 'ESTADUAL' | 'FEDERAL';
-
