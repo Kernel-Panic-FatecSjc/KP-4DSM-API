@@ -74,11 +74,15 @@ A solução é uma aplicação web full-stack, com back-end desenvolvido em Nest
 | 8 | US13 | Vínculo de Estações e Sensores aos Contratos | Alta | 2 | 9 | ✅ |
 | 9 | IE14 | Planejamento e DevOps | Alta | 2 | 9 | ✅ |
 | 10 | IE15 | Protótipo e Atualização de Telas | Alta | 2 | 9 | ✅ |
-| 11 | US03 | Coleta e Transmissão via Datalogger Físico | Alta | 3 | 13 | ⏳ |
-| 12 | US08 | Disponibilização de Dados Abertos e Interoperabilidade (e-PING) | Alta | 3 | 13 | ⏳ |
-| 13 | US09 | Relatório de Histórico e Condições Climáticas Consolidadas | Média | 3 | 9 | ⏳ |
-| 14 | US10 | Relatório de Incidentes e Ocorrências de Alertas | Média | 3 | 9 | ⏳ |
-| 15 | US11 | Relatório Estatístico e Análise Comparativa | Média | 3 | 9 | ⏳ |
+| 11 | US03 | Coleta e Transmissão via Datalogger Físico | Média | 3 | 5 | ⏳ |
+| 12 | US08 | Disponibilização de Dados Abertos e Interoperabilidade (e-PING) | Baixa | 3 | 3 | ⏳ |
+| 13 | US09 | Relatório de Histórico e Condições Climáticas Consolidadas (Relatório 1) | Baixa | 3 | 2 | ⏳ |
+| 14 | US10 | Relatório de Incidentes e Ocorrências de Alertas (Relatório 2) | Baixa | 3 | 2 | ⏳ |
+| 15 | US11 | Relatório Estatístico e Análise Comparativa (Relatório 3) | Baixa | 3 | 2 | ⏳ |
+| 16 | US14 | Estruturar a entrega contínua e a implantação operacional da plataforma | Média | 3 | 3 | ⏳ |
+| 17 | US15 | Documentar a instalação e operação da API | Baixa | 3 | 2 | ⏳ |
+| 18 | US16 | Refinar e corrigir o processamento de telemetria | Média | 3 | 3 | ⏳ |
+| 19 | US17 | Refinar e corrigir a trilha de auditoria | Média | 3 | 3 | ⏳ |
 
 ---
 
@@ -315,6 +319,20 @@ _Adicionar os IDs e títulos das tasks correspondentes no Jira._
 | US13 | Vínculo de Estações e Sensores aos Contratos | Alta | 2 | 9 | ✅ | Meta |
 | IE14 | Planejamento e DevOps | Alta | 2 | 9 | ✅ |  Não é meta |
 | IE15  | Protótipo e Atualização de Telas | Alta | 2 | 9 | ✅ |  Não é meta |
+
+## 📋 Backlog da Sprint 3
+
+| ID | User Story | Prioridade | Sprint | Pontos | Status | Meta da Sprint |
+|----|-----------|-----------|--------|--------|--------|----------------|
+| US03 | Coleta e Transmissão via Datalogger Físico | Média | 3 | 5 | ⏳ | Meta |
+| US08 | Disponibilização de Dados Abertos e Interoperabilidade (e-PING) | Baixa | 3 | 3 | ⏳ | Não é meta |
+| US09 | Relatório de Histórico e Condições Climáticas Consolidadas (Relatório 1) | Baixa | 3 | 2 | ⏳ | Não é meta |
+| US10 | Relatório de Incidentes e Ocorrências de Alertas (Relatório 2) | Baixa | 3 | 2 | ⏳ | Não é meta |
+| US11 | Relatório Estatístico e Análise Comparativa (Relatório 3) | Baixa | 3 | 2 | ⏳ | Não é meta |
+| US14 | Estruturar a entrega contínua e a implantação operacional da plataforma | Média | 3 | 3 | ⏳ | Não é meta |
+| US15 | Documentar a instalação e operação da API | Baixa | 3 | 2 | ⏳ | Meta |
+| US16 | Refinar e corrigir o processamento de telemetria | Média | 3 | 3 | ⏳ | Meta |
+| US17 | Refinar e corrigir a trilha de auditoria | Média | 3 | 3 | ⏳ | Meta |
 
 ---
 <a id="tecnologias-utilizadas"></a>
