@@ -4,9 +4,15 @@ import { licitacaoDoEscopo } from '../autenticacao/escopo-licitacao';
 import type { UsuarioLogado } from '../autenticacao/payload-jwt.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import type { ConsultarEstatisticasDto } from './dto/estatistica-resposta';
-import { RelatorioEstatisticoDto } from './dto/estatistica-relatorio';
+import {
+  ComparacaoEstacaoDto,
+  DiferencaMetricaDto,
+  PeriodoEstatisticoDto,
+  RelatorioEstatisticoDto,
+} from './dto/estatistica-relatorio';
 import { EstatisticaEstacaoDto } from './dto/estatitisca-estacao';
 
+interface Intervalo { inicio: Date; fim: Date }
 interface LinhaEstatistica {
   estacaoId: string;
   estacaoNome: string;
@@ -22,21 +28,86 @@ interface LinhaEstatistica {
   maximo: number | null;
 }
 
+const METRICAS = [
+  'quantidade', 'media', 'mediana', 'desvioPadrao', 'variancia',
+  'quartil1', 'quartil2', 'quartil3', 'minimo', 'maximo',
+] as const;
+type Metrica = (typeof METRICAS)[number];
+
 @Injectable()
 export class EstatisticaService {
   constructor(private readonly prisma: PrismaService) {}
 
   async comparar(query: ConsultarEstatisticasDto, usuario: UsuarioLogado): Promise<RelatorioEstatisticoDto> {
-    const inicio = new Date(query.dataInicio);
-    const fim = new Date(query.dataFim);
-    if (!Number.isFinite(inicio.getTime()) || !Number.isFinite(fim.getTime()) || inicio > fim) {
-      throw new BadRequestException('Período inválido: dataInicio deve ser anterior ou igual a dataFim');
-    }
+    const intervalos = query.periodos.map((periodo) => this.parsearPeriodo(periodo));
+    this.validarSobreposicoes(intervalos);
     const ids = [...new Set(query.estacaoIds)];
-    if (ids.length < 2) throw new BadRequestException('Informe ao menos duas estações distintas');
+    if (ids.length === 0) throw new BadRequestException('Informe ao menos uma estação');
     const licitacaoId = licitacaoDoEscopo(usuario);
 
-    const linhas = await this.prisma.$queryRaw<LinhaEstatistica[]>`
+    const periodos = await Promise.all(intervalos.map(async ({ inicio, fim }) => {
+      const linhas = await this.buscarEstatisticas(ids, query.parametroId, inicio, fim, licitacaoId);
+      const periodo = new PeriodoEstatisticoDto();
+      periodo.inicio = inicio;
+      periodo.fim = fim;
+      periodo.estacoes = linhas.map((linha) => this.converterLinha(linha));
+      return periodo;
+    }));
+
+    const referenciaPorEstacao = new Map(periodos[0].estacoes.map((estacao) => [estacao.estacaoId, estacao]));
+    const comparacoes: ComparacaoEstacaoDto[] = [];
+    for (let periodoComparadoIndice = 1; periodoComparadoIndice < periodos.length; periodoComparadoIndice++) {
+      for (const atual of periodos[periodoComparadoIndice].estacoes) {
+        const referencia = referenciaPorEstacao.get(atual.estacaoId);
+        if (!referencia) continue;
+        const comparacao = new ComparacaoEstacaoDto();
+        comparacao.estacaoId = atual.estacaoId;
+        comparacao.periodoReferenciaIndice = 0;
+        comparacao.periodoComparadoIndice = periodoComparadoIndice;
+        for (const metrica of METRICAS) {
+          (comparacao as unknown as Record<Metrica, DiferencaMetricaDto | null>)[metrica] =
+            this.diferenca(referencia[metrica], atual[metrica]);
+        }
+        comparacoes.push(comparacao);
+      }
+    }
+
+    const relatorio = new RelatorioEstatisticoDto();
+    relatorio.periodos = periodos;
+    relatorio.metodoCalculo = 'Populacional: desvio padrão (STDDEV_POP) e variância (VAR_POP)';
+    relatorio.comparacoes = comparacoes;
+    return relatorio;
+  }
+
+  private parsearPeriodo(valor: string): Intervalo {
+    const partes = valor.split('|');
+    if (partes.length !== 2) {
+      throw new BadRequestException('Cada período deve estar no formato ISO_INICIO|ISO_FIM');
+    }
+    const inicio = new Date(partes[0]);
+    const fim = new Date(partes[1]);
+    if (!Number.isFinite(inicio.getTime()) || !Number.isFinite(fim.getTime()) || inicio > fim) {
+      throw new BadRequestException('Período inválido: início deve ser anterior ou igual ao fim');
+    }
+    return { inicio, fim };
+  }
+
+  private validarSobreposicoes(intervalos: Intervalo[]): void {
+    for (let i = 0; i < intervalos.length; i++) {
+      for (let j = i + 1; j < intervalos.length; j++) {
+        if (intervalos[i].inicio <= intervalos[j].fim && intervalos[j].inicio <= intervalos[i].fim) {
+          throw new BadRequestException('Os períodos informados não podem se sobrepor');
+        }
+      }
+    }
+  }
+
+  private async buscarEstatisticas(
+    ids: string[], parametroId: string, inicio: Date, fim: Date, licitacaoId?: string,
+  ): Promise<LinhaEstatistica[]> {
+    const filtroLicitacao = licitacaoId ? Prisma.sql`AND m."licitacaoId" = ${licitacaoId}` : Prisma.empty;
+    const filtroEstacao = licitacaoId ? Prisma.sql`AND e."licitacaoId" = ${licitacaoId}` : Prisma.empty;
+    return this.prisma.$queryRaw<LinhaEstatistica[]>(Prisma.sql`
       SELECT e."id" AS "estacaoId", e."nome" AS "estacaoNome",
         COUNT(m."id") AS "quantidade", AVG(m."valor") AS "media",
         percentile_cont(0.5) WITHIN GROUP (ORDER BY m."valor") AS "mediana",
@@ -47,34 +118,33 @@ export class EstatisticaService {
         MIN(m."valor") AS "minimo", MAX(m."valor") AS "maximo"
       FROM "estacoes" e
       LEFT JOIN "medidas" m ON m."estacaoId" = e."id"
-        AND m."parametroId" = ${query.parametroId}
+        AND m."parametroId" = ${parametroId}
         AND m."unixtime" >= ${BigInt(Math.floor(inicio.getTime() / 1000))}
         AND m."unixtime" <= ${BigInt(Math.floor(fim.getTime() / 1000))}
-        AND (${licitacaoId ?? null}::text IS NULL OR m."licitacaoId" = ${licitacaoId ?? null})
-      WHERE e."id" IN (${Prisma.join(ids)})
-        AND (${licitacaoId ?? null}::text IS NULL OR e."licitacaoId" = ${licitacaoId ?? null})
+        ${filtroLicitacao}
+      WHERE e."id" IN (${Prisma.join(ids)}) ${filtroEstacao}
       GROUP BY e."id", e."nome"
       ORDER BY e."nome", e."id"
-    `;
+    `);
+  }
 
-    const relatorio = new RelatorioEstatisticoDto();
-    relatorio.parametroId = query.parametroId;
-    relatorio.dataInicio = inicio;
-    relatorio.dataFim = fim;
-    relatorio.metodoCalculo = 'Populacional: desvio padrão (STDDEV_POP) e variância (VAR_POP)';
-    relatorio.estacoes = linhas.map((linha) => Object.assign(new EstatisticaEstacaoDto(), {
-      ...linha,
-      quantidade: Number(linha.quantidade),
-      media: linha.media === null ? null : Number(linha.media),
-      mediana: linha.mediana === null ? null : Number(linha.mediana),
-      desvioPadrao: linha.desvioPadrao === null ? null : Number(linha.desvioPadrao),
-      variancia: linha.variancia === null ? null : Number(linha.variancia),
-      quartil1: linha.quartil1 === null ? null : Number(linha.quartil1),
-      quartil2: linha.quartil2 === null ? null : Number(linha.quartil2),
-      quartil3: linha.quartil3 === null ? null : Number(linha.quartil3),
-      minimo: linha.minimo === null ? null : Number(linha.minimo),
-      maximo: linha.maximo === null ? null : Number(linha.maximo),
-    }));
-    return relatorio;
+  private converterLinha(linha: LinhaEstatistica): EstatisticaEstacaoDto {
+    const dto = new EstatisticaEstacaoDto();
+    dto.estacaoId = linha.estacaoId;
+    dto.estacaoNome = linha.estacaoNome;
+    for (const metrica of METRICAS) {
+      const valor = linha[metrica];
+      (dto as unknown as Record<Metrica, number | null>)[metrica] = valor === null ? null : Number(valor);
+    }
+    return dto;
+  }
+
+  private diferenca(referencia: number | null, atual: number | null): DiferencaMetricaDto | null {
+    if (referencia === null || atual === null) return null;
+    const diferenca = atual - referencia;
+    const dto = new DiferencaMetricaDto();
+    dto.diferencaAbsoluta = diferenca;
+    dto.diferencaPercentual = referencia === 0 ? null : (diferenca / Math.abs(referencia)) * 100;
+    return dto;
   }
 }
