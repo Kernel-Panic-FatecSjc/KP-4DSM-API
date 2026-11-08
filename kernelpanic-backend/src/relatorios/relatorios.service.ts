@@ -3,6 +3,7 @@ import { Prisma } from '../generated/prisma/client';
 import { licitacaoDoEscopo } from '../autenticacao/escopo-licitacao';
 import type { UsuarioLogado } from '../autenticacao/payload-jwt.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { dataDoFiltro } from './periodo';
 import { HistoricoClimaticoQueryDto } from './dto/historico-climatico-query.dto';
 import {
   EstatisticasHistoricoDto,
@@ -26,14 +27,6 @@ interface AgregadoHistorico {
   minimo: number;
   maximo: number;
   leituras: bigint;
-}
-
-function dataDoFiltro(valor: string, finalDoDia = false): Date {
-  const data = new Date(valor);
-  if (finalDoDia && /^\d{4}-\d{2}-\d{2}$/.test(valor)) {
-    data.setUTCHours(23, 59, 59, 999);
-  }
-  return data;
 }
 
 function formatarAgregado(row: AgregadoHistorico): EstatisticasHistoricoDto {
