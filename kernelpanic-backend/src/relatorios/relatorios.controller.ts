@@ -1,9 +1,12 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiBadRequestResponse,
   ApiCookieAuth,
   ApiForbiddenResponse,
   ApiOkResponse,
+  ApiProduces,
   ApiOperation,
   ApiQuery,
   ApiTags,
@@ -23,6 +26,9 @@ import { HistoricoClimaticoRespostaDto } from './dto/historico-climatico-respost
 import { IncidentesQueryDto } from './dto/incidentes-query.dto';
 import { RelatorioIncidentesDto } from './dto/incidentes-resposta.dto';
 import { IncidentesService } from './incidentes.service';
+import { CABECALHO_CSV_INCIDENTES, linhaCsvIncidente, montarLaudoIncidentes } from './laudo-incidentes';
+import { enviarCsv } from '../exportacao/csv';
+import { enviarPdf } from '../exportacao/pdf';
 import { RelatoriosService } from './relatorios.service';
 
 @Controller('relatorios')
@@ -68,6 +74,79 @@ export class RelatoriosController {
       },
     });
     return relatorio;
+  }
+
+  @Get('incidentes/pdf')
+  @ApiOperation({
+    summary: 'Emitir o laudo consolidado de incidentes em PDF',
+    description:
+      'Mesmos filtros de GET /relatorios/incidentes. O laudo traz identificação do órgão, período e filtros, resumo por severidade e por estação, tabela de ocorrências, responsável pela emissão e data/hora, e recebe um identificador único (cabeçalho X-Laudo-Id) registrado na trilha de auditoria, para rastrear o documento anexado a um decreto de emergência.',
+  })
+  @ApiProduces('application/pdf')
+  @ApiOkResponse({ description: 'Arquivo PDF do laudo.' })
+  @ApiBadRequestResponse({ description: 'Mesmas validações do relatório.' })
+  async laudoIncidentes(
+    @Query() query: IncidentesQueryDto,
+    @UsuarioAutenticado() usuario: UsuarioLogado,
+    @Res() resposta: Response,
+  ): Promise<void> {
+    const relatorio = await this.incidentesService.relatorio(query, usuario);
+    const { emitidoPor, orgao } = await this.incidentesService.emissor(usuario, relatorio.filtros.licitacaoId);
+    const laudoId = randomUUID();
+    const emitidoEm = new Date();
+    const documento = montarLaudoIncidentes(relatorio, { laudoId, orgao, emitidoPor, emitidoEm });
+
+    await this.auditoriaService.registrar({
+      acao: 'relatorios.incidentes.laudo',
+      entidade: 'LaudoIncidentes',
+      entidadeId: laudoId,
+      ...autoria(usuario),
+      detalhes: {
+        de: relatorio.de,
+        ate: relatorio.ate,
+        toleranciaMinutos: relatorio.toleranciaMinutos,
+        ...filtrosParaAuditoria(relatorio),
+        ocorrencias: relatorio.ocorrencias.length,
+        emitidoEm: emitidoEm.toISOString(),
+      },
+    });
+
+    resposta.setHeader('X-Laudo-Id', laudoId);
+    resposta.setHeader('Access-Control-Expose-Headers', 'X-Laudo-Id, Content-Disposition');
+    await enviarPdf(resposta, `laudo-incidentes-${laudoId}.pdf`, documento);
+  }
+
+  @Get('incidentes/csv')
+  @ApiOperation({
+    summary: 'Exportar as ocorrências do relatório de incidentes em CSV',
+    description: 'Mesmos filtros de GET /relatorios/incidentes; uma linha por ocorrência. A exportação é registrada na trilha de auditoria.',
+  })
+  @ApiProduces('text/csv')
+  @ApiOkResponse({ description: 'Arquivo CSV (separador ";", UTF-8 com BOM).' })
+  @ApiBadRequestResponse({ description: 'Mesmas validações do relatório.' })
+  async exportarIncidentes(
+    @Query() query: IncidentesQueryDto,
+    @UsuarioAutenticado() usuario: UsuarioLogado,
+    @Res() resposta: Response,
+  ): Promise<void> {
+    const relatorio = await this.incidentesService.relatorio(query, usuario);
+    await this.auditoriaService.registrar({
+      acao: 'relatorios.incidentes.exportar',
+      entidade: 'RelatorioIncidentes',
+      ...autoria(usuario),
+      detalhes: {
+        de: relatorio.de,
+        ate: relatorio.ate,
+        toleranciaMinutos: relatorio.toleranciaMinutos,
+        ...filtrosParaAuditoria(relatorio),
+        ocorrencias: relatorio.ocorrencias.length,
+      },
+    });
+
+    async function* lotes() {
+      yield relatorio.ocorrencias.map(linhaCsvIncidente);
+    }
+    await enviarCsv(resposta, 'incidentes.csv', CABECALHO_CSV_INCIDENTES, lotes());
   }
 
   @Get('historico-climatico')

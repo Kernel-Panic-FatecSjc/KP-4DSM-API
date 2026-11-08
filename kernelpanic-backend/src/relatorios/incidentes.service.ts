@@ -8,6 +8,7 @@ import { RAIO_REGIAO_KM } from '../regiao/regiao';
 import { IncidentesQueryDto } from './dto/incidentes-query.dto';
 import type { RelatorioIncidentesDto, ResumoEstacaoDto, ResumoSeveridadeDto } from './dto/incidentes-resposta.dto';
 import { agruparOcorrencias, TOLERANCIA_PADRAO_MINUTOS, type AlarmeParaOcorrencia, type Ocorrencia } from './ocorrencias';
+import type { OrgaoLaudo } from './laudo-incidentes';
 import { dataDoFiltro } from './periodo';
 
 /**
@@ -112,6 +113,25 @@ export class IncidentesService {
       ocorrencias,
     };
   }
+
+  /** Nome de quem emite e o órgão da licitação do relatório (nulo quando a Tecsus consulta todas). */
+  async emissor(usuario: UsuarioLogado, licitacaoId: string | undefined): Promise<EmissorLaudo> {
+    const [registro, orgao] = await Promise.all([
+      this.prisma.usuario.findUnique({ where: { id: usuario.sub }, select: { nome: true } }),
+      licitacaoId
+        ? this.prisma.licitacao.findUnique({
+            where: { id: licitacaoId },
+            select: { orgaoNome: true, orgaoMunicipio: true, orgaoUf: true, numeroContrato: true, codigoIdentificador: true },
+          })
+        : null,
+    ]);
+    return { emitidoPor: registro?.nome ?? usuario.email, orgao: orgao ?? null };
+  }
+}
+
+export interface EmissorLaudo {
+  emitidoPor: string;
+  orgao: OrgaoLaudo | null;
 }
 
 export function periodoDoRelatorio(query: Pick<IncidentesQueryDto, 'de' | 'ate'>): PeriodoIncidentes {

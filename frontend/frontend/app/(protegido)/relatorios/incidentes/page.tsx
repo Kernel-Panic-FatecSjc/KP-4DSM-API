@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, FileSearch, Filter, RefreshCw, ShieldCheck, X } from 'lucide-react';
+import { AlertTriangle, FileDown, FileSearch, FileText, Filter, RefreshCw, ShieldCheck, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { PageHeading } from '@/components/PageHeading';
 import { useUsuario } from '@/components/ProtectedLayout';
@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
 import {
   api,
+  baixarDaApi,
   ErroApi,
   type AcaoAlarme,
   type OcorrenciaIncidente,
@@ -81,6 +82,8 @@ export default function RelatorioIncidentesPage() {
   const [iniciais] = useState(() => filtrosIniciaisIncidentes());
   const [filtros, setFiltros] = useState<FiltrosIncidentes>(iniciais);
   const [relatorio, setRelatorio] = useState<RelatorioIncidentes | null>(null);
+  // Os arquivos saem com os filtros da última consulta, os mesmos da tela.
+  const [aplicados, setAplicados] = useState<FiltrosIncidentes>(iniciais);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -88,6 +91,7 @@ export default function RelatorioIncidentesPage() {
     async (consulta: FiltrosIncidentes) => {
       setCarregando(true);
       setErro(null);
+      setAplicados(consulta);
       try {
         setRelatorio(await api<RelatorioIncidentes>(`/relatorios/incidentes?${parametrosIncidentes(consulta)}`));
       } catch (erroCapturado) {
@@ -137,6 +141,27 @@ export default function RelatorioIncidentesPage() {
       <PageHeading
         title="Relatório de incidentes"
         description="Ocorrências de alertas por severidade, período e região, com o parâmetro que superou o limiar, a duração da anomalia e as ações tomadas."
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!relatorio || carregando}
+              onClick={() => baixarDaApi(`/relatorios/incidentes/csv?${parametrosIncidentes(aplicados)}`)}
+            >
+              <FileDown />
+              CSV
+            </Button>
+            <Button
+              type="button"
+              disabled={!relatorio || carregando}
+              onClick={() => baixarDaApi(`/relatorios/incidentes/pdf?${parametrosIncidentes(aplicados)}`)}
+            >
+              <FileText />
+              Emitir laudo (PDF)
+            </Button>
+          </div>
+        }
       />
 
       <form onSubmit={consultar} className="rounded-lg border border-border bg-card p-4" aria-label="Filtros do relatório">

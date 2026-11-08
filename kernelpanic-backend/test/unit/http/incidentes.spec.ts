@@ -4,7 +4,7 @@ import request from 'supertest';
 import { criarAppDeTeste } from '../../helpers';
 import { LICITACAO_A, LICITACAO_B } from '../sessoes';
 
-const TECSUS = { id: 'tecsus-1', email: 'tecsus@teste.com', tipo: 'ADMIN_TECSUS', licitacaoId: null, licitacao: null, ativo: true };
+const TECSUS = { id: 'tecsus-1', nome: 'Ana Tecsus', email: 'tecsus@teste.com', tipo: 'ADMIN_TECSUS', licitacaoId: null, licitacao: null, ativo: true };
 const MONITOR = {
   id: 'monitor-1',
   email: 'monitor@teste.com',
@@ -45,6 +45,7 @@ describe('GET /relatorios/incidentes', () => {
   const usuario = { findUnique: jest.fn() };
   const logAuditoria = { create: jest.fn() };
   const alarmeMock = { findMany: jest.fn() };
+  const licitacao = { findUnique: jest.fn() };
   const $queryRaw = jest.fn();
 
   const cookieDe = (u: { id: string; email: string }) => `access_token=${jwt.sign({ sub: u.id, email: u.email })}`;
@@ -53,7 +54,7 @@ describe('GET /relatorios/incidentes', () => {
 
   beforeAll(async () => {
     app = await criarAppDeTeste({
-      prismaMock: { usuario, logAuditoria, alarme: alarmeMock, $queryRaw, $connect: jest.fn(), $disconnect: jest.fn() },
+      prismaMock: { usuario, logAuditoria, alarme: alarmeMock, licitacao, $queryRaw, $connect: jest.fn(), $disconnect: jest.fn() },
     });
     jwt = app.get(JwtService);
   }, 60_000);
@@ -141,6 +142,78 @@ describe('GET /relatorios/incidentes', () => {
 
   it('exige login', async () => {
     await request(app.getHttpServer()).get('/relatorios/incidentes').query({ de: '2026-01-01', ate: '2026-01-31' }).expect(401);
+  });
+
+  it('emite o laudo em PDF com identificador único registrado na auditoria', async () => {
+    licitacao.findUnique.mockResolvedValue({
+      orgaoNome: 'Prefeitura de São José dos Campos',
+      orgaoMunicipio: 'São José dos Campos',
+      orgaoUf: 'SP',
+      numeroContrato: 'CT-01/2026',
+      codigoIdentificador: 'PMSJC-2026',
+    });
+
+    const rota = await request(app.getHttpServer())
+      .get('/relatorios/incidentes/pdf')
+      .query({ de: '2026-01-01', ate: '2026-01-31', licitacaoId: LICITACAO_A })
+      .set('Cookie', cookieDe(TECSUS))
+      .buffer(true)
+      .parse((res, callback) => {
+        const partes: Buffer[] = [];
+        res.on('data', (parte: Buffer) => partes.push(parte));
+        res.on('end', () => callback(null, Buffer.concat(partes)));
+      })
+      .expect(200);
+
+    expect(rota.headers['content-type']).toBe('application/pdf');
+    const laudoId = rota.headers['x-laudo-id'];
+    expect(laudoId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(rota.headers['content-disposition']).toContain(`laudo-incidentes-${laudoId}.pdf`);
+    expect((rota.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+    expect(licitacao.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { id: LICITACAO_A } }));
+    expect(logAuditoria.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        acao: 'relatorios.incidentes.laudo',
+        entidade: 'LaudoIncidentes',
+        entidadeId: laudoId,
+        usuarioId: TECSUS.id,
+        detalhes: expect.objectContaining({ ocorrencias: 2, licitacaoId: LICITACAO_A }),
+      }),
+    });
+  });
+
+  it('cada emissão gera um identificador novo', async () => {
+    const emitir = () =>
+      request(app.getHttpServer())
+        .get('/relatorios/incidentes/pdf')
+        .query({ de: '2026-01-01', ate: '2026-01-31' })
+        .set('Cookie', cookieDe(TECSUS))
+        .expect(200);
+    const [primeiro, segundo] = [await emitir(), await emitir()];
+    expect(primeiro.headers['x-laudo-id']).not.toBe(segundo.headers['x-laudo-id']);
+  });
+
+  it('exporta as ocorrências em CSV, uma linha por ocorrência, e audita', async () => {
+    const resposta = await request(app.getHttpServer())
+      .get('/relatorios/incidentes/csv')
+      .query({ de: '2026-01-01', ate: '2026-01-31' })
+      .set('Cookie', cookieDe(TECSUS))
+      .expect(200);
+
+    expect(resposta.headers['content-type']).toContain('text/csv');
+    const linhas = resposta.text.replace(/^\uFEFF/, '').trim().split('\r\n');
+    expect(linhas).toHaveLength(3);
+    expect(linhas[0]).toContain('Início;Fim;Duração (s);Estação;Parâmetro');
+    expect(linhas.some((linha) => linha.includes(';600;Centro;Pluviômetro;mm;MAIOR_QUE;30;45;3;EMERGENCIA;ABERTO;'))).toBe(true);
+    expect(logAuditoria.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ acao: 'relatorios.incidentes.exportar', entidade: 'RelatorioIncidentes' }),
+    });
+  });
+
+  it('PDF e CSV exigem login e validam os filtros', async () => {
+    await request(app.getHttpServer()).get('/relatorios/incidentes/pdf').query({ de: '2026-01-01', ate: '2026-01-31' }).expect(401);
+    await request(app.getHttpServer()).get('/relatorios/incidentes/csv').query({ de: '2026-01-01', ate: '2026-01-31' }).expect(401);
+    await request(app.getHttpServer()).get('/relatorios/incidentes/pdf').query({ de: '2026-01-01' }).set('Cookie', cookieDe(TECSUS)).expect(400);
   });
 
   it('documenta a rota no Swagger', async () => {
