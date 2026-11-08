@@ -12,7 +12,7 @@ import { ConsultarEstatisticasDto } from './dto/estatistica-resposta';
 import { RelatorioEstatisticoDto } from './dto/estatistica-relatorio';
 import { EstatisticaService } from './estatistica.service';
 
-@ApiTags('Relatórios')
+@ApiTags('relatorios')
 @ApiCookieAuth('access_token')
 @Controller('relatorios')
 @UseGuards(GuardaJwt, GuardaPerfil)
@@ -45,7 +45,11 @@ export class EstatisticaController {
   }
 
   @Get('estatisticas/exportar.csv')
-  @ApiOperation({ summary: 'Exporta em CSV a síntese estatística dos filtros informados' })
+  @ApiOperation({
+    summary: 'Exporta em CSV a síntese estatística dos filtros informados',
+    description:
+      'Gera um arquivo CSV com as estatísticas de cada estação e período informado na consulta. Reutiliza os mesmos filtros e validações da comparação de estatísticas.',
+  })
   async exportarCsv(
     @Query() query: ConsultarEstatisticasDto,
     @UsuarioAutenticado() usuario: UsuarioLogado,
@@ -88,7 +92,11 @@ export class EstatisticaController {
   }
 
   @Post('estatisticas/exportar-pdf')
-  @ApiOperation({ summary: 'Registra a solicitação de impressão do relatório estatístico em PDF' })
+  @ApiOperation({
+    summary: 'Registra a solicitação de impressão do relatório estatístico em PDF',
+    description:
+      'Registra na auditoria a solicitação de exportação em PDF para os filtros informados e retorna uma confirmação. A geração do arquivo PDF ocorre no cliente.',
+  })
   async registrarExportacaoPdf(
     @Body() filtros: ConsultarEstatisticasDto,
     @UsuarioAutenticado() usuario: UsuarioLogado,
