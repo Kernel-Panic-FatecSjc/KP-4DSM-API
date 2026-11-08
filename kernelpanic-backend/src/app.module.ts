@@ -19,6 +19,7 @@ import { SaudeModule } from './saude/saude.module';
 import { LicitacoesModule } from './licitacoes/licitacoes.module';
 import { BrokerModule } from './broker/broker.module';
 import { RelatoriosModule } from './relatorios/relatorios.module';
+import { EstatisticasModule } from './estatistica/estatisticas.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { RelatoriosModule } from './relatorios/relatorios.module';
     LimiteRequisicoesModule,
     PrismaModule,
     BrokerModule,
+    EstatisticasModule,
     RegiaoModule,
     UsuariosModule,
     AutenticacaoModule,
