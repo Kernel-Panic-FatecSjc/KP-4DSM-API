@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Ip, Post, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
@@ -29,6 +29,7 @@ export class AutenticacaoController {
   @Post('login')
   async login(
     @Body() dto: LoginDto,
+    @Ip() enderecoIp: string,
     @Res({ passthrough: true }) resposta: Response,
   ): Promise<UsuarioRespostaDto> {
     const usuario = await this.autenticacaoService.validarUsuario(dto.email, dto.senha);
@@ -40,6 +41,7 @@ export class AutenticacaoController {
       entidade: 'Autenticacao',
       usuarioId: usuario.id,
       licitacaoId: usuario.licitacaoId,
+      enderecoIp,
       detalhes: { email: usuario.email },
     });
 
