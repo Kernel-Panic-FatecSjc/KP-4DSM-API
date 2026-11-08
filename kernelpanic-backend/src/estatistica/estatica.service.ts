@@ -9,6 +9,7 @@ import {
   DiferencaMetricaDto,
   PeriodoEstatisticoDto,
   RelatorioEstatisticoDto,
+  MicroclimaRiscoDto,
 } from './dto/estatistica-relatorio';
 import { EstatisticaEstacaoDto } from './dto/estatitisca-estacao';
 
@@ -76,7 +77,37 @@ export class EstatisticaService {
     relatorio.periodos = periodos;
     relatorio.metodoCalculo = 'Populacional: desvio padrão (STDDEV_POP) e variância (VAR_POP)';
     relatorio.comparacoes = comparacoes;
+    relatorio.microclimasRisco = this.identificarMicroclimasRisco(periodos);
     return relatorio;
+  }
+
+  private identificarMicroclimasRisco(periodos: PeriodoEstatisticoDto[]): MicroclimaRiscoDto[] {
+    const limite = 2;
+    return periodos.flatMap((periodo, periodoIndice) => {
+      const medias = periodo.estacoes
+        .map((estacao) => estacao.media)
+        .filter((media): media is number => media !== null && Number.isFinite(media))
+        .sort((a, b) => a - b);
+      if (medias.length === 0) return [];
+      const meio = Math.floor(medias.length / 2);
+      const medianaGrupo = medias.length % 2 === 0
+        ? (medias[meio - 1] + medias[meio]) / 2
+        : medias[meio];
+
+      return periodo.estacoes.flatMap((estacao) => {
+        if (estacao.media === null) return [];
+        const diferencaParaMediana = estacao.media - medianaGrupo;
+        if (Math.abs(diferencaParaMediana) <= limite) return [];
+        return [{
+          periodoIndice,
+          estacaoId: estacao.estacaoId,
+          estacaoNome: estacao.estacaoNome,
+          media: estacao.media,
+          medianaGrupo,
+          diferencaParaMediana,
+        }];
+      });
+    });
   }
 
   private parsearPeriodo(valor: string): Intervalo {
