@@ -10,7 +10,7 @@ export class ConsultarEstatisticasDto {
   @IsString({ each: true })
   estacaoIds: string[];
 
-  @ApiProperty({ description: 'ID do parâmetro medido.' })
+  @ApiProperty({ description: 'ID do tipo de parâmetro medido, comum às estações comparadas.' })
   @IsString()
   @IsNotEmpty()
   parametroId: string;
