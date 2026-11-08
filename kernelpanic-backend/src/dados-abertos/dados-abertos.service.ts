@@ -61,6 +61,17 @@ export class DadosAbertosService {
     const filtroEstacao = query.estacaoId ? Prisma.sql`AND m."estacaoId" = ${query.estacaoId}` : Prisma.empty;
     const filtroParametro = query.parametro ? Prisma.sql`AND LOWER(tp.nome) = LOWER(${query.parametro})` : Prisma.empty;
 
+    // O mesmo recorte alimenta a página e, se ela vier vazia, a contagem do total.
+    const origem = Prisma.sql`
+      FROM medidas m
+      JOIN estacoes e ON e.id = m."estacaoId"
+      JOIN parametros p ON p.id = m."parametroId"
+      JOIN tipos_parametro tp ON tp.id = p."tipoParametroId"
+      WHERE m.unixtime >= ${BigInt(Math.floor(de.getTime() / 1000))}
+        AND m.unixtime <= ${BigInt(Math.floor(ate.getTime() / 1000))}
+        ${filtroEstacao}
+        ${filtroParametro}`;
+
     const linhas = await this.prisma.$queryRaw<LinhaMedida[]>`
       SELECT
         e.id AS "estacaoId",
@@ -72,18 +83,22 @@ export class DadosAbertosService {
         (CASE WHEN tp.agregacao = 'SOMA' THEN SUM(m.valor) ELSE AVG(m.valor) END)::float8 AS "valor",
         COUNT(*) AS "quantidadeLeituras",
         COUNT(*) OVER () AS "total"
-      FROM medidas m
-      JOIN estacoes e ON e.id = m."estacaoId"
-      JOIN parametros p ON p.id = m."parametroId"
-      JOIN tipos_parametro tp ON tp.id = p."tipoParametroId"
-      WHERE m.unixtime >= ${BigInt(Math.floor(de.getTime() / 1000))}
-        AND m.unixtime <= ${BigInt(Math.floor(ate.getTime() / 1000))}
-        ${filtroEstacao}
-        ${filtroParametro}
+      ${origem}
       GROUP BY e.id, e.nome, tp.id, tp.nome, tp.unidade, tp.agregacao, "inicio"
       ORDER BY "inicio", e.nome, tp.nome, e.id, tp.id
       LIMIT ${tamanhoPagina} OFFSET ${(pagina - 1) * tamanhoPagina}
     `;
+
+    // Página além do fim vem sem linhas e, portanto, sem o total da janela: conta à parte.
+    let total = linhas.length ? Number(linhas[0].total) : 0;
+    if (!linhas.length && pagina > 1) {
+      const [contagem] = await this.prisma.$queryRaw<{ total: bigint }[]>`
+        SELECT COUNT(*) AS total FROM (
+          SELECT 1 ${origem}
+          GROUP BY e.id, tp.id, date_trunc(${unidadeSql}, to_timestamp(m.unixtime::double precision), 'UTC')
+        ) AS grupos`;
+      total = Number(contagem.total);
+    }
 
     return {
       dados: linhas.map((linha) => ({
@@ -97,8 +112,7 @@ export class DadosAbertosService {
         valor: linha.valor,
         quantidadeLeituras: Number(linha.quantidadeLeituras),
       })),
-      // Página além do fim vem sem linhas e, portanto, sem o total.
-      paginacao: { pagina, tamanhoPagina, total: linhas.length ? Number(linhas[0].total) : 0 },
+      paginacao: { pagina, tamanhoPagina, total },
     };
   }
 

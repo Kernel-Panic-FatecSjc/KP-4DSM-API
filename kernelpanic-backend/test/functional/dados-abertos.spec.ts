@@ -93,6 +93,13 @@ describe('Dados abertos: medidas (funcional)', () => {
     expect(pagina2.body.paginacao).toEqual({ pagina: 2, tamanhoPagina: 2, total: 3 });
   });
 
+  it('página além da última vem vazia, mas com o total correto', async () => {
+    const { body } = await request(app.getHttpServer()).get(`${consulta}&estacaoId=${estacaoId}&tamanhoPagina=2&pagina=5`).expect(200);
+
+    expect(body.dados).toEqual([]);
+    expect(body.paginacao).toEqual({ pagina: 5, tamanhoPagina: 2, total: 3 });
+  });
+
   it('período sem medidas devolve lista vazia, sem inventar dados', async () => {
     const { body } = await request(app.getHttpServer())
       .get(`/v1/dados-abertos/medidas?de=2031-04-01&ate=2031-04-02&granularidade=hora&estacaoId=${estacaoId}`)
