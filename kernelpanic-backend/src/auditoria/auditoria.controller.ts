@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Res, UnprocessableEntityException, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import { GuardaPerfil } from '../autenticacao/guarda-perfil.guard';
@@ -8,6 +8,7 @@ import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorato
 import { enviarCsv } from '../exportacao/csv';
 import { AuditoriaService } from './auditoria.service';
 import { autoria } from './autoria';
+import { AuditoriaRespostaDto } from './dto/auditoria-resposta.dto';
 import { ListaAuditoriaRespostaDto } from './dto/lista-auditoria-resposta.dto';
 import { ListarAuditoriaQueryDto } from './dto/listar-auditoria-query.dto';
 
@@ -36,8 +37,14 @@ export class AuditoriaController {
     @Res() resposta: Response,
   ): Promise<void> {
     const lotes = this.auditoriaService.exportar(query, usuario);
-    // Primeiro lote antes do cabeçalho HTTP: o 400 de período ausente ainda sai como JSON.
+    // Primeiro lote antes do cabeçalho HTTP: o 400 de período ausente e o 422
+    // de filtro sem registro ainda saem como JSON.
     const primeiro = await lotes.next();
+    // UC11-R5: só exporta quando o filtro traz pelo menos um registro. Um CSV
+    // só com o cabeçalho pareceria uma trilha vazia, e não um filtro sem resultado.
+    if (primeiro.done || primeiro.value.length === 0) {
+      throw new UnprocessableEntityException('Nenhum registro de auditoria para os filtros informados: não há o que exportar');
+    }
     await this.auditoriaService.registrar({
       acao: 'auditoria.exportar',
       entidade: 'LogAuditoria',
@@ -54,27 +61,39 @@ export class AuditoriaController {
     await enviarCsv(
       resposta,
       'auditoria.csv',
-      ['Data/hora', 'Usuário', 'Ação', 'Entidade', 'ID da entidade', 'Licitação', 'Detalhes'],
+      CABECALHO_CSV_AUDITORIA,
       linhas(),
     );
   }
 }
 
-function linhaAuditoria(registro: {
-  criadoEm: Date;
-  usuario: { nome: string } | null;
-  acao: string;
-  entidade: string;
-  entidadeId: string | null;
-  licitacaoId: string | null;
-  detalhes: unknown;
-}): unknown[] {
+/**
+ * Mesmos campos da consulta (GET /auditoria, já com o IP mascarado e sem dados
+ * sensíveis), mais os ids que permitem rastrear o registro de volta na trilha.
+ */
+export const CABECALHO_CSV_AUDITORIA = [
+  'ID do registro',
+  'Data/hora',
+  'ID do usuário',
+  'Usuário',
+  'Ação',
+  'Entidade',
+  'ID da entidade',
+  'IP de origem (mascarado)',
+  'Licitação',
+  'Detalhes',
+];
+
+export function linhaAuditoria(registro: AuditoriaRespostaDto): unknown[] {
   return [
+    registro.id,
     registro.criadoEm,
+    registro.usuario?.id ?? null,
     registro.usuario?.nome ?? 'Visitante/sistema',
     registro.acao,
     registro.entidade,
     registro.entidadeId,
+    registro.enderecoIp,
     registro.licitacaoId ?? 'Tecsus',
     registro.detalhes,
   ];
