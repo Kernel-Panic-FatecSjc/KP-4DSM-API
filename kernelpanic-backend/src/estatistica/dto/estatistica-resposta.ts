@@ -1,12 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsNotEmpty, IsString } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsNotEmpty, IsString } from 'class-validator';
 
 export class ConsultarEstatisticasDto {
   @ApiProperty({ type: [String], minItems: 1, description: 'IDs das estações; repita o parâmetro para cada estação.' })
   @Transform(({ value }) => Array.isArray(value) ? value : [value])
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(200)
   @IsString({ each: true })
   estacaoIds: string[];
 
@@ -22,6 +23,7 @@ export class ConsultarEstatisticasDto {
   })
   @IsArray()
   @ArrayMinSize(2)
+  @ArrayMaxSize(12)
   @IsString({ each: true })
   periodos: string[];
 }
