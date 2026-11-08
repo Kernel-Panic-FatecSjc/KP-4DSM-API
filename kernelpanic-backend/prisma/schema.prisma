@@ -283,6 +283,11 @@ model Alarme {
   /// Observação de quem tratou o alarme (a última informada).
   observacao       String?
 
+  // Relatório de incidentes: parte das medidas do período e acha os alarmes
+  // delas; sem índice, cada consulta varria a tabela de alarmes inteira.
+  @@index([medidaId])
+  // Alarmes de um alerta (filtros por severidade/estação e cascade do alerta).
+  @@index([alertaId])
   @@map("alarmes")
 }
 
