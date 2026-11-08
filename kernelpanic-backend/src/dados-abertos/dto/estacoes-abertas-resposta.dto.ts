@@ -30,7 +30,7 @@ export class EstacaoAbertaDto {
 }
 
 export class EstacoesAbertasRespostaDto {
-  @ApiProperty({ type: [EstacaoAbertaDto] })
+  @ApiProperty({ type: [EstacaoAbertaDto], description: 'Estações da página.' })
   dados!: EstacaoAbertaDto[];
 
   @ApiProperty({ type: PaginacaoAbertaDto })

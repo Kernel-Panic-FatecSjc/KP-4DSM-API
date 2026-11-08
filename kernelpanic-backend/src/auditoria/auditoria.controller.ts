@@ -1,4 +1,4 @@
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
@@ -6,6 +6,7 @@ import { GuardaPerfil } from '../autenticacao/guarda-perfil.guard';
 import type { UsuarioLogado } from '../autenticacao/payload-jwt.interface';
 import { Perfis, PERFIS_ADMIN } from '../autenticacao/perfis.decorator';
 import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
+import { Proibido, RequisicaoInvalida, RotaLogada } from '../documentacao/respostas';
 import { enviarCsv } from '../exportacao/csv';
 import { AuditoriaService } from './auditoria.service';
 import { autoria } from './autoria';
@@ -18,10 +19,19 @@ import { ListarAuditoriaQueryDto } from './dto/listar-auditoria-query.dto';
 @Controller('auditoria')
 @UseGuards(GuardaJwt, GuardaPerfil)
 @Perfis(...PERFIS_ADMIN)
+@RotaLogada()
+@Proibido('Perfil sem permissão: só os administradores consultam a trilha.')
 export class AuditoriaController {
   constructor(private readonly auditoriaService: AuditoriaService) {}
 
   @Get()
+  @ApiOperation({
+    summary: 'Consultar a trilha de auditoria',
+    description:
+      'Registros paginados, do mais recente para o mais antigo. A Tecsus vê todos; o admin da licitação lê só a trilha da própria licitação. Consultar não gera registro novo.',
+  })
+  @ApiOkResponse({ type: ListaAuditoriaRespostaDto, description: 'Página de registros de auditoria.' })
+  @RequisicaoInvalida('Filtro ou paginação inválidos.')
   listar(
     @Query() query: ListarAuditoriaQueryDto,
     @UsuarioAutenticado() usuario: UsuarioLogado,
@@ -32,6 +42,17 @@ export class AuditoriaController {
   // Exportar, ao contrário de consultar, é registrado: é a cópia da trilha
   // saindo do sistema.
   @Get('exportar')
+  @ApiOperation({
+    summary: 'Exportar a trilha de auditoria em CSV',
+    description:
+      'Arquivo CSV gerado em streaming (separador `;`, BOM UTF-8). O período (`de` e `ate`) é obrigatório. A exportação é registrada na própria trilha.',
+  })
+  @ApiProduces('text/csv')
+  @ApiOkResponse({
+    description: 'Arquivo CSV com os registros do período.',
+    content: { 'text/csv': { schema: { type: 'string', example: 'Data/hora;Usuário;Ação;Entidade;ID da entidade;Licitação;Detalhes' } } },
+  })
+  @RequisicaoInvalida('Período (`de` e `ate`) ausente ou inválido.')
   async exportar(
     @Query() query: ListarAuditoriaQueryDto,
     @UsuarioAutenticado() usuario: UsuarioLogado,

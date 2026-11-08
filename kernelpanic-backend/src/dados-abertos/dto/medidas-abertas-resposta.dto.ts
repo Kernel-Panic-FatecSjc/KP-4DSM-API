@@ -41,7 +41,7 @@ export class PaginacaoAbertaDto {
 }
 
 export class MedidasAbertasRespostaDto {
-  @ApiProperty({ type: [MedidaAbertaDto] })
+  @ApiProperty({ type: [MedidaAbertaDto], description: 'Linhas da página.' })
   dados!: MedidaAbertaDto[];
 
   @ApiProperty({ type: PaginacaoAbertaDto })

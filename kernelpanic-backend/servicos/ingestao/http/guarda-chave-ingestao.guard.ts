@@ -1,10 +1,10 @@
 import { CanActivate, ExecutionContext, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Request } from 'express';
-import { chaveIngestaoConfere } from '../../../src/estacoes/chave-ingestao';
+import { chaveIngestaoConfere, HEADER_CHAVE_INGESTAO } from '../../../src/estacoes/chave-ingestao';
 import { PrismaService } from '../../../src/prisma/prisma.service';
 
-export const HEADER_CHAVE_INGESTAO = 'x-chave-estacao';
+export { HEADER_CHAVE_INGESTAO };
 
 // Únicos ambientes em que a rota de ingestão pode ficar sem chave.
 const AMBIENTES_COM_ROTA_ABERTA = ['development', 'test'];

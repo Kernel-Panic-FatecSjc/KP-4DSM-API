@@ -38,7 +38,7 @@ export class AlarmeAbertoDto {
 }
 
 export class AlarmesAbertosRespostaDto {
-  @ApiProperty({ type: [AlarmeAbertoDto] })
+  @ApiProperty({ type: [AlarmeAbertoDto], description: 'Alarmes da página.' })
   dados!: AlarmeAbertoDto[];
 
   @ApiProperty({ type: PaginacaoAbertaDto })

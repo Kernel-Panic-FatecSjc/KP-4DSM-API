@@ -94,7 +94,7 @@ Legenda: **Atendido** (já vale hoje), **A implementar** (definido neste padrão
 | 4 | Organização e intercâmbio: codificação de caracteres UTF-8 | UTF-8 em JSON e CSV | A implementar (SCRUM-48/49) |
 | 5 | Organização e intercâmbio: datas no padrão ISO 8601 | Datas em UTC com `Z` | A implementar (SCRUM-48/49) |
 | 6 | Organização e intercâmbio: referência geográfica em sistema geodésico padrão | WGS84 (EPSG:4326) | A implementar (SCRUM-49) |
-| 7 | Organização e intercâmbio: dados descritos e documentados (metadados) | Dicionário de dados (seção 2) e OpenAPI 3.0 em `/docs` e `/docs-json` | Dicionário feito; OpenAPI parcial (SCRUM-45 feita, SCRUM-46 pendente) |
+| 7 | Organização e intercâmbio: dados descritos e documentados (metadados) | Dicionário de dados (seção 2) e OpenAPI 3.0 em `/docs` e `/docs-json` | Atendido: dicionário feito e OpenAPI de todas as rotas com teste de cobertura (SCRUM-45/46) |
 | 8 | Organização e intercâmbio: contrato estável e versionado | Prefixo `/v1`, campos estáveis na versão | A implementar (SCRUM-48/49) |
 | 9 | Segurança: proteção contra abuso das rotas públicas | Limite de requisições existente (429) | Atendido |
 | 10 | Segurança e privacidade: não expor dados pessoais (LGPD) | Seção 2.4; testes na SCRUM-51 | A implementar (SCRUM-49/51) |

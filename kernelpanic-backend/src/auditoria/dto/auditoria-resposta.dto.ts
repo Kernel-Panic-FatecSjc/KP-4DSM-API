@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import type { Prisma } from '../../generated/prisma/client';
 import { isIP } from 'node:net';
 
@@ -31,16 +32,33 @@ function mascararIp(enderecoIp: string | null): string | null {
   return '***';
 }
 
+export class UsuarioDaAuditoriaDto {
+  @ApiProperty({ example: '8f14e45f-ceea-4f67-9d6b-0c6f4c1a2b3d' })
+  id!: string;
+
+  @ApiProperty({ example: 'Maria Souza' })
+  nome!: string;
+}
+
 export class AuditoriaRespostaDto {
+  @ApiProperty({ example: '3f2504e0-4f89-41d3-9a0c-0305e82c3301' })
   id: string;
+  @ApiProperty({ example: '2026-11-08T14:00:00.000Z', description: 'Momento do registro (ISO 8601, UTC).' })
   criadoEm: Date;
+  @ApiProperty({ example: 'usuarios.criar', description: 'Ação registrada.' })
   acao: string;
+  @ApiProperty({ example: 'Usuario', description: 'Entidade afetada.' })
   entidade: string;
+  @ApiProperty({ example: '8f14e45f-ceea-4f67-9d6b-0c6f4c1a2b3d', nullable: true, description: 'Id da entidade afetada, quando há.' })
   entidadeId: string | null;
+  @ApiProperty({ example: '189.12.*.*', nullable: true, description: 'IP de origem, mascarado.' })
   enderecoIp: string | null;
+  @ApiProperty({ type: 'object', additionalProperties: true, nullable: true, example: { campos: ['nome'] }, description: 'Detalhes da ação, sem senha, token nem email.' })
   detalhes: unknown;
+  @ApiProperty({ type: UsuarioDaAuditoriaDto, nullable: true, description: 'Quem fez a ação; null para visitante ou sistema.' })
   usuario: { id: string; nome: string } | null;
   /** Licitação de quem fez a ação; nula = Tecsus ou visitante. */
+  @ApiProperty({ example: '5b0c4c1e-6a1f-4c55-9c8b-0f3f2f7f4a10', nullable: true, description: 'Licitação de quem fez a ação; null para Tecsus ou visitante.' })
   licitacaoId: string | null;
 
   constructor(registro: RegistroComUsuario) {

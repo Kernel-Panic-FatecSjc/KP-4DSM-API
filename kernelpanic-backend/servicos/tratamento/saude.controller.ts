@@ -1,5 +1,6 @@
-import { ApiTags } from '@nestjs/swagger';
+import { ApiOkResponse, ApiOperation, ApiServiceUnavailableResponse, ApiTags } from '@nestjs/swagger';
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
+import { SaudeTratamentoRespostaDto } from './dto/saude-tratamento-resposta.dto';
 import { TratamentoService } from './tratamento.service';
 
 /**
@@ -12,6 +13,9 @@ export class SaudeTratamentoController {
   constructor(private readonly tratamento: TratamentoService) {}
 
   @Get()
+  @ApiOperation({ summary: 'Verificar a saúde do serviço de tratamento', description: 'Health check: último ciclo, escuta do banco e leituras brutas pendentes.' })
+  @ApiOkResponse({ type: SaudeTratamentoRespostaDto, description: 'Serviço saudável.' })
+  @ApiServiceUnavailableResponse({ type: SaudeTratamentoRespostaDto, description: 'O último ciclo falhou ou o banco não responde.' })
   async verificar() {
     const estado = this.tratamento.estado();
     let pendentes: number | null = null;
