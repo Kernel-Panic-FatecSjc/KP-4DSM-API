@@ -1,3 +1,4 @@
+import { ApiOkResponse, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -6,13 +7,16 @@ import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import { GuardaPerfil } from '../autenticacao/guarda-perfil.guard';
 import type { UsuarioLogado } from '../autenticacao/payload-jwt.interface';
 import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
+import { RequisicaoInvalida, RotaLogada } from '../documentacao/respostas';
 import { enviarCsv } from '../exportacao/csv';
 import { ListarLeiturasBrutasQueryDto } from './dto/listar-leituras-brutas-query.dto';
 import { ListaLeiturasBrutasRespostaDto } from './dto/lista-leituras-brutas-resposta.dto';
 import { LeiturasBrutasService } from './leituras-brutas.service';
 
+@ApiTags('leituras-brutas')
 @Controller('leituras-brutas')
 @UseGuards(GuardaJwt, GuardaPerfil)
+@RotaLogada()
 export class LeiturasBrutasController {
   constructor(
     private readonly leiturasBrutasService: LeiturasBrutasService,
@@ -20,6 +24,12 @@ export class LeiturasBrutasController {
   ) {}
 
   @Get()
+  @ApiOperation({
+    summary: 'Listar leituras brutas',
+    description: 'Pacotes exatamente como chegaram dos dispositivos, imutáveis. Usuário de licitação vê só os das estações da própria licitação.',
+  })
+  @ApiOkResponse({ type: ListaLeiturasBrutasRespostaDto, description: 'Página de leituras brutas.' })
+  @RequisicaoInvalida('Filtro ou paginação inválidos.')
   listar(
     @Query() query: ListarLeiturasBrutasQueryDto,
     @UsuarioAutenticado() usuario: UsuarioLogado,
@@ -29,6 +39,16 @@ export class LeiturasBrutasController {
 
   /** CSV gerado no backend, em streaming, com período obrigatório (de e ate). */
   @Get('exportar')
+  @ApiOperation({
+    summary: 'Exportar leituras brutas em CSV',
+    description: 'Arquivo CSV gerado em streaming (separador `;`, BOM UTF-8). O período (`de` e `ate`) é obrigatório. A exportação é registrada na auditoria.',
+  })
+  @ApiProduces('text/csv')
+  @ApiOkResponse({
+    description: 'Arquivo CSV com as leituras do período.',
+    content: { 'text/csv': { schema: { type: 'string', example: 'ID da leitura;VID da estação;Recebida em;Unix time do dispositivo;Latitude;Longitude' } } },
+  })
+  @RequisicaoInvalida('Período (`de` e `ate`) ausente ou inválido.')
   async exportar(
     @Query() query: ListarLeiturasBrutasQueryDto,
     @UsuarioAutenticado() usuario: UsuarioLogado,

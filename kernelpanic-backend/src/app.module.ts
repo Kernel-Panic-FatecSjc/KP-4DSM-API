@@ -19,6 +19,7 @@ import { SaudeModule } from './saude/saude.module';
 import { LicitacoesModule } from './licitacoes/licitacoes.module';
 import { BrokerModule } from './broker/broker.module';
 import { RelatoriosModule } from './relatorios/relatorios.module';
+import { DadosAbertosModule } from './dados-abertos/dados-abertos.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { RelatoriosModule } from './relatorios/relatorios.module';
     LeiturasBrutasModule,
     SensoresModule,
     RelatoriosModule,
+    DadosAbertosModule,
   ],
   controllers: [AppController],
   providers: [AppService],

@@ -1,5 +1,9 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
+// Fica em src (e não no guard do serviço de ingestão) para a configuração do
+// Swagger da API poder usá-lo sem importar de fora do rootDir do build.
+export const HEADER_CHAVE_INGESTAO = 'x-chave-estacao';
+
 export interface ChaveIngestaoGerada {
   chave: string;
   hash: string;

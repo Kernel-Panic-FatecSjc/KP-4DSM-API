@@ -31,7 +31,9 @@
     "test:cov": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "test:debug": "node --experimental-vm-modules --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:functional": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-functional.json",
-    "pdf:exemplo": "ts-node scripts/gerar-pdf-exemplo.ts"
+    "pdf:exemplo": "ts-node scripts/gerar-pdf-exemplo.ts",
+    "openapi:gerar": "node dist/gerar-openapi.js",
+    "openapi:validar": "spectral lint openapi.json --fail-severity=warn"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
@@ -63,6 +65,7 @@
     "@nestjs/mau": "^0.2.6",
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.0.1",
+    "@stoplight/spectral-cli": "^6.17.1",
     "@types/bcrypt": "^6.0.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.0",
