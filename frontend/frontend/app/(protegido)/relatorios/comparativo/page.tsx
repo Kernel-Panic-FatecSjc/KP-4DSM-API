@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { AlertTriangle, ChartNoAxesCombined, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { AlertTriangle, ChartNoAxesCombined, Download, FileText, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { PageHeading } from '@/components/PageHeading';
 import { Button } from '@/components/ui/button';
-import { api, ErroApi, type EstacaoApi, type SensorApi } from '@/lib/api';
+import { api, baixarDaApi, ErroApi, type EstacaoApi, type SensorApi } from '@/lib/api';
 
 type Periodo = { inicio: string; fim: string };
 
@@ -51,6 +51,30 @@ function formatarData(valor: string) {
   return new Intl.DateTimeFormat('pt-BR').format(new Date(valor));
 }
 
+function montarConsulta(estacoes: string[], parametroId: string, periodos: Periodo[]) {
+  const query = new URLSearchParams();
+  estacoes.forEach((id) => query.append('estacaoIds', id));
+  query.set('parametroId', parametroId);
+  periodos.forEach((periodo) => {
+    const inicio = new Date(`${periodo.inicio}T00:00:00`).toISOString();
+    const fim = new Date(`${periodo.fim}T23:59:59.999`).toISOString();
+    query.append('periodos', `${inicio}|${fim}`);
+  });
+  return query;
+}
+
+function encontrarDiscrepantes(resultado: Resultado) {
+  const medianas = resultado.periodos.flatMap((periodo) =>
+    periodo.estacoes.filter((estacao) => estacao.mediana !== null).map((estacao) => estacao.mediana!),
+  );
+  if (!medianas.length) return [] as Estatistica[];
+  const media = medianas.reduce((total, valor) => total + valor, 0) / medianas.length;
+  const desvio = Math.sqrt(medianas.reduce((total, valor) => total + (valor - media) ** 2, 0) / medianas.length);
+  return resultado.periodos.flatMap((periodo) => periodo.estacoes).filter((estacao) =>
+    estacao.mediana !== null && desvio > 0 && Math.abs(estacao.mediana - media) > 2 * desvio,
+  );
+}
+
 function Boxplot({ resultado }: { resultado: Resultado }) {
   const todosValores = resultado.periodos.flatMap((periodo) =>
     periodo.estacoes.flatMap((estacao) => [estacao.minimo, estacao.maximo]),
@@ -63,15 +87,7 @@ function Boxplot({ resultado }: { resultado: Resultado }) {
   const menorValor = Math.min(...todosValores);
   const maiorValor = Math.max(...todosValores);
   const diferenca = maiorValor - menorValor || 1;
-  const medianas = resultado.periodos.flatMap((periodo) =>
-    periodo.estacoes.map((estacao) => estacao.mediana),
-  ).filter((valor): valor is number => valor !== null);
-  const mediaMedianas = medianas.length
-    ? medianas.reduce((total, valor) => total + valor, 0) / medianas.length
-    : 0;
-  const desvioMedianas = medianas.length
-    ? Math.sqrt(medianas.reduce((total, valor) => total + (valor - mediaMedianas) ** 2, 0) / medianas.length)
-    : 0;
+  const discrepantes = encontrarDiscrepantes(resultado);
 
   return (
     <div className="space-y-3 p-4">
@@ -82,9 +98,7 @@ function Boxplot({ resultado }: { resultado: Resultado }) {
           </p>
           {periodo.estacoes.map((estacao) => {
             const semValores = estacao.minimo === null || estacao.maximo === null;
-            const discrepante = estacao.mediana !== null
-              && desvioMedianas > 0
-              && Math.abs(estacao.mediana - mediaMedianas) > 2 * desvioMedianas;
+            const discrepante = discrepantes.some((item) => item.estacaoId === estacao.estacaoId);
             const posicao = (valor: number) => `${((valor - menorValor) / diferenca) * 100}%`;
             const inicioCaixa = estacao.quartil1 ?? estacao.minimo;
             const fimCaixa = estacao.quartil3 ?? estacao.maximo;
@@ -131,6 +145,7 @@ export default function ComparativoPage() {
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [consultando, setConsultando] = useState(false);
+  const [preparandoPdf, setPreparandoPdf] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
@@ -174,14 +189,7 @@ export default function ComparativoPage() {
       return;
     }
 
-    const query = new URLSearchParams();
-    estacoesSelecionadas.forEach((id) => query.append('estacaoIds', id));
-    query.set('parametroId', parametroId);
-    periodos.forEach((periodo) => {
-      const inicio = new Date(`${periodo.inicio}T00:00:00`).toISOString();
-      const fim = new Date(`${periodo.fim}T23:59:59.999`).toISOString();
-      query.append('periodos', `${inicio}|${fim}`);
-    });
+    const query = montarConsulta(estacoesSelecionadas, parametroId, periodos);
 
     setConsultando(true);
     try {
@@ -193,6 +201,29 @@ export default function ComparativoPage() {
     }
   }
 
+  async function exportarPdf() {
+    if (!resultado) return;
+    setErro(null);
+    setPreparandoPdf(true);
+    try {
+      await api('/relatorios/estatisticas/exportar-pdf', {
+        method: 'POST',
+        body: JSON.stringify({ estacaoIds: estacoesSelecionadas, parametroId, periodos: montarConsulta(estacoesSelecionadas, parametroId, periodos).getAll('periodos') }),
+      });
+      window.print();
+    } catch (erroApi) {
+      setErro(erroApi instanceof ErroApi ? erroApi.message : 'Não foi possível preparar o PDF.');
+    } finally {
+      setPreparandoPdf(false);
+    }
+  }
+
+  function exportarCsv() {
+    if (!resultado) return;
+    const query = montarConsulta(estacoesSelecionadas, parametroId, periodos);
+    baixarDaApi(`/relatorios/estatisticas/exportar.csv?${query.toString()}`);
+  }
+
   const sensoresDisponiveis = sensores.filter((sensor) =>
     estacoes.some((estacao) =>
       (estacoesSelecionadas.length === 0 || estacoesSelecionadas.includes(estacao.id))
@@ -202,13 +233,23 @@ export default function ComparativoPage() {
   const semDados = resultado?.periodos.every((periodo) =>
     periodo.estacoes.every((estacao) => estacao.quantidade === 0),
   );
+  const discrepantes = resultado ? encontrarDiscrepantes(resultado) : [];
+  const maiorMediana = resultado
+    ? resultado.periodos.flatMap((periodo) => periodo.estacoes)
+      .filter((estacao) => estacao.mediana !== null)
+      .sort((a, b) => b.mediana! - a.mediana!)[0]
+    : undefined;
   const estiloCampo = 'flex flex-col gap-1.5 text-xs text-muted-foreground';
 
   return (
-    <div className="space-y-5">
-      <PageHeading title="Análise comparativa" description="Compare as medições das estações em diferentes períodos." />
+    <div className="space-y-5 print:space-y-3">
+      <div className="hidden border-b pb-3 print:block">
+        <h1 className="text-xl font-bold">Relatório estatístico comparativo</h1>
+        <p className="text-xs text-muted-foreground">Gerado em {new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date())}</p>
+      </div>
+      <div className="print:hidden"><PageHeading title="Análise comparativa" description="Compare as medições das estações em diferentes períodos." /></div>
 
-      <form onSubmit={consultar} className="space-y-4 rounded-xl border border-border bg-card p-4">
+      <form onSubmit={consultar} className="space-y-4 rounded-xl border border-border bg-card p-4 print:hidden">
         <div className="grid gap-4 lg:grid-cols-2">
           <fieldset className={estiloCampo}>
             <legend className="mb-2">Estações ({estacoesSelecionadas.length} selecionadas)</legend>
@@ -267,9 +308,27 @@ export default function ComparativoPage() {
       {!consultando && !resultado && !erro && <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">Escolha as estações, o parâmetro e os períodos para ver o resultado.</p>}
 
       {resultado && !consultando && <>
+        <div className="flex flex-wrap justify-end gap-2 print:hidden">
+          <Button type="button" variant="outline" onClick={exportarCsv}><Download />Exportar CSV</Button>
+          <Button type="button" onClick={() => void exportarPdf()} disabled={preparandoPdf}>
+            <FileText />{preparandoPdf ? 'Preparando PDF…' : 'Exportar PDF'}
+          </Button>
+        </div>
+
         {semDados && <p role="status" className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Não há medições para os filtros selecionados.</p>}
 
-        <section className="rounded-xl border border-border bg-card">
+        <section className="rounded-xl border border-border bg-card p-4 print:break-inside-avoid">
+          <h2 className="text-sm font-semibold">Sumário executivo</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {semDados
+              ? 'Não foram encontradas medições para os filtros selecionados.'
+              : `Maior mediana observada: ${maiorMediana?.estacaoNome ?? '—'} (${formatarNumero(maiorMediana?.mediana ?? null)}). ${discrepantes.length} resultado(s) sinalizado(s) como discrepante(s).`}
+          </p>
+          {discrepantes.length > 0 && <p className="mt-1 text-sm text-red-700">Pontos para revisão: {discrepantes.map((item) => item.estacaoNome).join(', ')}.</p>}
+          <p className="mt-2 text-[11px] text-muted-foreground">Critério: mediana além de dois desvios padrão da média das medianas incluídas.</p>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card print:break-inside-avoid">
           <header className="flex items-center gap-2 border-b border-border px-4 py-3">
             <ChartNoAxesCombined className="size-4 text-teal-600" />
             <h2 className="text-sm font-semibold">Distribuição dos valores</h2>
@@ -307,7 +366,7 @@ export default function ComparativoPage() {
               </tbody>
             </table>
           </div>
-          <p className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
+          <p className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground print:hidden">
             Destaque em vermelho: mediana mais de 2 desvios padrão distante da média das medianas.
           </p>
         </section>
