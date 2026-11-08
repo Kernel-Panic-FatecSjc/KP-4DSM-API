@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, HttpCode, HttpStatus, Post, Res, UseGuards } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Throttle } from '@nestjs/throttler';
@@ -15,6 +16,7 @@ import { UsuarioAutenticado } from './usuario-autenticado.decorator';
 
 const NOME_COOKIE = 'access_token';
 
+@ApiTags('autenticacao')
 @Controller('autenticacao')
 export class AutenticacaoController {
   constructor(

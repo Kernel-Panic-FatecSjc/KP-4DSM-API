@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { AuditoriaService } from '../auditoria/auditoria.service';
@@ -11,6 +12,7 @@ import { ListarLeiturasBrutasQueryDto } from './dto/listar-leituras-brutas-query
 import { ListaLeiturasBrutasRespostaDto } from './dto/lista-leituras-brutas-resposta.dto';
 import { LeiturasBrutasService } from './leituras-brutas.service';
 
+@ApiTags('leituras-brutas')
 @Controller('leituras-brutas')
 @UseGuards(GuardaJwt, GuardaPerfil)
 export class LeiturasBrutasController {

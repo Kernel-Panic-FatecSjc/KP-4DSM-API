@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import { GuardaPerfil } from '../autenticacao/guarda-perfil.guard';
@@ -13,6 +14,7 @@ import { EstacaoCriadaRespostaDto, EstacaoRespostaDto, ListaEstacoesRespostaDto 
 import { ListarEstacoesQueryDto } from './dto/listar-estacoes-query.dto';
 import { EstacoesService } from './estacoes.service';
 
+@ApiTags('estacoes')
 @Controller('estacoes')
 @UseGuards(GuardaJwt, GuardaPerfil)
 export class EstacoesController {

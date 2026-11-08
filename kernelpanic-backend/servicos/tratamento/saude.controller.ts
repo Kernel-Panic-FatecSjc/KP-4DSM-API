@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { TratamentoService } from './tratamento.service';
 
@@ -5,6 +6,7 @@ import { TratamentoService } from './tratamento.service';
  * Health check do tratamento: o último ciclo e quantas leituras brutas ainda
  * esperam (o atraso da cadeia). 503 se o último ciclo falhou ou o banco não responde.
  */
+@ApiTags('saude')
 @Controller('saude')
 export class SaudeTratamentoController {
   constructor(private readonly tratamento: TratamentoService) {}

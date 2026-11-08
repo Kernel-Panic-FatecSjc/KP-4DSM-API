@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import { GuardaPerfil } from '../autenticacao/guarda-perfil.guard';
@@ -6,6 +7,7 @@ import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorato
 import { DashboardService } from './dashboard.service';
 import { DashboardQueryDto } from './dto/dashboard-query.dto';
 
+@ApiTags('dashboard')
 @Controller('dashboard')
 @UseGuards(GuardaJwt, GuardaPerfil)
 export class DashboardController {

@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
@@ -13,6 +14,7 @@ import { ListarAuditoriaQueryDto } from './dto/listar-auditoria-query.dto';
 
 // GET /auditoria fica fora do middleware de acesso (auditoria-acesso.middleware.ts):
 // abrir a tela da trilha não pode gerar linha nova na própria trilha.
+@ApiTags('auditoria')
 @Controller('auditoria')
 @UseGuards(GuardaJwt, GuardaPerfil)
 @Perfis(...PERFIS_ADMIN)

@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import { GuardaPerfil } from '../autenticacao/guarda-perfil.guard';
@@ -13,6 +14,7 @@ import { CriarUsuarioDto } from './dto/criar-usuario.dto';
 import { UsuarioRespostaDto } from './dto/usuario-resposta.dto';
 import { UsuariosService } from './usuarios.service';
 
+@ApiTags('usuarios')
 @Controller('usuarios')
 @UseGuards(GuardaJwt, GuardaPerfil)
 export class UsuariosController {

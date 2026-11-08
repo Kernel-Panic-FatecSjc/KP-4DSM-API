@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { IngestaoService } from './ingestao.service';
@@ -13,6 +14,7 @@ export interface EstadoSaudeIngestao {
 }
 
 /** Health check do serviço de ingestão: banco, lote pendente e conexão com o broker. */
+@ApiTags('saude')
 @Controller('saude')
 export class SaudeIngestaoController {
   constructor(

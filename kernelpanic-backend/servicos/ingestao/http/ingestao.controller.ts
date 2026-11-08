@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, UseGuards } from '@nestjs/common';
 import { EstacaoParametrosRespostaDto } from './dto/estacao-parametros-resposta.dto';
 import { IngestaoRespostaDto } from './dto/ingestao-resposta.dto';
@@ -7,6 +8,7 @@ import { GuardaChaveIngestao } from './guarda-chave-ingestao.guard';
 
 // Alternativa ao MQTT para quem não fala com o broker (ex.: datalogger antigo).
 // Mesmo destino: só leituras_brutas. Protegida pela chave da estação.
+@ApiTags('ingestao')
 @Controller('ingestao')
 @UseGuards(GuardaChaveIngestao)
 export class IngestaoController {

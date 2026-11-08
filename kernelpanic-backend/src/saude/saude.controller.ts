@@ -1,8 +1,10 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Controller, Get, ServiceUnavailableException } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { EstadoSaude, SaudeService } from './saude.service';
 
 // Pública e fora do limite de requisições, para o monitoramento não ser barrado.
+@ApiTags('saude')
 @Controller('saude')
 @SkipThrottle()
 export class SaudeController {

@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { camposInformados } from '../auditoria/campos-informados';
@@ -14,6 +15,7 @@ import { ListaSensoresRespostaDto, SensorRespostaDto } from './dto/sensor-respos
 import { SensoresService } from './sensores.service';
 import { CATALOGO_UNIDADES, type DescricaoUnidade } from './unidade-sensor';
 
+@ApiTags('sensores')
 @Controller('sensores')
 @UseGuards(GuardaJwt, GuardaPerfil)
 export class SensoresController {

@@ -1,3 +1,4 @@
+import { ApiTags } from '@nestjs/swagger';
 import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
@@ -14,6 +15,7 @@ import { ListaAlarmesRespostaDto } from './dto/lista-alarmes-resposta.dto';
 import { FiltrosAlarmesQueryDto, ListarAlarmesQueryDto } from './dto/listar-alarmes-query.dto';
 import { OpcoesFiltroRespostaDto } from './dto/opcoes-filtro-resposta.dto';
 
+@ApiTags('alarmes')
 @Controller('alarmes')
 @UseGuards(GuardaJwt, GuardaPerfil)
 export class AlarmesController {
