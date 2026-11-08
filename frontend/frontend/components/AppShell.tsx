@@ -10,6 +10,7 @@ import {
   FileWarning,
   Gauge,
   LayoutDashboard,
+  ChartNoAxesCombined,
   LogIn,
   LogOut,
   MapPin,
@@ -97,6 +98,13 @@ const NAV_ITEMS: NavItem[] = [
         href: '/leituras-erro',
         icon: FileWarning,
       },
+    ],
+  },
+  {
+    label: 'Relatórios',
+    icon: ChartNoAxesCombined,
+    children: [
+      { label: 'Análise comparativa', href: '/relatorios/comparativo', icon: ChartNoAxesCombined },
     ],
   },
   {
