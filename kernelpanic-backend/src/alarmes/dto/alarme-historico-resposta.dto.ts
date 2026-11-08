@@ -7,8 +7,15 @@ import type {
   TipoParametro,
 } from '../../generated/prisma/client';
 
+interface Responsavel {
+  id: string;
+  nome: string;
+}
+
 type AlarmeComRelacoes = Alarme & {
   medida: Medida;
+  reconhecidoPor?: Responsavel | null;
+  resolvidoPor?: Responsavel | null;
   alerta: Alerta & {
     parametro: Parametro & {
       estacao: Estacao;
@@ -28,6 +35,10 @@ export class AlarmeHistoricoRespostaDto {
   valorMedido: number;
   estacao: { id: string; nome: string };
   parametro: { id: string; nome: string; unidade: string };
+  /** Quem reconheceu e quando; nulo enquanto aberto (ou tratado antes deste registro existir). */
+  reconhecimento: { em: Date; por: Responsavel | null } | null;
+  resolucao: { em: Date; por: Responsavel | null } | null;
+  observacao: string | null;
 
   constructor(alarme: AlarmeComRelacoes) {
     this.id = alarme.id;
@@ -44,5 +55,10 @@ export class AlarmeHistoricoRespostaDto {
       nome: alarme.alerta.parametro.tipoParametro.nome,
       unidade: alarme.alerta.parametro.tipoParametro.unidade,
     };
+    this.reconhecimento = alarme.reconhecidoEm
+      ? { em: alarme.reconhecidoEm, por: alarme.reconhecidoPor ?? null }
+      : null;
+    this.resolucao = alarme.resolvidoEm ? { em: alarme.resolvidoEm, por: alarme.resolvidoPor ?? null } : null;
+    this.observacao = alarme.observacao ?? null;
   }
 }

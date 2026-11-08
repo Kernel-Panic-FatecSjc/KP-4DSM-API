@@ -289,6 +289,15 @@ export interface AlarmeHistorico {
   valorMedido: number;
   estacao: { id: string; nome: string };
   parametro: { id: string; nome: string; unidade: string };
+  /** Quem reconheceu/resolveu e quando; nulo enquanto não aconteceu. */
+  reconhecimento?: AcaoAlarme | null;
+  resolucao?: AcaoAlarme | null;
+  observacao?: string | null;
+}
+
+export interface AcaoAlarme {
+  em: string;
+  por: { id: string; nome: string } | null;
 }
 
 
