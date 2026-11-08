@@ -42,7 +42,7 @@ JSON em UTF-8, o mesmo corpo da rota HTTP sem o `vid` (que vem do tópico):
 
 | Campo | Obrigatório | Regra |
 | --- | --- | --- |
-| `leituras` | sim | Objeto com 1 a 50 pares `"nomeDoSensor": número`. O nome é o do tipo de parâmetro cadastrado na licitação (`GET /ingestao/estacoes/{vid}/parametros` lista os da estação) |
+| `leituras` | sim | Objeto com 1 a 50 pares `"nomeDoSensor": número`. O nome é o do tipo de parâmetro cadastrado na licitação (`GET /ingestao/estacoes/{vid}/parametros` lista os da estação), com as mesmas regras do cadastro: até 120 caracteres, acento e espaço no meio, sem espaço nas pontas nem caractere de controle |
 | `unixtime` | não | Segundos, do momento da leitura no dispositivo; entre 1.000.000.000 e agora + 5 min. Sem ele, vale o momento do recebimento |
 | `latitude`, `longitude` | não | Posição da leitura; sem elas, vale a do cadastro da estação |
 
@@ -76,6 +76,7 @@ Revisão da recepção e do tratamento feita depois da US04, contra os requisito
 Achados da revisão e o que foi feito:
 
 - A tabela acima dizia que `ESTACAO_NAO_CADASTRADA` só acontecia pela rota HTTP aberta em desenvolvimento. Não acontece por ali: a ingestão recusa `vid` desconhecido antes de gravar. O motivo aparece quando a estação é excluída, ou muda de `vid`, com pacotes dela ainda por tratar. A tabela foi corrigida.
+- A ingestão só aceitava nomes de sensor `[a-zA-Z0-9_]`, mas o cadastro aceita `Pluviômetro` ou `Chuva acumulada`. O pacote inteiro de uma estação com um sensor desses era recusado, e nenhuma leitura dela virava medida. A regra da ingestão passou a ser a mesma do cadastro (SCRUM-140).
 - `servicos/ingestao/validacao/faixa-fisica.ts` era uma cópia da regra de faixa física que ninguém importava, de quando a ingestão ainda gerava medidas. Foi removida (SCRUM-140). A regra fica só no tratamento.
 - `leituras_erro` não tinha a proteção contra alteração que `leituras_brutas` e `medidas` têm. Nenhuma das três barrava `TRUNCATE`, que não dispara trigger por linha. As duas lacunas foram fechadas (SCRUM-141).
 - Faltava um teste da cadeia inteira, da rota de ingestão até a medida, para RF05.13 e RF05.14. Ele foi criado (SCRUM-142).
