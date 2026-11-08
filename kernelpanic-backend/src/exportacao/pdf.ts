@@ -32,6 +32,8 @@ export const CORES_PDF = {
 } as const;
 
 const FUSO = 'America/Sao_Paulo';
+/** Fração da altura útil a partir da qual um título de seção vai para a próxima página. */
+const LIMITE_TITULO_NO_PE = 0.88;
 
 export interface FiltroRelatorio {
   rotulo: string;
@@ -102,6 +104,10 @@ export function montarRelatorioPdf(opcoes: OpcoesRelatorioPdf): TDocumentDefinit
         { text: `Página ${paginaAtual} de ${totalPaginas}`, alignment: 'right', fontSize: 7, color: CORES_PDF.suave },
       ],
     }),
+    // Título de seção (secaoPdf) no pé da página passa para a seguinte, junto
+    // com o conteúdo. Pela posição: o pdfmake conta a tabela que vem depois
+    // como "na mesma página" mesmo quando as linhas dela já foram para a próxima.
+    pageBreakBefore: (no) => no.headlineLevel === 1 && no.startPosition.verticalRatio > LIMITE_TITULO_NO_PE,
     content: [
       { text: opcoes.titulo, style: 'titulo' },
       ...(opcoes.subtitulo ? [{ text: opcoes.subtitulo, style: 'subtitulo', margin: [0, 2, 0, 0] } as Content] : []),
@@ -109,6 +115,11 @@ export function montarRelatorioPdf(opcoes: OpcoesRelatorioPdf): TDocumentDefinit
       ...opcoes.conteudo,
     ],
   };
+}
+
+/** Título de seção: nunca fica sozinho no fim da página. */
+export function secaoPdf(texto: string): Content {
+  return { text: texto, style: 'secao', headlineLevel: 1 };
 }
 
 function blocoFiltros(filtros: FiltroRelatorio[]): Content {
@@ -209,9 +220,11 @@ export function graficoLinhasSvg(series: SerieGrafico[], largura = 515, altura =
   });
   // Até 8 rótulos no eixo X para não sobrepor.
   const passo = Math.max(1, Math.ceil(rotulos.length / 8));
+  // Pontas alinhadas para dentro, para o rótulo não sair do gráfico.
+  const ancora = (indice: number) => (rotulos.length < 2 ? 'middle' : indice === 0 ? 'start' : indice === rotulos.length - 1 ? 'end' : 'middle');
   const eixoX = rotulos
-    .map((rotulo, indice) => (indice % passo === 0
-      ? `<text x="${x(indice).toFixed(1)}" y="${altura - margem.base + 12}" font-size="7" fill="${CORES_PDF.suave}" text-anchor="middle">${escaparXml(rotulo)}</text>`
+    .map((rotulo, indice) => (indice % passo === 0 || indice === rotulos.length - 1
+      ? `<text x="${x(indice).toFixed(1)}" y="${altura - margem.base + 12}" font-size="7" fill="${CORES_PDF.suave}" text-anchor="${ancora(indice)}">${escaparXml(rotulo)}</text>`
       : ''))
     .join('');
   const linhas = series.map((serie, indice) => {

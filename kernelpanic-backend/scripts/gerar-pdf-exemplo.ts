@@ -3,7 +3,7 @@
 // Uso: npm run pdf:exemplo
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { gerarPdf, graficoLinhasSvg, montarRelatorioPdf, tabelaPdf } from '../src/exportacao/pdf';
+import { gerarPdf, graficoLinhasSvg, montarRelatorioPdf, secaoPdf, tabelaPdf } from '../src/exportacao/pdf';
 
 const DESTINO = join(__dirname, '..', '..', 'docs', 'exemplos', 'relatorio-pdf-exemplo.pdf');
 
@@ -32,14 +32,14 @@ const documento = montarRelatorioPdf({
   emitidoEm: new Date('2026-11-07T15:30:00-03:00'),
   emitidoPor: 'Usuário de exemplo',
   conteudo: [
-    { text: 'Precipitação diária', style: 'secao' },
+    secaoPdf('Precipitação diária'),
     {
       svg: graficoLinhasSvg([
         { nome: 'Estação Centro', pontos: dias.map((rotulo, indice) => ({ rotulo, valor: chuvaCentro[indice] })) },
         { nome: 'Estação Norte', pontos: dias.map((rotulo, indice) => ({ rotulo, valor: chuvaNorte[indice] })) },
       ]),
     },
-    { text: 'Acumulado por dia e estação', style: 'secao' },
+    secaoPdf('Acumulado por dia e estação'),
     tabelaPdf(
       ['Dia', 'Estação', 'Precipitação (mm)'],
       [

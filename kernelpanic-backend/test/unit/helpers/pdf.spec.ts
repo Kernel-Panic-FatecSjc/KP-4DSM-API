@@ -6,6 +6,7 @@ import {
   gerarPdf,
   graficoLinhasSvg,
   montarRelatorioPdf,
+  secaoPdf,
   tabelaPdf,
 } from '../../../src/exportacao/pdf';
 
@@ -47,6 +48,18 @@ describe('PDF dos relatórios', () => {
     expect(texto(conteudo[2])).toContain('01/10/2026 a 14/10/2026');
     expect(conteudo.at(-1)).toEqual({ text: 'corpo' });
     expect(documento.info?.title).toBe('Histórico climático');
+  });
+
+  it('leva o título de seção no pé da página para a página seguinte', () => {
+    const quebrar = montarRelatorioPdf({ titulo: 'T', filtros: [], conteudo: [] }).pageBreakBefore!;
+    const no = (headlineLevel: number | undefined, verticalRatio: number) =>
+      ({ headlineLevel, startPosition: { verticalRatio } }) as unknown as Parameters<typeof quebrar>[0];
+    const consultas = {} as Parameters<typeof quebrar>[1];
+
+    expect(secaoPdf('Dados')).toMatchObject({ text: 'Dados', style: 'secao', headlineLevel: 1 });
+    expect(quebrar(no(1, 0.95), consultas)).toBe(true);
+    expect(quebrar(no(1, 0.5), consultas)).toBe(false);
+    expect(quebrar(no(undefined, 0.95), consultas)).toBe(false);
   });
 
   it('avisa quando o relatório não tem filtros', () => {

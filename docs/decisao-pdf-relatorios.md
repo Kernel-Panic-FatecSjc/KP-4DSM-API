@@ -32,6 +32,7 @@ Custo aceito: o gráfico do PDF é desenhado pelo backend (`graficoLinhasSvg`), 
 - **Título** e subtítulo opcional.
 - **Filtros usados**: tabela rótulo/valor, para o PDF dizer de onde vieram os números.
 - **Conteúdo** do relatório (`conteudo`), montado com os auxiliares:
+  - `secaoPdf(texto)`: título de seção; se cair no pé da página, passa para a seguinte junto com o conteúdo;
   - `tabelaPdf(cabecalhos, linhas, { larguras, colunasNumero, linhasTotal })`: cabeçalho repetido a cada página, linhas zebradas, números em pt-BR alinhados à direita, totalizadores em negrito;
   - `graficoLinhasSvg(series)`: gráfico de linhas com grade, eixo X (até 8 rótulos) e legenda.
 - **Rodapé** em todas as páginas: "Emitido em dd/mm/aaaa, hh:mm (horário de Brasília) por <usuário>" e "Página X de Y".
