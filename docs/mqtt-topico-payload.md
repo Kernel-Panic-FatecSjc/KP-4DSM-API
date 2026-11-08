@@ -48,6 +48,8 @@ JSON em UTF-8, o mesmo corpo da rota HTTP sem o `vid` (que vem do tópico):
 
 A ingestão confere só o **formato** (é o mínimo para montar a linha de `leituras_brutas`); pacote fora do formato é recusado e registrado no log do serviço (`mensagensRecusadas` no `/saude`). As regras de negócio ficam no tratamento.
 
+A ingestão também recusa, sem gravar nada, o pacote de um `vid` sem estação cadastrada: pelo MQTT ele é descartado e contado em `mensagensRecusadas`; pela rota HTTP a guarda responde 401 (com a chave da estação) ou 404 (com `INGESTAO_ROTA_ABERTA=true`, só em desenvolvimento). O pacote de estação **inativa** é aceito (HTTP 202, com `estacaoInativa: true` no corpo) e guardado em `leituras_brutas`: quem decide que ele não vira medida é o tratamento.
+
 ## O que o tratamento faz com cada leitura
 
 | Situação | Resultado |
@@ -56,10 +58,28 @@ A ingestão confere só o **formato** (é o mínimo para montar a linha de `leit
 | Mesmo sensor e mesmo `unixtime` já gravados (reenvio) | Descartado (índice único `parametroId, unixtime`), sem alarme repetido |
 | Valor fora da faixa física (`valorMinimo`/`valorMaximo`) | `leituras_erro` com `ABAIXO_DO_MINIMO`/`ACIMA_DO_MAXIMO`; **só essa leitura** é descartada, não o pacote (regra aceita pelo PO) |
 | Sensor sem parâmetro na estação | `leituras_erro` com `SENSOR_NAO_CONFIGURADO` |
-| `vid` sem estação (só possível pela rota HTTP aberta em desenvolvimento) | `leituras_erro` com `ESTACAO_NAO_CADASTRADA` |
+| `vid` que deixou de existir entre o recebimento e o tratamento (estação excluída ou com o `vid` alterado) | `leituras_erro` com `ESTACAO_NAO_CADASTRADA` |
 | Estação inativa (ou da licitação encerrada) | Fica só em `leituras_brutas` |
 
 O pacote original continua intacto em `leituras_brutas` em todos os casos.
+
+## Revisão do fluxo (US16, SCRUM-139)
+
+Revisão da recepção e do tratamento feita depois da US04, contra os requisitos da US16. Cada regra aponta para onde está no código e qual teste a cobre.
+
+| Requisito | Onde está | Cobertura |
+| --- | --- | --- |
+| RF05.13: leitura fora da faixa física vira erro, sem medida | `servicos/tratamento/faixa-fisica.ts` (limites inclusivos e opcionais) e `classificar-leituras.ts` (só a leitura fora da faixa vai para `leituras_erro`; as outras do pacote seguem) | `test/unit/servicos/tratamento/faixa-fisica.spec.ts`, `classificar-leituras.spec.ts`, `test/functional/tratamento-banco.spec.ts`, `test/functional/fluxo-telemetria.spec.ts` |
+| RF05.14: telemetria de estação inativa é armazenada sem gerar medição | A ingestão aceita e grava em `leituras_brutas` (`ingestao.service.ts`); o tratamento não gera medida nem leitura com erro (`classificar-leituras.ts`) | `test/functional/ingestao.spec.ts`, `tratamento-banco.spec.ts`, `fluxo-telemetria.spec.ts` |
+| RNF20.2: estações enviando a cada 5 min | Lote da ingestão, aviso por `LISTEN` e lote do tratamento (seção [Garantias](#garantias)) | Teste de carga, cenário RNF20.2 em [teste-de-carga-ingestao.md](teste-de-carga-ingestao.md#cenário-rnf202-estações-enviando-a-cada-5-minutos) |
+
+Achados da revisão e o que foi feito:
+
+- A tabela acima dizia que `ESTACAO_NAO_CADASTRADA` só acontecia pela rota HTTP aberta em desenvolvimento. Não acontece por ali: a ingestão recusa `vid` desconhecido antes de gravar. O motivo aparece quando a estação é excluída, ou muda de `vid`, com pacotes dela ainda por tratar. A tabela foi corrigida.
+- `servicos/ingestao/validacao/faixa-fisica.ts` era uma cópia da regra de faixa física que ninguém importava, de quando a ingestão ainda gerava medidas. Foi removida (SCRUM-140). A regra fica só no tratamento.
+- `leituras_erro` não tinha a proteção contra alteração que `leituras_brutas` e `medidas` têm. Nenhuma das três barrava `TRUNCATE`, que não dispara trigger por linha. As duas lacunas foram fechadas (SCRUM-141).
+- Faltava um teste da cadeia inteira, da rota de ingestão até a medida, para RF05.13 e RF05.14. Ele foi criado (SCRUM-142).
+- A estação inativa é avaliada no momento do **tratamento**, não do recebimento. Com o tratamento em dia, a diferença é de milissegundos. Se o tratamento ficar parado enquanto a estação muda de status, o atraso é tratado com o status novo. Isso foi mantido: a mudança de status é rara e registrada na auditoria.
 
 ## Garantias
 
