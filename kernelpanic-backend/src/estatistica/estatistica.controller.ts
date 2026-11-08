@@ -10,7 +10,7 @@ import { autoria } from '../auditoria/autoria';
 import { enviarCsv } from '../exportacao/csv';
 import { ConsultarEstatisticasDto } from './dto/estatistica-resposta';
 import { RelatorioEstatisticoDto } from './dto/estatistica-relatorio';
-import { EstatisticaService } from './estatica.service';
+import { EstatisticaService } from './estatistica.service';
 
 @ApiTags('Relatórios')
 @ApiCookieAuth('access_token')
@@ -76,7 +76,7 @@ export class EstatisticaController {
           estacao.quartil3,
           estacao.minimo,
           estacao.maximo,
-        ]);
+        ].map((valor) => typeof valor === 'number' ? valor.toLocaleString('pt-BR') : valor));
       }
     }
 

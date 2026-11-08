@@ -1,4 +1,4 @@
-import { EstatisticaEstacaoDto } from './estatitisca-estacao';
+import { EstatisticaEstacaoDto } from './estatistica-estacao';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class PeriodoEstatisticoDto {

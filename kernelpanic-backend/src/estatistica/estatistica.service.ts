@@ -11,7 +11,7 @@ import {
   PeriodoEstatisticoDto,
   RelatorioEstatisticoDto,
 } from './dto/estatistica-relatorio';
-import { EstatisticaEstacaoDto } from './dto/estatitisca-estacao';
+import { EstatisticaEstacaoDto } from './dto/estatistica-estacao';
 
 interface Intervalo { inicio: Date; fim: Date }
 interface LinhaEstatistica {
@@ -149,8 +149,10 @@ export class EstatisticaService {
         percentile_cont(0.75) WITHIN GROUP (ORDER BY m."valor") AS "quartil3",
         MIN(m."valor") AS "minimo", MAX(m."valor") AS "maximo"
       FROM "estacoes" e
-      LEFT JOIN "medidas" m ON m."estacaoId" = e."id"
-        AND m."parametroId" = ${parametroId}
+      LEFT JOIN "parametros" p ON p."estacaoId" = e."id"
+        AND p."tipoParametroId" = ${parametroId}
+      LEFT JOIN "medidas" m ON m."parametroId" = p."id"
+        AND m."estacaoId" = e."id"
         AND m."unixtime" >= ${BigInt(Math.floor(inicio.getTime() / 1000))}
         AND m."unixtime" <= ${BigInt(Math.floor(fim.getTime() / 1000))}
         ${filtroLicitacao}

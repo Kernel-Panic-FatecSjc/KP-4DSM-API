@@ -6,7 +6,7 @@ import { GuardaPerfil } from '../../src/autenticacao/guarda-perfil.guard';
 import { AuditoriaService } from '../../src/auditoria/auditoria.service';
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { EstatisticaController } from '../../src/estatistica/estatistica.controller';
-import { EstatisticaService } from '../../src/estatistica/estatica.service';
+import { EstatisticaService } from '../../src/estatistica/estatistica.service';
 import {
   afterAll as jestAfterAll,
   beforeAll as jestBeforeAll,
