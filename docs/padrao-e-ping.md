@@ -20,7 +20,7 @@ Define o formato das rotas públicas `/v1/dados-abertos/*` (US08, SCRUM-48 e SCR
 | JSON | Objeto `{ "dados": [...], "paginacao": { "pagina", "tamanhoPagina", "total" } }`. Sem dados: `dados: []` e `total: 0`, com status 200. |
 | CSV | Primeira linha de cabeçalho; separador `;`; aspas duplas em campos com `;`, `"`, vírgula ou quebra de linha, com `"` escapado como `""`; BOM UTF-8 e proteção contra fórmula, como nas exportações atuais (`src/exportacao/csv.ts`). Resposta com `Content-Disposition: attachment`. |
 | Paginação | `pagina` (a partir de 1) e `tamanhoPagina` (padrão 100, máximo 1000), iguais em JSON e CSV. |
-| Limite de período | Medidas: no máximo 31 dias na agregação horária e 366 dias na diária; período acima disso: `400`. |
+| Limite de período | Medidas: no máximo 31 dias na agregação horária e 366 dias na diária. Alarmes: no máximo 366 dias. Período acima disso: `400`. |
 | Erros | `400` parâmetro inválido ou formato/período não suportado, `429` limite de requisições. Corpo de erro padrão do Nest (`statusCode`, `message`, `error`). |
 | Integridade | A rota só lê e agrega o que existe; não cria nem altera dados (RNF13-R2). |
 

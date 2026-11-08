@@ -2,6 +2,10 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TAMANHO_PAGINA_PADRAO, type MedidasAbertasQueryDto } from './dto/medidas-abertas-query.dto';
+import type { AlarmesAbertosQueryDto } from './dto/alarmes-abertos-query.dto';
+import type { AlarmesAbertosRespostaDto } from './dto/alarmes-abertos-resposta.dto';
+import type { EstacoesAbertasQueryDto } from './dto/estacoes-abertas-query.dto';
+import type { EstacoesAbertasRespostaDto } from './dto/estacoes-abertas-resposta.dto';
 import type { MedidasAbertasRespostaDto } from './dto/medidas-abertas-resposta.dto';
 
 const DIA_MS = 24 * 60 * 60 * 1000;
@@ -9,22 +13,28 @@ const DIA_MS = 24 * 60 * 60 * 1000;
 export const LIMITE_DIAS = { hora: 31, dia: 366 } as const;
 
 /** `ate` só com a data vale o dia inteiro, como nos relatórios. */
-export function periodoDaConsulta(query: Pick<MedidasAbertasQueryDto, 'de' | 'ate' | 'granularidade'>): { de: Date; ate: Date } {
-  const de = new Date(query.de);
-  const ate = new Date(query.ate);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(query.ate)) ate.setUTCHours(23, 59, 59, 999);
+function periodoLimitado(textoDe: string, textoAte: string, limiteDias: number): { de: Date; ate: Date } {
+  const de = new Date(textoDe);
+  const ate = new Date(textoAte);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(textoAte)) ate.setUTCHours(23, 59, 59, 999);
   if (Number.isNaN(de.getTime()) || Number.isNaN(ate.getTime())) {
     throw new BadRequestException('As datas do período devem ser válidas.');
   }
   if (de > ate) {
     throw new BadRequestException('A data de início deve ser anterior ou igual à data final.');
   }
-  const limite = LIMITE_DIAS[query.granularidade];
-  if (ate.getTime() - de.getTime() > limite * DIA_MS) {
-    throw new BadRequestException(`O período máximo na granularidade "${query.granularidade}" é de ${limite} dias.`);
+  if (ate.getTime() - de.getTime() > limiteDias * DIA_MS) {
+    throw new BadRequestException(`O período máximo é de ${limiteDias} dias.`);
   }
   return { de, ate };
 }
+
+export function periodoDaConsulta(query: Pick<MedidasAbertasQueryDto, 'de' | 'ate' | 'granularidade'>): { de: Date; ate: Date } {
+  return periodoLimitado(query.de, query.ate, LIMITE_DIAS[query.granularidade]);
+}
+
+/** O histórico de alarmes aceita até um ano por consulta. */
+export const LIMITE_DIAS_ALARMES = 366;
 
 interface LinhaMedida {
   estacaoId: string;
@@ -89,6 +99,88 @@ export class DadosAbertosService {
       })),
       // Página além do fim vem sem linhas e, portanto, sem o total.
       paginacao: { pagina, tamanhoPagina, total: linhas.length ? Number(linhas[0].total) : 0 },
+    };
+  }
+
+  /** Catálogo de todas as estações. Sem usuário, endereço, vid nem chave. */
+  async estacoes(query: EstacoesAbertasQueryDto): Promise<EstacoesAbertasRespostaDto> {
+    const pagina = query.pagina ?? 1;
+    const tamanhoPagina = query.tamanhoPagina ?? TAMANHO_PAGINA_PADRAO;
+    const where = query.status ? { statusOperacional: query.status } : {};
+
+    const [total, estacoes] = await Promise.all([
+      this.prisma.estacao.count({ where }),
+      this.prisma.estacao.findMany({
+        where,
+        select: {
+          id: true,
+          nome: true,
+          latitude: true,
+          longitude: true,
+          statusOperacional: true,
+          parametros: { select: { tipoParametro: { select: { nome: true, unidade: true } } }, orderBy: { tipoParametro: { nome: 'asc' } } },
+        },
+        orderBy: [{ nome: 'asc' }, { id: 'asc' }],
+        skip: (pagina - 1) * tamanhoPagina,
+        take: tamanhoPagina,
+      }),
+    ]);
+
+    return {
+      dados: estacoes.map(({ parametros, ...estacao }) => ({ ...estacao, sensores: parametros.map((p) => p.tipoParametro) })),
+      paginacao: { pagina, tamanhoPagina, total },
+    };
+  }
+
+  /** Histórico de alarmes de todas as licitações no período. Sem dados de usuário. */
+  async alarmes(query: AlarmesAbertosQueryDto): Promise<AlarmesAbertosRespostaDto> {
+    const { de, ate } = periodoLimitado(query.de, query.ate, LIMITE_DIAS_ALARMES);
+    const pagina = query.pagina ?? 1;
+    const tamanhoPagina = query.tamanhoPagina ?? TAMANHO_PAGINA_PADRAO;
+    const where: Prisma.AlarmeWhereInput = {
+      disparadoEm: { gte: de, lte: ate },
+      ...(query.status && { status: query.status }),
+      ...(query.severidade && { alerta: { severidade: query.severidade } }),
+      ...(query.estacaoId && { medida: { estacaoId: query.estacaoId } }),
+    };
+
+    const [total, alarmes] = await Promise.all([
+      this.prisma.alarme.count({ where }),
+      this.prisma.alarme.findMany({
+        where,
+        select: {
+          id: true,
+          disparadoEm: true,
+          status: true,
+          alerta: { select: { operador: true, valorLimite: true, severidade: true } },
+          medida: {
+            select: {
+              valor: true,
+              estacao: { select: { id: true, nome: true } },
+              parametro: { select: { tipoParametro: { select: { nome: true } } } },
+            },
+          },
+        },
+        orderBy: [{ disparadoEm: 'desc' }, { id: 'asc' }],
+        skip: (pagina - 1) * tamanhoPagina,
+        take: tamanhoPagina,
+      }),
+    ]);
+
+    return {
+      dados: alarmes.map((alarme) => ({
+        id: alarme.id,
+        disparadoEm: alarme.disparadoEm.toISOString(),
+        estacaoId: alarme.medida.estacao.id,
+        estacaoNome: alarme.medida.estacao.nome,
+        parametro: alarme.medida.parametro.tipoParametro.nome,
+        operador: alarme.alerta.operador,
+        valorLimite: alarme.alerta.valorLimite,
+        valorMedido: alarme.medida.valor,
+        severidade: alarme.alerta.severidade,
+        status: alarme.status,
+      })),
+      paginacao: { pagina, tamanhoPagina, total },
     };
   }
 }
