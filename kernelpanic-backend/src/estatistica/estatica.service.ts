@@ -150,7 +150,10 @@ export class EstatisticaService {
         MIN(m."valor") AS "minimo", MAX(m."valor") AS "maximo"
       FROM "estacoes" e
       LEFT JOIN "medidas" m ON m."estacaoId" = e."id"
-        AND m."parametroId" = ${parametroId}
+        AND EXISTS (
+          SELECT 1 FROM "parametros" p
+          WHERE p."id" = m."parametroId" AND p."tipoParametroId" = ${parametroId}
+        )
         AND m."unixtime" >= ${BigInt(Math.floor(inicio.getTime() / 1000))}
         AND m."unixtime" <= ${BigInt(Math.floor(fim.getTime() / 1000))}
         ${filtroLicitacao}
