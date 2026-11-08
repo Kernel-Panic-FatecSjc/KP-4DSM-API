@@ -20,6 +20,7 @@ import { LicitacoesModule } from './licitacoes/licitacoes.module';
 import { BrokerModule } from './broker/broker.module';
 import { RelatoriosModule } from './relatorios/relatorios.module';
 import { DadosAbertosModule } from './dados-abertos/dados-abertos.module';
+import { EstatisticasModule } from './estatistica/estatisticas.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { DadosAbertosModule } from './dados-abertos/dados-abertos.module';
     LimiteRequisicoesModule,
     PrismaModule,
     BrokerModule,
+    EstatisticasModule,
     RegiaoModule,
     UsuariosModule,
     AutenticacaoModule,
