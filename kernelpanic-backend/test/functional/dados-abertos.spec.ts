@@ -50,6 +50,10 @@ describe('Dados abertos: medidas (funcional)', () => {
   it('é pública e agrega por hora no banco (SOMA para chuva, MEDIA para temperatura)', async () => {
     const { body } = await request(app.getHttpServer()).get(`${consulta}&estacaoId=${estacaoId}`).expect(200);
 
+    // Só os campos do dicionário: nada de usuário, endereço, vid ou licitação.
+    expect(Object.keys(body.dados[0]).sort()).toEqual(
+      ['agregacao', 'estacaoId', 'estacaoNome', 'granularidade', 'inicio', 'parametro', 'quantidadeLeituras', 'unidade', 'valor'].sort(),
+    );
     expect(body.paginacao).toEqual({ pagina: 1, tamanhoPagina: 100, total: 3 });
     expect(body.dados).toEqual([
       expect.objectContaining({ parametro: 'chuva', inicio: '2031-03-01T10:00:00.000Z', agregacao: 'SOMA', valor: 3, quantidadeLeituras: 2, unidade: 'mm' }),
