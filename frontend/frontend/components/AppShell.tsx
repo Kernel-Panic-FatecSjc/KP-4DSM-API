@@ -1,6 +1,7 @@
 'use client';
 
 import {
+  BarChart3,
   Bell,
   ChevronDown,
   ChevronRight,
@@ -95,6 +96,17 @@ const NAV_ITEMS: NavItem[] = [
       {
         label: 'Leituras com erro',
         href: '/leituras-erro',
+        icon: FileWarning,
+      },
+    ],
+  },
+  {
+    label: 'Relatórios',
+    icon: BarChart3,
+    children: [
+      {
+        label: 'Incidentes',
+        href: '/relatorios/incidentes',
         icon: FileWarning,
       },
     ],

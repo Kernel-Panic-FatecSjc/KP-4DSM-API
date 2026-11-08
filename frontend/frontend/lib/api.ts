@@ -405,3 +405,47 @@ export interface DashboardDados {
 
 
 export type EsferaOrgaoApi = 'MUNICIPAL' | 'ESTADUAL' | 'FEDERAL';
+
+
+/** Relatório de incidentes (US10): ocorrências de alarmes agrupadas. */
+export interface OcorrenciaIncidente {
+  alertaId: string;
+  severidade: SeveridadeAlerta;
+  estacao: { id: string; nome: string };
+  parametro: { id: string; nome: string; unidade: string };
+  operador: string;
+  valorLimite: number;
+  valorPico: number;
+  inicio: string;
+  fim: string;
+  duracaoSegundos: number;
+  leituras: number;
+  status: StatusAlarme;
+  reconhecimento: AcaoAlarme | null;
+  resolucao: AcaoAlarme | null;
+  observacoes: string[];
+}
+
+export interface ResumoSeveridadeIncidentes {
+  severidade: SeveridadeAlerta;
+  ocorrencias: number;
+  duracaoTotalSegundos: number;
+  leituras: number;
+}
+
+export interface ResumoEstacaoIncidentes {
+  estacao: { id: string; nome: string };
+  ocorrencias: number;
+  duracaoTotalSegundos: number;
+  leituras: number;
+  maiorSeveridade: SeveridadeAlerta;
+}
+
+export interface RelatorioIncidentes {
+  de: string;
+  ate: string;
+  toleranciaMinutos: number;
+  resumoPorSeveridade: ResumoSeveridadeIncidentes[];
+  resumoPorEstacao: ResumoEstacaoIncidentes[];
+  ocorrencias: OcorrenciaIncidente[];
+}
