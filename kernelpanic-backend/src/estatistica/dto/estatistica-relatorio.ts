@@ -46,6 +46,21 @@ export class ComparacaoEstacaoDto {
   maximo: DiferencaMetricaDto | null;
 }
 
+export class MicroclimaRiscoDto {
+  @ApiProperty()
+  periodoIndice: number;
+  @ApiProperty()
+  estacaoId: string;
+  @ApiProperty()
+  estacaoNome: string;
+  @ApiProperty()
+  media: number;
+  @ApiProperty()
+  medianaGrupo: number;
+  @ApiProperty({ description: 'Média da estação menos a mediana das médias do grupo.' })
+  diferencaParaMediana: number;
+}
+
 export class RelatorioEstatisticoDto {
   @ApiProperty({ type: [PeriodoEstatisticoDto] })
   periodos: PeriodoEstatisticoDto[];
@@ -53,4 +68,6 @@ export class RelatorioEstatisticoDto {
   metodoCalculo: string;
   @ApiProperty({ type: [ComparacaoEstacaoDto], description: 'Cada período posterior é comparado ao primeiro período informado.' })
   comparacoes: ComparacaoEstacaoDto[];
+  @ApiProperty({ type: [MicroclimaRiscoDto], description: 'Estações cuja média difere em mais de 2 unidades da mediana das médias do grupo no período.' })
+  microclimasRisco: MicroclimaRiscoDto[];
 }
