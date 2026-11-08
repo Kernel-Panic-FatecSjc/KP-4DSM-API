@@ -30,7 +30,8 @@
     "test:watch": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --watch",
     "test:cov": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --coverage",
     "test:debug": "node --experimental-vm-modules --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:functional": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-functional.json"
+    "test:functional": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --config ./test/jest-functional.json",
+    "pdf:exemplo": "ts-node scripts/gerar-pdf-exemplo.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
@@ -52,6 +53,7 @@
     "mqtt": "^5.16.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "pdfmake": "^0.3.13",
     "pg": "^8.23.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
@@ -67,6 +69,7 @@
     "@types/jest": "^30.0.0",
     "@types/node": "^24.0.0",
     "@types/passport-jwt": "^4.0.1",
+    "@types/pdfmake": "^0.3.3",
     "@types/pg": "^8.23.1",
     "@types/supertest": "^7.0.0",
     "cross-env": "^10.1.0",
