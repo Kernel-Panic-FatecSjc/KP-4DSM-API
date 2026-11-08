@@ -17,9 +17,9 @@ export class SensorRespostaDto {
   agregacao: TipoParametro['agregacao'];
   @ApiProperty({ type: 'object', additionalProperties: true, nullable: true, example: { modelo: 'PL-100' }, description: 'Metadados livres do sensor.' })
   json: unknown;
-  @ApiProperty({ example: 0, nullable: true, description: 'Menor valor físico válido (inclusivo); null sem limite.' })
+  @ApiProperty({ type: Number, example: 0, nullable: true, description: 'Menor valor físico válido (inclusivo); null sem limite.' })
   valorMinimo: number | null;
-  @ApiProperty({ example: 500, nullable: true, description: 'Maior valor físico válido (inclusivo); null sem limite.' })
+  @ApiProperty({ type: Number, example: 500, nullable: true, description: 'Maior valor físico válido (inclusivo); null sem limite.' })
   valorMaximo: number | null;
   @ApiPropertyOptional({ example: 3, description: 'Quantidade de estações que usam o sensor (só nas listagens).' })
   estacoesAssociadas?: number;

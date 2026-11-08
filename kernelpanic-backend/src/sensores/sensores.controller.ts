@@ -73,7 +73,7 @@ export class SensoresController {
 
   @Patch(':id')
   @Perfis(...PERFIS_ADMIN)
-  @ApiOperation({ summary: 'Atualizar sensor' })
+  @ApiOperation({ summary: 'Atualizar sensor', description: 'Altera os campos informados. A faixa física (valorMinimo e valorMaximo) é validada em conjunto.' })
   @ApiParam(PARAMETRO_ID)
   @ApiOkResponse({ type: SensorRespostaDto, description: 'Sensor atualizado.' })
   @RequisicaoInvalida('Dados inválidos ou faixa física invertida (valorMinimo maior que valorMaximo).')

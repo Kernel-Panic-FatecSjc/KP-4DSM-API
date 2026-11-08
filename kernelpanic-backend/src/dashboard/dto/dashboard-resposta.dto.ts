@@ -26,7 +26,7 @@ export class IndicadoresDashboardDto {
   @ApiProperty({ example: 1280, description: 'Quantidade de leituras consideradas (no máximo 5000 pontos por consulta).' })
   leituras!: number;
 
-  @ApiProperty({ example: 23.4, nullable: true, description: 'Média simples de todos os valores do período; null sem leituras.' })
+  @ApiProperty({ type: Number, example: 23.4, nullable: true, description: 'Média simples de todos os valores do período; null sem leituras.' })
   media!: number | null;
 
   @ApiProperty({ example: 2, description: 'Alarmes ABERTOS disparados no período.' })
@@ -62,7 +62,7 @@ export class SerieDashboardDto {
 }
 
 export class DashboardRespostaDto {
-  @ApiProperty({ example: '5b0c4c1e-6a1f-4c55-9c8b-0f3f2f7f4a10', nullable: true, description: 'Licitação do escopo; null no dashboard geral da Tecsus.' })
+  @ApiProperty({ type: String, example: '5b0c4c1e-6a1f-4c55-9c8b-0f3f2f7f4a10', nullable: true, description: 'Licitação do escopo; null no dashboard geral da Tecsus.' })
   licitacaoId!: string | null;
 
   @ApiProperty({ type: PeriodoDashboardDto })

@@ -101,6 +101,22 @@ jobs:
       - name: Build dos serviços de ingestão e tratamento
         run: npm run build:servicos
 
+      # Contrato da API (RNF12): gerado do build, sem subir o servidor nem o
+      # banco. PR que quebra a geração ou deixa a especificação inválida (ou
+      # com aviso do Spectral) falha aqui; a válida fica como artefato.
+      - name: Gerar contrato OpenAPI
+        run: npm run openapi:gerar
+
+      - name: Validar contrato OpenAPI (Spectral)
+        run: npm run openapi:validar
+
+      - name: Publicar contrato OpenAPI
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: kernelpanic-backend/openapi.json
+          if-no-files-found: error
+
   testes:
     name: Testes (NestJS)
     runs-on: ubuntu-latest

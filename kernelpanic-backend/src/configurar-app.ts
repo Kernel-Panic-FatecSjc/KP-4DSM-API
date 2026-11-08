@@ -16,6 +16,11 @@ export function configurarApp(app: INestApplication): void {
 
 /** Swagger em /docs e o documento OpenAPI em /docs-json. Também usado pelos serviços de ingestão e tratamento. */
 export function configurarDocumentacao(app: INestApplication): void {
+  SwaggerModule.setup('docs', app, criarDocumentoOpenApi(app));
+}
+
+/** O documento OpenAPI 3 da app. Também usado por scripts/gerar-openapi.ts, que gera o arquivo sem subir o servidor. */
+export function criarDocumentoOpenApi(app: INestApplication) {
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Kernel Panic API')
     .setDescription(
@@ -24,6 +29,23 @@ export function configurarDocumentacao(app: INestApplication): void {
         'a ingestão usa a chave da estação no header.',
     )
     .setVersion('1.0')
+    .addServer('/', 'Servidor atual')
+    .addTag('autenticacao', 'Login, logout e perfil da sessão.')
+    .addTag('usuarios', 'Cadastro e gestão de usuários.')
+    .addTag('licitacoes', 'Licitações, órgãos e vínculo de estações.')
+    .addTag('estacoes', 'Estações meteorológicas e suas chaves de ingestão.')
+    .addTag('sensores', 'Tipos de sensor (parâmetros) e unidades de medida.')
+    .addTag('alertas', 'Regras de limite que geram alarmes.')
+    .addTag('alarmes', 'Histórico de alarmes disparados.')
+    .addTag('dashboard', 'Indicadores e séries de medições.')
+    .addTag('relatorios', 'Relatórios consolidados de histórico climático.')
+    .addTag('leituras-brutas', 'Pacotes recebidos dos dispositivos, sem tratamento.')
+    .addTag('leituras-erro', 'Leituras recusadas pelo tratamento.')
+    .addTag('auditoria', 'Trilha de auditoria das ações no sistema.')
+    .addTag('dados-abertos', 'Dados públicos em JSON e CSV (e-PING), sem login.')
+    .addTag('ingestao', 'Recebimento de telemetria das estações (serviço de ingestão).')
+    .addTag('saude', 'Verificação de saúde dos serviços.')
+    .addTag('aplicacao', 'Verificação de que a API responde.')
     .addCookieAuth(
       'access_token',
       { type: 'apiKey', in: 'cookie' },
@@ -34,9 +56,5 @@ export function configurarDocumentacao(app: INestApplication): void {
       HEADER_CHAVE_INGESTAO,
     )
     .build();
-  SwaggerModule.setup(
-    'docs',
-    app,
-    SwaggerModule.createDocument(app, swaggerConfig),
-  );
+  return SwaggerModule.createDocument(app, swaggerConfig);
 }

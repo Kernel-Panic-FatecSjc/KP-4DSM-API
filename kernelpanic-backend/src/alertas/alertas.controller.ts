@@ -87,7 +87,7 @@ export class AlertasController {
   @Patch(':id')
   @Perfis(...PERFIS_ADMIN)
   @RotaLogada()
-  @ApiOperation({ summary: 'Atualizar alerta' })
+  @ApiOperation({ summary: 'Atualizar alerta', description: 'Altera os campos informados: condição, limite, severidade, parâmetro monitorado ou ativação.' })
   @ApiParam(PARAMETRO_ID)
   @ApiOkResponse({ type: AlertaRespostaDto, description: 'Alerta atualizado.' })
   @RequisicaoInvalida('Dados inválidos, parâmetro inexistente ou de outra licitação.')

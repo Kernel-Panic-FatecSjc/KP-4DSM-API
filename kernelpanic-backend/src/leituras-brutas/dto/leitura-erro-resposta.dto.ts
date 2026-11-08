@@ -14,7 +14,7 @@ export class LeituraErroRespostaDto {
   @ApiProperty({ example: 'temperatura', description: 'Nome do sensor no pacote.' })
   nomeSensor!: string;
 
-  @ApiProperty({ example: '22222222-2222-4222-8222-222222222222', nullable: true, description: 'Parâmetro configurado; null quando o sensor não está configurado na estação.' })
+  @ApiProperty({ type: String, example: '22222222-2222-4222-8222-222222222222', nullable: true, description: 'Parâmetro configurado; null quando o sensor não está configurado na estação.' })
   parametroId!: string | null;
 
   @ApiProperty({ example: 912.5, description: 'Valor recebido.' })
@@ -26,16 +26,16 @@ export class LeituraErroRespostaDto {
   @ApiProperty({ enum: MotivoLeituraErro, description: 'Por que a leitura não virou medida.' })
   motivo!: string;
 
-  @ApiProperty({ example: 0, nullable: true, description: 'Menor valor válido vigente quando a leitura chegou.' })
+  @ApiProperty({ type: Number, example: 0, nullable: true, description: 'Menor valor válido vigente quando a leitura chegou.' })
   valorMinimo!: number | null;
 
-  @ApiProperty({ example: 500, nullable: true, description: 'Maior valor válido vigente quando a leitura chegou.' })
+  @ApiProperty({ type: Number, example: 500, nullable: true, description: 'Maior valor válido vigente quando a leitura chegou.' })
   valorMaximo!: number | null;
 
   @ApiProperty({ example: '2026-11-08T14:32:11.000Z', description: 'Momento do registro (ISO 8601, UTC).' })
   registradoEm!: Date;
 
-  @ApiProperty({ example: '5b0c4c1e-6a1f-4c55-9c8b-0f3f2f7f4a10', nullable: true, description: 'Licitação da estação; null se a estação não existe.' })
+  @ApiProperty({ type: String, example: '5b0c4c1e-6a1f-4c55-9c8b-0f3f2f7f4a10', nullable: true, description: 'Licitação da estação; null se a estação não existe.' })
   licitacaoId!: string | null;
 }
 

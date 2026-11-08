@@ -49,16 +49,16 @@ export class AuditoriaRespostaDto {
   acao: string;
   @ApiProperty({ example: 'Usuario', description: 'Entidade afetada.' })
   entidade: string;
-  @ApiProperty({ example: '8f14e45f-ceea-4f67-9d6b-0c6f4c1a2b3d', nullable: true, description: 'Id da entidade afetada, quando há.' })
+  @ApiProperty({ type: String, example: '8f14e45f-ceea-4f67-9d6b-0c6f4c1a2b3d', nullable: true, description: 'Id da entidade afetada, quando há.' })
   entidadeId: string | null;
-  @ApiProperty({ example: '189.12.*.*', nullable: true, description: 'IP de origem, mascarado.' })
+  @ApiProperty({ type: String, example: '189.12.*.*', nullable: true, description: 'IP de origem, mascarado.' })
   enderecoIp: string | null;
   @ApiProperty({ type: 'object', additionalProperties: true, nullable: true, example: { campos: ['nome'] }, description: 'Detalhes da ação, sem senha, token nem email.' })
   detalhes: unknown;
   @ApiProperty({ type: UsuarioDaAuditoriaDto, nullable: true, description: 'Quem fez a ação; null para visitante ou sistema.' })
   usuario: { id: string; nome: string } | null;
   /** Licitação de quem fez a ação; nula = Tecsus ou visitante. */
-  @ApiProperty({ example: '5b0c4c1e-6a1f-4c55-9c8b-0f3f2f7f4a10', nullable: true, description: 'Licitação de quem fez a ação; null para Tecsus ou visitante.' })
+  @ApiProperty({ type: String, example: '5b0c4c1e-6a1f-4c55-9c8b-0f3f2f7f4a10', nullable: true, description: 'Licitação de quem fez a ação; null para Tecsus ou visitante.' })
   licitacaoId: string | null;
 
   constructor(registro: RegistroComUsuario) {

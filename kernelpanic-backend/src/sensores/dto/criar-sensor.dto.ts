@@ -41,12 +41,12 @@ export class CriarSensorDto {
 
   // Faixa física válida da leitura, inclusiva e opcional: fora dela a ingestão
   // não grava a medida (ver leituras_erro). null limpa o limite.
-  @ApiPropertyOptional({ example: 0, nullable: true, description: 'Menor valor físico válido (inclusivo), na unidade do sensor. Fora da faixa a leitura vai para leituras_erro.' })
+  @ApiPropertyOptional({ type: Number, example: 0, nullable: true, description: 'Menor valor físico válido (inclusivo), na unidade do sensor. Fora da faixa a leitura vai para leituras_erro.' })
   @IsOptional()
   @IsNumber({ allowInfinity: false, allowNaN: false })
   valorMinimo?: number | null;
 
-  @ApiPropertyOptional({ example: 500, nullable: true, description: 'Maior valor físico válido (inclusivo), na unidade do sensor.' })
+  @ApiPropertyOptional({ type: Number, example: 500, nullable: true, description: 'Maior valor físico válido (inclusivo), na unidade do sensor.' })
   @IsOptional()
   @IsNumber({ allowInfinity: false, allowNaN: false })
   valorMaximo?: number | null;

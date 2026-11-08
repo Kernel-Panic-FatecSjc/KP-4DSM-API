@@ -26,6 +26,7 @@ export class AtualizarUsuarioDto {
 
   // null tira o usuário da licitação (só faz sentido ao virar ADMIN_TECSUS).
   @ApiPropertyOptional({
+    type: String,
     example: '5b0c4c1e-6a1f-4c55-9c8b-0f3f2f7f4a10',
     nullable: true,
     description: 'Nova licitação. Só a Tecsus muda; null tira o usuário da licitação (ao virar ADMIN_TECSUS).',

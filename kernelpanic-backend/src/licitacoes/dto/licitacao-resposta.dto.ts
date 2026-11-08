@@ -14,7 +14,7 @@ export class LicitacaoRespostaDto {
   @ApiProperty({ enum: StatusLicitacao, description: 'Situação da licitação.' }) status: StatusLicitacao;
   @ApiPropertyOptional({ nullable: true, format: 'date-time', example: null, description: 'Quando foi encerrada; null enquanto não encerrada.' }) encerradaEm: Date | null;
   @ApiProperty({ example: 'Prefeitura de São José dos Campos', description: 'Nome do órgão contratante.' }) orgaoNome: string;
-  @ApiPropertyOptional({ nullable: true, example: '46.643.466/0001-06', description: 'CNPJ do órgão, quando informado.' }) orgaoCnpj: string | null;
+  @ApiPropertyOptional({ type: String, nullable: true, example: '46.643.466/0001-06', description: 'CNPJ do órgão, quando informado.' }) orgaoCnpj: string | null;
   @ApiProperty({ enum: EsferaOrgao, description: 'Esfera do órgão.' }) orgaoEsfera: EsferaOrgao;
   @ApiProperty({ example: 'São José dos Campos', description: 'Município do órgão.' }) orgaoMunicipio: string;
   @ApiProperty({ example: 'SP', description: 'UF do órgão.' }) orgaoUf: string;

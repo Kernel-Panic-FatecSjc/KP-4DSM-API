@@ -37,12 +37,12 @@ export class AtualizarSensorDto {
 
   // Faixa física válida da leitura, inclusiva e opcional: fora dela a ingestão
   // não grava a medida (ver leituras_erro). null limpa o limite.
-  @ApiPropertyOptional({ example: 0, nullable: true, description: 'Novo menor valor físico válido (inclusivo). null remove o limite.' })
+  @ApiPropertyOptional({ type: Number, example: 0, nullable: true, description: 'Novo menor valor físico válido (inclusivo). null remove o limite.' })
   @IsOptional()
   @IsNumber({ allowInfinity: false, allowNaN: false })
   valorMinimo?: number | null;
 
-  @ApiPropertyOptional({ example: 500, nullable: true, description: 'Novo maior valor físico válido (inclusivo). null remove o limite.' })
+  @ApiPropertyOptional({ type: Number, example: 500, nullable: true, description: 'Novo maior valor físico válido (inclusivo). null remove o limite.' })
   @IsOptional()
   @IsNumber({ allowInfinity: false, allowNaN: false })
   valorMaximo?: number | null;

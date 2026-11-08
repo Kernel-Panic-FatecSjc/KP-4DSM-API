@@ -83,7 +83,7 @@ export class CriarLicitacaoDto {
   @MaxLength(200)
   orgaoNome!: string;
 
-  @ApiPropertyOptional({ example: '11.222.333/0001-81', nullable: true })
+  @ApiPropertyOptional({ type: String, example: '11.222.333/0001-81', nullable: true })
   @IsOptional()
   @IsString()
   @IsCnpj({ message: 'orgaoCnpj deve ser válido' })

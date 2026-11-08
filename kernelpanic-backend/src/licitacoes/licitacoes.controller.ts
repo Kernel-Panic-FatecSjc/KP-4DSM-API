@@ -63,7 +63,7 @@ export class LicitacoesController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Consultar licitação' })
+  @ApiOperation({ summary: 'Consultar licitação', description: 'Dados da licitação e do órgão. Usuário de licitação só consulta a própria.' })
   @ApiParam({ name: 'id', description: 'UUID da licitação' })
   @ApiOkResponse({ type: LicitacaoRespostaDto, description: 'Licitação encontrada.' })
   @ApiForbiddenResponse({ description: 'Licitação de outro cliente' })
