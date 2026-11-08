@@ -186,7 +186,9 @@ export function resumirPorSeveridade(ocorrencias: Ocorrencia[]): ResumoSeveridad
 export function resumirPorEstacao(ocorrencias: Ocorrencia[]): ResumoEstacaoDto[] {
   const porEstacao = new Map<string, Ocorrencia[]>();
   for (const ocorrencia of ocorrencias) {
-    porEstacao.set(ocorrencia.estacao.id, [...(porEstacao.get(ocorrencia.estacao.id) ?? []), ocorrencia]);
+    const daEstacao = porEstacao.get(ocorrencia.estacao.id);
+    if (daEstacao) daEstacao.push(ocorrencia);
+    else porEstacao.set(ocorrencia.estacao.id, [ocorrencia]);
   }
 
   return [...porEstacao.values()]

@@ -112,7 +112,6 @@ export class RelatoriosController {
     });
 
     resposta.setHeader('X-Laudo-Id', laudoId);
-    resposta.setHeader('Access-Control-Expose-Headers', 'X-Laudo-Id, Content-Disposition');
     await enviarPdf(resposta, `laudo-incidentes-${laudoId}.pdf`, documento);
   }
 
