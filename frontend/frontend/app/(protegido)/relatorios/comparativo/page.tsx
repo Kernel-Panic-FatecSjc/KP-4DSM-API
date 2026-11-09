@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, ChartNoAxesCombined, Download, FileText, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { PageHeading } from '@/components/PageHeading';
 import { Button } from '@/components/ui/button';
-import { api, baixarDaApi, ErroApi, type EstacaoApi, type SensorApi } from '@/lib/api';
+import { API_URL, api, baixarDaApi, ErroApi, type EstacaoApi, type SensorApi } from '@/lib/api';
 
 type Periodo = { inicio: string; fim: string };
 
@@ -26,6 +26,7 @@ type Estatistica = {
 type Resultado = {
   periodos: { inicio: string; fim: string; estacoes: Estatistica[] }[];
   metodoCalculo: string;
+  microclimasRisco: { periodoIndice: number; estacaoId: string; estacaoNome: string; media: number; medianaGrupo: number; diferencaParaMediana: number }[];
 };
 
 const dataDeHoje = new Date();
@@ -63,18 +64,6 @@ function montarConsulta(estacoes: string[], parametroId: string, periodos: Perio
   return query;
 }
 
-function encontrarDiscrepantes(resultado: Resultado) {
-  const medianas = resultado.periodos.flatMap((periodo) =>
-    periodo.estacoes.filter((estacao) => estacao.mediana !== null).map((estacao) => estacao.mediana!),
-  );
-  if (!medianas.length) return [] as Estatistica[];
-  const media = medianas.reduce((total, valor) => total + valor, 0) / medianas.length;
-  const desvio = Math.sqrt(medianas.reduce((total, valor) => total + (valor - media) ** 2, 0) / medianas.length);
-  return resultado.periodos.flatMap((periodo) => periodo.estacoes).filter((estacao) =>
-    estacao.mediana !== null && desvio > 0 && Math.abs(estacao.mediana - media) > 2 * desvio,
-  );
-}
-
 function Boxplot({ resultado }: { resultado: Resultado }) {
   const todosValores = resultado.periodos.flatMap((periodo) =>
     periodo.estacoes.flatMap((estacao) => [estacao.minimo, estacao.maximo]),
@@ -87,7 +76,6 @@ function Boxplot({ resultado }: { resultado: Resultado }) {
   const menorValor = Math.min(...todosValores);
   const maiorValor = Math.max(...todosValores);
   const diferenca = maiorValor - menorValor || 1;
-  const discrepantes = encontrarDiscrepantes(resultado);
 
   return (
     <div className="space-y-3 p-4">
@@ -98,7 +86,7 @@ function Boxplot({ resultado }: { resultado: Resultado }) {
           </p>
           {periodo.estacoes.map((estacao) => {
             const semValores = estacao.minimo === null || estacao.maximo === null;
-            const discrepante = discrepantes.some((item) => item.estacaoId === estacao.estacaoId);
+            const discrepante = resultado.microclimasRisco.some((item) => item.periodoIndice === periodoIndex && item.estacaoId === estacao.estacaoId);
             const posicao = (valor: number) => `${((valor - menorValor) / diferenca) * 100}%`;
             const inicioCaixa = estacao.quartil1 ?? estacao.minimo;
             const fimCaixa = estacao.quartil3 ?? estacao.maximo;
@@ -206,11 +194,24 @@ export default function ComparativoPage() {
     setErro(null);
     setPreparandoPdf(true);
     try {
-      await api('/relatorios/estatisticas/exportar-pdf', {
+      const resposta = await fetch(`${API_URL}/relatorios/estatisticas/exportar-pdf`, {
         method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ estacaoIds: estacoesSelecionadas, parametroId, periodos: montarConsulta(estacoesSelecionadas, parametroId, periodos).getAll('periodos') }),
       });
-      window.print();
+      if (!resposta.ok) {
+        const corpo = await resposta.json().catch(() => null);
+        throw new ErroApi(resposta.status, Array.isArray(corpo?.message) ? corpo.message.join(', ') : corpo?.message ?? 'Não foi possível gerar o PDF.');
+      }
+      const url = URL.createObjectURL(await resposta.blob());
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'relatorio-estatistico.pdf';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (erroApi) {
       setErro(erroApi instanceof ErroApi ? erroApi.message : 'Não foi possível preparar o PDF.');
     } finally {
@@ -233,7 +234,7 @@ export default function ComparativoPage() {
   const semDados = resultado?.periodos.every((periodo) =>
     periodo.estacoes.every((estacao) => estacao.quantidade === 0),
   );
-  const discrepantes = resultado ? encontrarDiscrepantes(resultado) : [];
+  const discrepantes = resultado?.microclimasRisco ?? [];
   const maiorMediana = resultado
     ? resultado.periodos.flatMap((periodo) => periodo.estacoes)
       .filter((estacao) => estacao.mediana !== null)
@@ -325,7 +326,7 @@ export default function ComparativoPage() {
               : `Maior mediana observada: ${maiorMediana?.estacaoNome ?? '—'} (${formatarNumero(maiorMediana?.mediana ?? null)}). ${discrepantes.length} resultado(s) sinalizado(s) como discrepante(s).`}
           </p>
           {discrepantes.length > 0 && <p className="mt-1 text-sm text-red-700">Pontos para revisão: {discrepantes.map((item) => item.estacaoNome).join(', ')}.</p>}
-          <p className="mt-2 text-[11px] text-muted-foreground">Critério: mediana além de dois desvios padrão da média das medianas incluídas.</p>
+          <p className="mt-2 text-[11px] text-muted-foreground">Critério: mediana além de dois desvios padrão populacionais da média das medianas do período.</p>
         </section>
 
         <section className="rounded-xl border border-border bg-card print:break-inside-avoid">
@@ -367,7 +368,7 @@ export default function ComparativoPage() {
             </table>
           </div>
           <p className="border-t border-border px-4 py-2 text-[11px] text-muted-foreground print:hidden">
-            Destaque em vermelho: mediana mais de 2 desvios padrão distante da média das medianas.
+            Destaque em vermelho: microclima em risco segundo o critério aplicado pela API.
           </p>
         </section>
       </>}

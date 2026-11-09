@@ -112,7 +112,7 @@ jestDescribe('GET /relatorios/estatisticas com períodos múltiplos (funcional)'
     jestExpect($queryRaw).not.toHaveBeenCalled();
   });
 
-  jestIt('classifies stations more than 2 units from the group median', async () => {
+  jestIt('classifies station medians more than 2 population standard deviations from the group mean', async () => {
     $queryRaw.mockReset().mockResolvedValueOnce([
       { estacaoId: 'e1', estacaoNome: 'Baixa', quantidade: 1n, media: 10, mediana: 10, desvioPadrao: 0, variancia: 0, quartil1: 10, quartil2: 10, quartil3: 10, minimo: 10, maximo: 10 },
       { estacaoId: 'e2', estacaoNome: 'Limite inferior', quantidade: 1n, media: 11, mediana: 11, desvioPadrao: 0, variancia: 0, quartil1: 11, quartil2: 11, quartil3: 11, minimo: 11, maximo: 11 },
@@ -137,8 +137,7 @@ jestDescribe('GET /relatorios/estatisticas com períodos múltiplos (funcional)'
     });
     if (resposta.status !== 200) throw new Error(JSON.stringify(resposta.body));
     jestExpect(resposta.body.microclimasRisco).toEqual([
-      { periodoIndice: 0, estacaoId: 'e1', estacaoNome: 'Baixa', media: 10, medianaGrupo: 13, diferencaParaMediana: -3 },
-      { periodoIndice: 0, estacaoId: 'e6', estacaoNome: 'Alta', media: 30, medianaGrupo: 13, diferencaParaMediana: 17 },
+      { periodoIndice: 0, estacaoId: 'e6', estacaoNome: 'Alta', media: 30, medianaGrupo: 15.333333333333334, diferencaParaMediana: 14.666666666666666 },
     ]);
   });
 });

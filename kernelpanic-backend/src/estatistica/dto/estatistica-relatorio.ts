@@ -57,7 +57,7 @@ export class MicroclimaRiscoDto {
   media: number;
   @ApiProperty()
   medianaGrupo: number;
-  @ApiProperty({ description: 'Média da estação menos a mediana das médias do grupo.' })
+  @ApiProperty({ description: 'Mediana da estação menos a média das medianas do grupo.' })
   diferencaParaMediana: number;
 }
 
@@ -68,6 +68,6 @@ export class RelatorioEstatisticoDto {
   metodoCalculo: string;
   @ApiProperty({ type: [ComparacaoEstacaoDto], description: 'Cada período posterior é comparado ao primeiro período informado.' })
   comparacoes: ComparacaoEstacaoDto[];
-  @ApiProperty({ type: [MicroclimaRiscoDto], description: 'Estações cuja média difere em mais de 2 unidades da mediana das médias do grupo no período.' })
+  @ApiProperty({ type: [MicroclimaRiscoDto], description: 'Estações cuja mediana fica a mais de 2 desvios padrão populacionais da média das medianas do grupo no período.' })
   microclimasRisco: MicroclimaRiscoDto[];
 }

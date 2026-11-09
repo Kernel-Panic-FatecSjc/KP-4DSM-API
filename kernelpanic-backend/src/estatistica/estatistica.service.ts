@@ -84,27 +84,22 @@ export class EstatisticaService {
   private classificarMicroclimas(periodos: PeriodoEstatisticoDto[]): MicroclimaRiscoDto[] {
     const riscos: MicroclimaRiscoDto[] = [];
     periodos.forEach((periodo, periodoIndice) => {
-      const medias = periodo.estacoes
-        .map((estacao) => estacao.media)
-        .filter((media): media is number => media !== null && Number.isFinite(media))
-        .sort((a, b) => a - b);
-      if (medias.length === 0) return;
-      const meio = Math.floor(medias.length / 2);
-      const medianaGrupo = medias.length % 2 === 0
-        ? (medias[meio - 1] + medias[meio]) / 2
-        : medias[meio];
+      const estacoesValidas = periodo.estacoes.filter((estacao) => estacao.mediana !== null && Number.isFinite(estacao.mediana));
+      const medianas = estacoesValidas.map((estacao) => estacao.mediana!);
+      if (medianas.length === 0) return;
+      const mediaGrupo = medianas.reduce((soma, valor) => soma + valor, 0) / medianas.length;
+      const desvioGrupo = Math.sqrt(medianas.reduce((soma, valor) => soma + (valor - mediaGrupo) ** 2, 0) / medianas.length);
 
-      for (const estacao of periodo.estacoes) {
-        if (estacao.media === null || !Number.isFinite(estacao.media)) continue;
-        const diferencaParaMediana = estacao.media - medianaGrupo;
-        if (Math.abs(diferencaParaMediana) <= 2) continue;
+      for (const estacao of estacoesValidas) {
+        const diferencaParaMedia = estacao.mediana! - mediaGrupo;
+        if (desvioGrupo === 0 || Math.abs(diferencaParaMedia) <= 2 * desvioGrupo) continue;
         const risco = new MicroclimaRiscoDto();
         risco.periodoIndice = periodoIndice;
         risco.estacaoId = estacao.estacaoId;
         risco.estacaoNome = estacao.estacaoNome;
-        risco.media = estacao.media;
-        risco.medianaGrupo = medianaGrupo;
-        risco.diferencaParaMediana = diferencaParaMediana;
+        risco.media = estacao.mediana!;
+        risco.medianaGrupo = mediaGrupo;
+        risco.diferencaParaMediana = diferencaParaMedia;
         riscos.push(risco);
       }
     });

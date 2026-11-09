@@ -8,6 +8,7 @@ import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorato
 import { AuditoriaService } from '../auditoria/auditoria.service';
 import { autoria } from '../auditoria/autoria';
 import { enviarCsv } from '../exportacao/csv';
+import { enviarPdf, montarRelatorioPdf, secaoPdf, tabelaPdf } from '../exportacao/pdf';
 import { ConsultarEstatisticasDto } from './dto/estatistica-resposta';
 import { RelatorioEstatisticoDto } from './dto/estatistica-relatorio';
 import { EstatisticaService } from './estatistica.service';
@@ -93,20 +94,50 @@ export class EstatisticaController {
 
   @Post('estatisticas/exportar-pdf')
   @ApiOperation({
-    summary: 'Registra a solicitação de impressão do relatório estatístico em PDF',
+    summary: 'Gera e exporta o relatório estatístico em PDF',
     description:
-      'Registra na auditoria a solicitação de exportação em PDF para os filtros informados e retorna uma confirmação. A geração do arquivo PDF ocorre no cliente.',
+      'Gera no backend o PDF estatístico com os mesmos filtros e dados da comparação e registra a exportação na auditoria.',
   })
   async registrarExportacaoPdf(
     @Body() filtros: ConsultarEstatisticasDto,
     @UsuarioAutenticado() usuario: UsuarioLogado,
-  ): Promise<{ mensagem: string }> {
+    @Res() resposta: Response,
+  ): Promise<void> {
+    const relatorio = await this.estatisticaService.comparar(filtros, usuario);
     await this.auditoriaService.registrar({
       acao: 'relatorios.estatisticas.exportar.pdf',
       entidade: 'RelatorioEstatistico',
       ...autoria(usuario),
       detalhes: { formato: 'PDF', estacaoIds: filtros.estacaoIds, parametroId: filtros.parametroId, periodos: filtros.periodos },
     });
-    return { mensagem: 'Exportação registrada' };
+    const conteudo = [
+      secaoPdf('Síntese estatística'),
+      ...relatorio.periodos.flatMap((periodo, indice) => [
+        secaoPdf(`Período ${indice + 1}: ${periodo.inicio.toLocaleDateString('pt-BR')} a ${periodo.fim.toLocaleDateString('pt-BR')}`),
+        tabelaPdf(
+          ['Estação', 'Leituras', 'Média', 'Mediana', 'Desvio padrão', 'Variância', 'Q1', 'Q3', 'Mínimo', 'Máximo'],
+          periodo.estacoes.map((estacao) => [estacao.estacaoNome, estacao.quantidade, estacao.media, estacao.mediana, estacao.desvioPadrao, estacao.variancia, estacao.quartil1, estacao.quartil3, estacao.minimo, estacao.maximo]),
+          { larguras: ['*', 38, 44, 44, 52, 48, 38, 38, 42, 42], colunasNumero: [1, 2, 3, 4, 5, 6, 7, 8, 9] },
+        ),
+      ]),
+      secaoPdf('Microclimas em risco'),
+      tabelaPdf(
+        ['Período', 'Estação', 'Mediana', 'Média do grupo', 'Diferença'],
+        relatorio.microclimasRisco.map((risco) => [risco.periodoIndice + 1, risco.estacaoNome, risco.media, risco.medianaGrupo, risco.diferencaParaMediana]),
+        { colunasNumero: [0, 2, 3, 4] },
+      ),
+    ];
+    await enviarPdf(resposta, 'relatorio-estatistico.pdf', montarRelatorioPdf({
+      titulo: 'Relatório estatístico comparativo',
+      subtitulo: relatorio.metodoCalculo,
+      filtros: [
+        { rotulo: 'Estações', valor: filtros.estacaoIds.join(', ') },
+        { rotulo: 'Parâmetro', valor: filtros.parametroId },
+        ...filtros.periodos.map((periodo, indice) => ({ rotulo: `Período ${indice + 1}`, valor: periodo.replace('|', ' até ') })),
+      ],
+      conteudo,
+      emitidoPor: usuario.email,
+      orientacao: 'landscape',
+    }));
   }
 }
