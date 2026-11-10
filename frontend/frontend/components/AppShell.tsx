@@ -1,7 +1,6 @@
 'use client';
 
 import {
-  BarChart3,
   Bell,
   ChevronDown,
   ChevronRight,
@@ -11,6 +10,7 @@ import {
   FileWarning,
   Gauge,
   LayoutDashboard,
+  ChartNoAxesCombined,
   LogIn,
   LogOut,
   MapPin,
@@ -102,13 +102,10 @@ const NAV_ITEMS: NavItem[] = [
   },
   {
     label: 'Relatórios',
-    icon: BarChart3,
+    icon: ChartNoAxesCombined,
     children: [
-      {
-        label: 'Incidentes',
-        href: '/relatorios/incidentes',
-        icon: FileWarning,
-      },
+      { label: 'Análise comparativa', href: '/relatorios/comparativo', icon: ChartNoAxesCombined },
+      { label: 'Incidentes', href: '/relatorios/incidentes', icon: FileWarning },
     ],
   },
   {
@@ -170,7 +167,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex min-h-screen bg-background font-body text-foreground antialiased">
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex flex-col bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 md:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex flex-col bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 md:translate-x-0 print:hidden',
           collapsed ? 'md:w-16' : 'md:w-60',
           mobileOpen ? 'w-60 translate-x-0' : 'w-60 -translate-x-full',
         )}
@@ -390,10 +387,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div
         className={cn(
           'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
-          collapsed ? 'md:pl-16' : 'md:pl-60',
+          collapsed ? 'md:pl-16 print:pl-0' : 'md:pl-60 print:pl-0',
         )}
       >
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur md:px-6">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur md:px-6 print:hidden">
           <Button
             variant="outline"
             size="icon"
@@ -436,7 +433,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 
         <RegiaoProvider>
-          <main className="flex-1 p-4 md:p-6">{children}</main>
+          <main className="flex-1 p-4 md:p-6 print:m-0 print:p-0">{children}</main>
           <AlertaTempoReal />
         </RegiaoProvider>
       </div>

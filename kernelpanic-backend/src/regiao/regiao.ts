@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsLatitude, IsLongitude, ValidateIf } from 'class-validator';
 
@@ -19,11 +20,19 @@ export interface Coordenadas {
  * informar só uma das duas é erro de validação.
  */
 export class RegiaoQueryDto {
+  @ApiPropertyOptional({
+    example: -23.1896,
+    description: `Latitude (WGS84) de quem consulta. Obrigatória para visitante sem login, que só vê estações num raio de ${RAIO_REGIAO_KM} km; vai junto com a longitude.`,
+  })
   @ValidateIf((dto: RegiaoQueryDto) => dto.longitude !== undefined)
   @Type(() => Number)
   @IsLatitude()
   latitude?: number;
 
+  @ApiPropertyOptional({
+    example: -45.8841,
+    description: 'Longitude (WGS84) de quem consulta. Vai junto com a latitude.',
+  })
   @ValidateIf((dto: RegiaoQueryDto) => dto.latitude !== undefined)
   @Type(() => Number)
   @IsLongitude()

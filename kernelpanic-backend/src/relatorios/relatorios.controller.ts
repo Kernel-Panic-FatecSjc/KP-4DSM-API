@@ -3,20 +3,19 @@ import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import {
   ApiBadRequestResponse,
-  ApiCookieAuth,
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiProduces,
   ApiOperation,
   ApiQuery,
   ApiTags,
-  ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import { GuardaPerfil } from '../autenticacao/guarda-perfil.guard';
 import type { UsuarioLogado } from '../autenticacao/payload-jwt.interface';
 import { UsuarioAutenticado } from '../autenticacao/usuario-autenticado.decorator';
 import { AuditoriaService } from '../auditoria/auditoria.service';
+import { RotaLogada } from '../documentacao/respostas';
 import { autoria } from '../auditoria/autoria';
 import {
   HistoricoClimaticoQueryDto,
@@ -34,10 +33,7 @@ import { RelatoriosService } from './relatorios.service';
 @Controller('relatorios')
 @UseGuards(GuardaJwt, GuardaPerfil)
 @ApiTags('relatorios')
-@ApiCookieAuth()
-@ApiUnauthorizedResponse({
-  description: 'Cookie de sessão ausente ou inválido',
-})
+@RotaLogada()
 export class RelatoriosController {
   constructor(
     private readonly relatoriosService: RelatoriosService,
@@ -181,7 +177,7 @@ export class RelatoriosController {
     description:
       'UUIDs das estações; repita o parâmetro para filtrar mais de uma.',
   })
-  @ApiOkResponse({ type: HistoricoClimaticoRespostaDto })
+  @ApiOkResponse({ type: HistoricoClimaticoRespostaDto, description: 'Histórico consolidado por estação, parâmetro e período.' })
   @ApiBadRequestResponse({
     description:
       'Datas, granularidade ou UUIDs inválidos; início posterior ao fim.',
