@@ -110,6 +110,18 @@ test.describe('Auditoria pela Tecsus', () => {
   });
 });
 
+test.describe('Auditoria sem registros', () => {
+  test('não deixa exportar quando a consulta não traz registro (a API recusaria com 422)', async ({ page, api }) => {
+    logarComo(api, ADMIN);
+    api.responder('GET /licitacoes', { body: pagina([LICITACAO_A]) });
+    api.responder('GET /auditoria', { body: pagina([]) });
+    await page.goto('/auditoria');
+
+    await expect(page.getByRole('button', { name: 'CSV' })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Excel formatado' })).toBeDisabled();
+  });
+});
+
 test.describe('Auditoria pelo admin da licitação', () => {
   test('vê só a trilha da própria licitação, sem seletor', async ({ page, api }) => {
     logarComo(api, ADMIN_LICITACAO);

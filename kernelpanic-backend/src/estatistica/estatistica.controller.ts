@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Post, Query, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
-import { ApiCookieAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiProduces, ApiTags } from '@nestjs/swagger';
+import { RequisicaoInvalida, RotaLogada } from '../documentacao/respostas';
 import { GuardaJwt } from '../autenticacao/guarda-jwt.guard';
 import { GuardaPerfil } from '../autenticacao/guarda-perfil.guard';
 import type { UsuarioLogado } from '../autenticacao/payload-jwt.interface';
@@ -14,10 +15,9 @@ import { RelatorioEstatisticoDto } from './dto/estatistica-relatorio';
 import { EstatisticaService } from './estatistica.service';
 
 @ApiTags('relatorios')
-@ApiCookieAuth('access_token')
+@RotaLogada()
 @Controller('relatorios')
 @UseGuards(GuardaJwt, GuardaPerfil)
-
 export class EstatisticaController {
   constructor(
     private readonly estatisticaService: EstatisticaService,
@@ -30,7 +30,8 @@ export class EstatisticaController {
     description:
       'Informe periodos repetido na query string, cada um como ISO_INICIO|ISO_FIM. O primeiro período é a referência; cada período seguinte é comparado a ele. Períodos inclusivos sobrepostos são rejeitados. Diferença absoluta = comparado - referência; percentual = diferença / valor absoluto da referência × 100; percentual fica null quando a referência é zero. Variância (VAR_POP) e desvio padrão (STDDEV_POP) são populacionais.',
   })
-  @ApiResponse({ status: 200, type: RelatorioEstatisticoDto })
+  @ApiOkResponse({ type: RelatorioEstatisticoDto, description: 'Estatísticas por período e estação, comparações e microclimas em risco.' })
+  @RequisicaoInvalida('Estações, parâmetro ou períodos ausentes ou inválidos; períodos sobrepostos.')
   async comparar(
     @Query() query: ConsultarEstatisticasDto,
     @UsuarioAutenticado() usuario: UsuarioLogado,
@@ -51,6 +52,12 @@ export class EstatisticaController {
     description:
       'Gera um arquivo CSV com as estatísticas de cada estação e período informado na consulta. Reutiliza os mesmos filtros e validações da comparação de estatísticas.',
   })
+  @ApiProduces('text/csv')
+  @ApiOkResponse({
+    description: 'Arquivo CSV com a síntese estatística.',
+    content: { 'text/csv': { schema: { type: 'string', example: 'Início do período;Fim do período;ID da estação;Estação;Leituras;Média' } } },
+  })
+  @RequisicaoInvalida('Estações, parâmetro ou períodos ausentes ou inválidos; períodos sobrepostos.')
   async exportarCsv(
     @Query() query: ConsultarEstatisticasDto,
     @UsuarioAutenticado() usuario: UsuarioLogado,
@@ -98,6 +105,12 @@ export class EstatisticaController {
     description:
       'Gera no backend o PDF estatístico com os mesmos filtros e dados da comparação e registra a exportação na auditoria.',
   })
+  @ApiProduces('application/pdf')
+  @ApiCreatedResponse({
+    description: 'Arquivo PDF do relatório estatístico.',
+    content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } },
+  })
+  @RequisicaoInvalida('Estações, parâmetro ou períodos ausentes ou inválidos; períodos sobrepostos.')
   async registrarExportacaoPdf(
     @Body() filtros: ConsultarEstatisticasDto,
     @UsuarioAutenticado() usuario: UsuarioLogado,

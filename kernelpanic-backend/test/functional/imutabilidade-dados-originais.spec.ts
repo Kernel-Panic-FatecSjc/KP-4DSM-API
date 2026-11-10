@@ -4,8 +4,8 @@ import { LeiturasBrutasRepositorio } from '../../servicos/ingestao/leituras-brut
 import { PrismaService } from '../../src/prisma/prisma.service';
 import { criarAppDeTeste, criarLicitacaoDeTeste, emailDeTeste, PREFIXO_TESTE } from '../helpers';
 
-// Com o banco real: os triggers barram UPDATE e DELETE direto em
-// leituras_brutas e medidas, inclusive fora da API.
+// Com o banco real: os triggers barram UPDATE, DELETE e TRUNCATE direto em
+// leituras_brutas, medidas e leituras_erro, inclusive fora da API.
 describe('Imutabilidade dos dados originais (funcional)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -123,6 +123,20 @@ describe('Imutabilidade dos dados originais (funcional)', () => {
       await expect(prisma.leituraErro.delete({ where: { id: registro.id } })).rejects.toThrow(
         'Leituras com erro são imutáveis',
       );
+    });
+  });
+
+  describe('TRUNCATE', () => {
+    // TRUNCATE não dispara o trigger por linha; o trigger por statement barra.
+    it.each([
+      ['leituras_brutas', 'Leituras brutas são imutáveis'],
+      ['medidas', 'Medidas são imutáveis'],
+      ['leituras_erro', 'Leituras com erro são imutáveis'],
+    ])('recusa TRUNCATE em %s', async (tabela, mensagem) => {
+      const antes = await prisma.$queryRawUnsafe<{ total: bigint }[]>(`SELECT COUNT(*) AS total FROM "${tabela}"`);
+      await expect(prisma.$executeRawUnsafe(`TRUNCATE "${tabela}" CASCADE`)).rejects.toThrow(mensagem);
+      const depois = await prisma.$queryRawUnsafe<{ total: bigint }[]>(`SELECT COUNT(*) AS total FROM "${tabela}"`);
+      expect(depois[0].total).toBe(antes[0].total);
     });
   });
 

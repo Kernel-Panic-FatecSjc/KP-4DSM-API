@@ -105,6 +105,7 @@ const NAV_ITEMS: NavItem[] = [
     icon: ChartNoAxesCombined,
     children: [
       { label: 'Análise comparativa', href: '/relatorios/comparativo', icon: ChartNoAxesCombined },
+      { label: 'Incidentes', href: '/relatorios/incidentes', icon: FileWarning },
     ],
   },
   {

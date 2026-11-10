@@ -64,6 +64,49 @@ describe('Tratamento de alarmes (funcional)', () => {
     });
   });
 
+  it('grava quem reconheceu e quando, e devolve as ações no histórico', async () => {
+    const reconhecidoEm = new Date('2026-11-08T12:00:00.000Z');
+    alarme.update.mockImplementation(({ data }) => ({
+      ...ALARME_COM_RELACOES,
+      ...data,
+      reconhecidoEm,
+      reconhecidoPor: { id: MONITOR.id, nome: 'Monitor' },
+    }));
+
+    const resposta = await remendar({ status: 'RECONHECIDO', observacao: 'Equipe enviada ao local' }).expect(200);
+
+    expect(alarme.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'RECONHECIDO',
+          reconhecidoPorId: MONITOR.id,
+          reconhecidoEm: expect.any(Date),
+          observacao: 'Equipe enviada ao local',
+        }),
+      }),
+    );
+    expect(resposta.body).toMatchObject({
+      reconhecimento: { em: reconhecidoEm.toISOString(), por: { id: MONITOR.id, nome: 'Monitor' } },
+      resolucao: null,
+      observacao: 'Equipe enviada ao local',
+    });
+  });
+
+  it('grava a resolução sem mexer no reconhecimento já registrado', async () => {
+    alarme.findUnique.mockResolvedValue({ status: 'RECONHECIDO', alerta: { licitacaoId: LICITACAO_FIXTURE } });
+
+    await remendar({ status: 'RESOLVIDO' }).expect(200);
+
+    const { data } = alarme.update.mock.calls[0][0];
+    expect(data).toMatchObject({ status: 'RESOLVIDO', resolvidoPorId: MONITOR.id, resolvidoEm: expect.any(Date) });
+    expect(data).not.toHaveProperty('reconhecidoPorId');
+  });
+
+  it('rejeita observação acima de 1000 caracteres', async () => {
+    await remendar({ status: 'RECONHECIDO', observacao: 'x'.repeat(1001) }).expect(400);
+    expect(alarme.update).not.toHaveBeenCalled();
+  });
+
   it('registra a transição na trilha de auditoria', async () => {
     await remendar({ status: 'RESOLVIDO' }).expect(200);
 
