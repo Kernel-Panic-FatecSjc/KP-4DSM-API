@@ -47,7 +47,7 @@ export class RelatoriosController {
     description:
       'Agrupa os alarmes do período em ocorrências (alarmes consecutivos do mesmo alerta, com intervalo até a tolerância) e devolve, para cada uma, a estação, o parâmetro que superou o limiar, o operador e o valor limite, o valor de pico, a duração e as ações (quem reconheceu ou resolveu e quando), além dos resumos por severidade e por estação. O período se aplica ao instante da leitura; datas sem horário valem o dia inteiro (UTC). Região: raio em km em torno de latitude/longitude e/ou trecho do endereço da estação.',
   })
-  @ApiOkResponse({ type: RelatorioIncidentesDto })
+  @ApiOkResponse({ type: RelatorioIncidentesDto, description: 'Ocorrências agrupadas e resumos por severidade e por estação.' })
   @ApiBadRequestResponse({
     description: 'Período inválido ou ausente, latitude sem longitude (ou o contrário), filtros fora da faixa, ou alarmes demais no período.',
   })
@@ -79,7 +79,11 @@ export class RelatoriosController {
       'Mesmos filtros de GET /relatorios/incidentes. O laudo traz identificação do órgão, período e filtros, resumo por severidade e por estação, tabela de ocorrências, responsável pela emissão e data/hora, e recebe um identificador único (cabeçalho X-Laudo-Id) registrado na trilha de auditoria, para rastrear o documento anexado a um decreto de emergência.',
   })
   @ApiProduces('application/pdf')
-  @ApiOkResponse({ description: 'Arquivo PDF do laudo.' })
+  @ApiOkResponse({
+    description: 'Arquivo PDF do laudo; o identificador vem no cabeçalho X-Laudo-Id.',
+    headers: { 'X-Laudo-Id': { description: 'Identificador único do laudo, registrado na trilha de auditoria.', schema: { type: 'string', format: 'uuid' } } },
+    content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } },
+  })
   @ApiBadRequestResponse({ description: 'Mesmas validações do relatório.' })
   async laudoIncidentes(
     @Query() query: IncidentesQueryDto,
@@ -117,7 +121,10 @@ export class RelatoriosController {
     description: 'Mesmos filtros de GET /relatorios/incidentes; uma linha por ocorrência. A exportação é registrada na trilha de auditoria.',
   })
   @ApiProduces('text/csv')
-  @ApiOkResponse({ description: 'Arquivo CSV (separador ";", UTF-8 com BOM).' })
+  @ApiOkResponse({
+    description: 'Arquivo CSV (separador ";", UTF-8 com BOM), uma linha por ocorrência.',
+    content: { 'text/csv': { schema: { type: 'string', example: 'Início;Fim;Duração (s);Estação;Parâmetro;Unidade;Operador;Valor limite;Valor de pico' } } },
+  })
   @ApiBadRequestResponse({ description: 'Mesmas validações do relatório.' })
   async exportarIncidentes(
     @Query() query: IncidentesQueryDto,
