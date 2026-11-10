@@ -11,7 +11,7 @@ export class ConsultarEstatisticasDto {
   @IsString({ each: true })
   estacaoIds: string[];
 
-  @ApiProperty({ description: 'ID do parâmetro medido.' })
+  @ApiProperty({ example: '7c1d2e3f-4a5b-4c6d-8e9f-0a1b2c3d4e5f', description: 'ID do parâmetro medido.' })
   @IsString()
   @IsNotEmpty()
   parametroId: string;
