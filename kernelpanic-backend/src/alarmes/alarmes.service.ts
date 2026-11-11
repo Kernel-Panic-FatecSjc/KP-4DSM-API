@@ -14,6 +14,8 @@ import { OpcoesFiltroRespostaDto } from './dto/opcoes-filtro-resposta.dto';
 
 const INCLUDE_HISTORICO = {
   medida: true,
+  reconhecidoPor: { select: { id: true, nome: true } },
+  resolvidoPor: { select: { id: true, nome: true } },
   alerta: {
     include: {
       parametro: {
@@ -33,6 +35,32 @@ const ORDEM_STATUS: Record<StatusAlarme, number> = {
   RECONHECIDO: 1,
   RESOLVIDO: 2,
 };
+
+/**
+ * Campos de ação gravados junto com o novo status (as "ações correlacionadas"
+ * do relatório de incidentes). Resolver direto um alarme aberto também conta
+ * como reconhecimento, feito pela mesma pessoa e no mesmo instante: quem
+ * resolveu necessariamente tomou conhecimento.
+ */
+export function dadosDaTransicao(
+  statusAtual: StatusAlarme,
+  dto: AtualizarStatusAlarmeDto,
+  usuarioId: string,
+  agora: Date,
+): Prisma.AlarmeUncheckedUpdateInput {
+  const dados: Prisma.AlarmeUncheckedUpdateInput = { status: dto.status };
+  if (statusAtual === StatusAlarme.ABERTO) {
+    dados.reconhecidoEm = agora;
+    dados.reconhecidoPorId = usuarioId;
+  }
+  if (dto.status === StatusAlarme.RESOLVIDO) {
+    dados.resolvidoEm = agora;
+    dados.resolvidoPorId = usuarioId;
+  }
+  const observacao = dto.observacao?.trim();
+  if (observacao) dados.observacao = observacao;
+  return dados;
+}
 
 @Injectable()
 export class AlarmesService {
@@ -129,7 +157,7 @@ export class AlarmesService {
 
     const atualizado = await this.prisma.alarme.update({
       where: { id },
-      data: { status: dto.status },
+      data: dadosDaTransicao(alarme.status, dto, usuario.sub, new Date()),
       include: INCLUDE_HISTORICO,
     });
 

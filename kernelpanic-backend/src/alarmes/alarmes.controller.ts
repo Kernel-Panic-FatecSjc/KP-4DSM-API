@@ -78,7 +78,7 @@ export class AlarmesController {
       entidade: 'Alarme',
       entidadeId: id,
       ...autoria(usuario),
-      detalhes: { status: dto.status },
+      detalhes: { status: dto.status, ...(dto.observacao ? { observacao: dto.observacao } : {}) },
     });
     return alarme;
   }

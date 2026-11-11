@@ -63,6 +63,23 @@ describe('AuditoriaAcessoMiddleware', () => {
     }
   });
 
+  it('registra a tentativa negada de consultar ou exportar a trilha, com o IP', () => {
+    for (const [caminho, status, usuario] of [
+      ['/auditoria?pagina=1', 401, undefined],
+      ['/auditoria', 403, 'monitor'],
+      ['/auditoria/exportar?de=a&ate=b', 403, 'monitor'],
+    ] as const) {
+      const { registrar } = registrarAcesso(caminho, status, usuario);
+      expect(registrar).toHaveBeenCalledWith(
+        expect.objectContaining({
+          acao: 'acesso.http',
+          enderecoIp: '203.0.113.42',
+          detalhes: { metodo: 'GET', status, autenticado: Boolean(usuario) },
+        }),
+      );
+    }
+  });
+
   it('continua auditando o que não é GET em /auditoria e rotas que só começam com o mesmo texto', () => {
     expect(registrarAcesso('/auditoria', 404, 'admin', 'POST').registrar).toHaveBeenCalled();
     expect(registrarAcesso('/auditorias', 404, 'admin').registrar).toHaveBeenCalled();
