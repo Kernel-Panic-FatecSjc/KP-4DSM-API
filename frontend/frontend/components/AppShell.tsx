@@ -19,6 +19,7 @@ import {
   PanelLeftOpen,
   Users,
   X,
+  ChartBarIcon,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -106,6 +107,11 @@ const NAV_ITEMS: NavItem[] = [
     children: [
       { label: 'Análise comparativa', href: '/relatorios/comparativo', icon: ChartNoAxesCombined },
       { label: 'Incidentes', href: '/relatorios/incidentes', icon: FileWarning },
+      {
+        label: 'Relatório de Histórico Climático',
+        href: '/relatorios/historico',
+        icon: ChartBarIcon,
+      },
     ],
   },
   {
@@ -377,7 +383,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {mobileOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-40 bg-overlay md:hidden"
+          className="fixed inset-0 z-40 bg-overlay md:hidden print:hidden"
           aria-label="Fechar menu"
           onClick={() => setMobileOpen(false)}
         />
