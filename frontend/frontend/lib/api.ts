@@ -403,6 +403,37 @@ export interface DashboardDados {
   series: DashboardSerie[];
 }
 
+export interface EstatisticasHistorico {
+  periodo?: string;
+  agregacao: 'SOMA' | 'MEDIA';
+  valor: number;
+  soma: number;
+  media: number;
+  minimo: number;
+  maximo: number;
+  leituras: number;
+}
+
+export interface ParametroHistorico {
+  id: string;
+  nome: string;
+  unidade: string;
+  agregacao: 'SOMA' | 'MEDIA';
+  periodos: EstatisticasHistorico[];
+  totalPeriodo: EstatisticasHistorico;
+}
+
+export interface HistoricoClimatico {
+  de: string;
+  ate: string;
+  granularidade: 'hora' | 'dia';
+  estacoes: {
+    id: string;
+    nome: string;
+    parametros: ParametroHistorico[];
+  }[];
+}
+
 
 export type EsferaOrgaoApi = 'MUNICIPAL' | 'ESTADUAL' | 'FEDERAL';
 

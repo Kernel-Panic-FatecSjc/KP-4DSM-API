@@ -1,11 +1,12 @@
-import type { EstacaoApi, DashboardDados } from '@/lib/api';
+import type { EstacaoApi, HistoricoClimatico } from '@/lib/api';
 import { ADMIN, pagina } from './support/dados';
 import { logarComo, test, expect } from './support/teste';
 
-
+const ESTACAO_CENTRO = '11111111-1111-4111-8111-111111111111';
+const ESTACAO_NORTE = '22222222-2222-4222-8222-222222222222';
 const ESTACOES: EstacaoApi[] = [
   {
-    id: 'estacao-centro',
+    id: ESTACAO_CENTRO,
     nome: 'Estação Centro',
     endereco: 'Rua A, 1',
     vid: 'VID-001',
@@ -19,7 +20,7 @@ const ESTACOES: EstacaoApi[] = [
     atualizadoEm: '2026-01-01T00:00:00.000Z',
   },
   {
-    id: 'estacao-norte',
+    id: ESTACAO_NORTE,
     nome: 'Estação Norte',
     endereco: 'Rua B, 2',
     vid: 'VID-002',
@@ -34,113 +35,121 @@ const ESTACOES: EstacaoApi[] = [
   },
 ];
 
-
-function dashboard(estacao: EstacaoApi, leituras: { timestamp: string; valor: number }[]): DashboardDados {
+function historico(estacoes: HistoricoClimatico['estacoes']): HistoricoClimatico {
   return {
-    licitacaoId: null,
-    periodo: { de: '2026-10-24T00:00:00.000Z', ate: '2026-10-24T23:59:59.999Z' },
-    estacoes: [{ id: estacao.id, nome: estacao.nome, endereco: estacao.endereco }],
-    indicadores: { estacoesAtivas: 1, leituras: leituras.length, media: null, alarmesAbertos: 0 },
-    series: [{
-      parametroId: `precipitacao-${estacao.id}`,
-      nome: 'Precipitação',
-      unidade: 'mm',
-      estacaoId: estacao.id,
-      estacaoNome: estacao.nome,
-      pontos: leituras,
-    }],
+    de: '2026-10-24T00:00:00.000Z',
+    ate: '2026-10-24T23:59:59.999Z',
+    granularidade: 'dia',
+    estacoes,
   };
 }
 
+function dadosEstacao(estacao: EstacaoApi, valores: number[]) {
+  return {
+    id: estacao.id,
+    nome: estacao.nome,
+    parametros: [{
+      id: 'tipo-precipitacao',
+      nome: 'Precipitação',
+      unidade: 'mm',
+      agregacao: 'SOMA' as const,
+      periodos: valores.map((valor, indice) => ({
+        periodo: `2026-10-24T${String(9 + indice).padStart(2, '0')}:00:00.000Z`,
+        agregacao: 'SOMA' as const,
+        valor,
+        soma: valor,
+        media: valor,
+        minimo: valor,
+        maximo: valor,
+        leituras: 1,
+      })),
+      totalPeriodo: {
+        agregacao: 'SOMA' as const,
+        valor: valores.reduce((total, valor) => total + valor, 0),
+        soma: valores.reduce((total, valor) => total + valor, 0),
+        media: valores.length ? valores.reduce((total, valor) => total + valor, 0) / valores.length : 0,
+        minimo: Math.min(...valores),
+        maximo: Math.max(...valores),
+        leituras: valores.length,
+      },
+    }],
+  };
+}
 
 test.describe('Relatório de histórico climático', () => {
   test.beforeEach(async ({ page, api }) => {
     logarComo(api, ADMIN);
     api.responder('GET /estacoes', { body: pagina(ESTACOES) });
-    api.responder('GET /dashboard', ({ url }) => {
-      const estacao = ESTACOES.find((item) => item.id === url.searchParams.get('estacaoId'));
-      if (!estacao) return { status: 400, body: { message: 'Estação inválida' } };
-      return {
-        body: dashboard(estacao, estacao.id === 'estacao-centro'
-          ? [
-              { timestamp: '2026-10-24T09:00:00.000Z', valor: 2 },
-              { timestamp: '2026-10-24T10:00:00.000Z', valor: 5 },
-            ]
-          : [{ timestamp: '2026-10-24T11:00:00.000Z', valor: 3 }]),
-      };
+    api.responder('GET /relatorios/historico-climatico', {
+      body: historico([
+        dadosEstacao(ESTACOES[0], [2, 5]),
+        dadosEstacao(ESTACOES[1], [3]),
+      ]),
     });
-    await page.goto('/relatorios');
+    await page.goto('/relatorios/historico');
   });
 
-
-  test('filtra estações e apresenta precipitação diária acumulada', async ({ page, api }) => {
+  test('consulta o endpoint consolidado e apresenta tabela e gráfico', async ({ page, api }) => {
     await expect(page.getByRole('checkbox', { name: 'Estação Norte' })).toBeChecked();
     await page.getByLabel('Data inicial').fill('2026-10-24');
     await page.getByLabel('Data final').fill('2026-10-24');
     await page.getByLabel('Granularidade').selectOption('dia');
     await page.getByRole('button', { name: 'Gerar relatório' }).click();
 
+    const tabela = page.getByRole('table');
+    await expect(tabela).toContainText('Estação Centro');
+    await expect(tabela).toContainText('Estação Norte');
+    await expect(tabela).toContainText('7,00 mm');
+    await expect(tabela).toContainText('3,50 mm');
+    await expect(tabela).toContainText('2');
+    await expect(page.getByRole('img', { name: 'Gráfico de Precipitação' })).toBeVisible();
 
-    await expect(page.getByRole('table')).toContainText('Estação Centro');
-    await expect(page.getByRole('table')).toContainText('5,00 mm');
-    await expect(page.getByRole('table')).toContainText('3,00 mm');
-    await expect(page.getByRole('table')).toContainText('Estação Norte');
-    await expect(page.getByRole('img', { name: 'Gráfico de Precipitação' }).first()).toBeVisible();
-    expect(api.chamadasDe('GET /dashboard')).toHaveLength(2);
-    expect(api.chamadasDe('GET /dashboard').every((chamada) => chamada.url.searchParams.get('periodo') === 'customizado')).toBe(true);
-
-
-    await expect(page.getByRole('button', { name: 'CSV' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'PDF' })).toBeVisible();
-    await page.evaluate(() => {
-      window.print = () => sessionStorage.setItem('exportacao-pdf-acionada', 'true');
-      URL.createObjectURL = () => {
-        sessionStorage.setItem('exportacao-csv-acionada', 'true');
-        return 'blob:';
-      };
-    });
-    await page.getByRole('button', { name: 'CSV' }).click();
-    await page.getByRole('button', { name: 'PDF' }).click();
-    expect(await page.evaluate(() => [
-      sessionStorage.getItem('exportacao-csv-acionada'),
-      sessionStorage.getItem('exportacao-pdf-acionada'),
-    ])).toEqual([null, null]);
+    const chamada = api.chamadasDe('GET /relatorios/historico-climatico')[0];
+    expect(chamada.url.searchParams.get('de')).toBe('2026-10-24');
+    expect(chamada.url.searchParams.get('ate')).toBe('2026-10-24');
+    expect(chamada.url.searchParams.get('granularidade')).toBe('dia');
+    expect(chamada.url.searchParams.getAll('estacaoIds')).toEqual([ESTACAO_CENTRO, ESTACAO_NORTE]);
   });
 
-
-  test('apresenta estado vazio quando o período não tem leituras', async ({ page, api }) => {
-    api.responder('GET /dashboard', ({ url }) => {
-      const estacao = ESTACOES.find((item) => item.id === url.searchParams.get('estacaoId'))!;
-      return { body: dashboard(estacao, []) };
-    });
-    await page.getByLabel('Data inicial').fill('2026-10-24');
-    await page.getByLabel('Data final').fill('2026-10-24');
-    await page.getByRole('button', { name: 'Gerar relatório' }).click();
-
-
-    await expect(page.getByRole('heading', { name: 'Nenhum dado encontrado' })).toBeVisible();
-    await expect(page.getByRole('table')).toHaveCount(0);
-  });
-
-
-  test('agrupa por hora e permite selecionar estações individualmente', async ({ page }) => {
+  test('envia granularidade por hora e somente as estações selecionadas', async ({ page, api }) => {
     await page.getByLabel('Data inicial').fill('2026-10-24');
     await page.getByLabel('Data final').fill('2026-10-24');
     await page.getByLabel('Granularidade').selectOption('hora');
     await page.getByRole('checkbox', { name: 'Estação Norte' }).uncheck();
     await page.getByRole('button', { name: 'Gerar relatório' }).click();
 
-
-    const tabela = page.getByRole('table');
-    await expect(tabela.locator('tbody tr:visible')).toHaveCount(2);
-    await expect(tabela).toContainText('2,00 mm');
-    await expect(tabela).toContainText('5,00 mm');
-    await expect(tabela).not.toContainText('Estação Norte');
+    const chamada = api.chamadasDe('GET /relatorios/historico-climatico')[0];
+    expect(chamada.url.searchParams.get('granularidade')).toBe('hora');
+    expect(chamada.url.searchParams.getAll('estacaoIds')).toEqual([ESTACAO_CENTRO]);
   });
 
+  test('apresenta estado vazio quando o período não tem leituras', async ({ page, api }) => {
+    api.responder('GET /relatorios/historico-climatico', { body: historico([]) });
+    await page.getByLabel('Data inicial').fill('2026-10-24');
+    await page.getByLabel('Data final').fill('2026-10-24');
+    await page.getByRole('button', { name: 'Gerar relatório' }).click();
 
-  test('não disponibiliza dados fictícios', async ({ page }) => {
-    await expect(page.getByRole('button', { name: /dados fictícios/i })).toHaveCount(0);
-    await expect(page.getByRole('checkbox', { name: /demonstração/i })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Nenhum dado encontrado' })).toBeVisible();
+    await expect(page.getByRole('table')).toHaveCount(0);
+  });
+
+  test('apresenta erro retornado pela API', async ({ page, api }) => {
+    api.responder('GET /relatorios/historico-climatico', {
+      status: 400,
+      body: { message: 'Período inválido' },
+    });
+    await page.getByLabel('Data inicial').fill('2026-10-24');
+    await page.getByLabel('Data final').fill('2026-10-24');
+    await page.getByRole('button', { name: 'Gerar relatório' }).click();
+
+    await expect(page.locator('p[role="alert"]')).toContainText('Período inválido');
+  });
+
+  test('exige ao menos uma estação', async ({ page, api }) => {
+    await page.getByRole('button', { name: 'Nenhuma' }).click();
+    await page.getByRole('button', { name: 'Gerar relatório' }).click();
+
+    await expect(page.locator('p[role="alert"]')).toContainText('Selecione pelo menos uma estação');
+    expect(api.chamadasDe('GET /relatorios/historico-climatico')).toHaveLength(0);
   });
 });
