@@ -1,0 +1,6 @@
+.pio/
+/include/secrets.h
+/compile_commands.json
+/sdkconfig
+/sdkconfig.old
+/sdkconfig.esp32dev
