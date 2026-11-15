@@ -1,7 +1,9 @@
 #include <ctype.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "esp_event.h"
@@ -9,9 +11,14 @@
 #include "mqtt_client.h"
 #include "cJSON.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #include "clock_sync.h"
 #include "mqtt_manager.h"
+#include "telemetry_queue.h"
+
+#define QUEUE_RETRY_INITIAL_MS 1000U
+#define QUEUE_RETRY_MAX_MS 60000U
 #include "secrets.h"
 
 static const char *TAG = "mqtt";
@@ -21,6 +28,46 @@ static char s_client_id[96];
 static char s_topic[160];
 static bool s_connected;
 static portMUX_TYPE s_connection_mux = portMUX_INITIALIZER_UNLOCKED;
+static int s_inflight_message_id = -1;
+static bool s_sending_queue_item;
+static char s_inflight_queue_id[18];
+static int s_early_ack_message_id = -1;
+static TaskHandle_t s_retry_task;
+static uint32_t s_retry_delay_ms = QUEUE_RETRY_INITIAL_MS;
+static portMUX_TYPE s_queue_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static void publish_next_queued_telemetry(void);
+static bool is_connected(void);
+
+static void schedule_queue_retry(void)
+{
+    if (s_retry_task == NULL) return;
+    portENTER_CRITICAL(&s_queue_mux);
+    uint32_t delay_ms = s_retry_delay_ms;
+    if (s_retry_delay_ms < QUEUE_RETRY_MAX_MS) {
+        s_retry_delay_ms = (s_retry_delay_ms > QUEUE_RETRY_MAX_MS / 2U)
+                               ? QUEUE_RETRY_MAX_MS
+                               : s_retry_delay_ms * 2U;
+    }
+    portEXIT_CRITICAL(&s_queue_mux);
+    xTaskNotify(s_retry_task, delay_ms, eSetValueWithOverwrite);
+}
+
+static void queue_retry_task(void *argument)
+{
+    (void)argument;
+    for (;;) {
+        uint32_t delay_ms = 0;
+        if (xTaskNotifyWait(0, UINT32_MAX, &delay_ms, portMAX_DELAY) == pdTRUE) {
+            vTaskDelay(pdMS_TO_TICKS(delay_ms));
+            if (is_connected()) {
+                publish_next_queued_telemetry();
+            } else {
+                schedule_queue_retry();
+            }
+        }
+    }
+}
 
 static void set_connected(bool connected)
 {
@@ -79,9 +126,9 @@ static esp_err_t build_telemetry_payload(const mqtt_telemetry_reading_t *reading
     }
 
     int64_t unix_time;
-    if (!clock_sync_get_unixtime(&unix_time)) {
-        ESP_LOGW(TAG, "telemetria não publicada: relógio ainda não sincronizado");
-        return ESP_ERR_INVALID_STATE;
+    bool has_valid_time = clock_sync_get_unixtime(&unix_time);
+    if (!has_valid_time) {
+        ESP_LOGW(TAG, "relógio ainda não sincronizado; ingestão aplicará o horário de recebimento");
     }
 
     cJSON *root = cJSON_CreateObject();
@@ -93,7 +140,8 @@ static esp_err_t build_telemetry_payload(const mqtt_telemetry_reading_t *reading
     }
 
     esp_err_t error = ESP_OK;
-    if (cJSON_AddNumberToObject(root, "unixtime", (double)unix_time) == NULL ||
+    if ((has_valid_time &&
+         cJSON_AddNumberToObject(root, "unixtime", (double)unix_time) == NULL) ||
         (latitude != NULL &&
          (cJSON_AddNumberToObject(root, "latitude", *latitude) == NULL ||
           cJSON_AddNumberToObject(root, "longitude", *longitude) == NULL))) {
@@ -149,10 +197,12 @@ static void mqtt_event_handler(void *handler_argument,
     case MQTT_EVENT_CONNECTED:
         set_connected(true);
         ESP_LOGI(TAG, "conexão autenticada estabelecida");
+        publish_next_queued_telemetry();
         break;
     case MQTT_EVENT_DISCONNECTED:
         set_connected(false);
         ESP_LOGW(TAG, "conexão perdida; o cliente tentará reconectar");
+        schedule_queue_retry();
         break;
     case MQTT_EVENT_ERROR:
         ESP_LOGE(TAG, "erro de conexão MQTT; o cliente tentará reconectar");
@@ -160,6 +210,29 @@ static void mqtt_event_handler(void *handler_argument,
     case MQTT_EVENT_PUBLISHED: {
         const esp_mqtt_event_handle_t event = event_data;
         ESP_LOGI(TAG, "broker confirmou publicação QoS 1 (PUBACK), id=%d", event->msg_id);
+        char queue_id[sizeof(s_inflight_queue_id)] = {0};
+        bool acknowledged = false;
+        portENTER_CRITICAL(&s_queue_mux);
+        if (s_inflight_message_id == event->msg_id && s_inflight_queue_id[0] != '\0') {
+            memcpy(queue_id, s_inflight_queue_id, sizeof(queue_id));
+            s_inflight_message_id = -1;
+            s_inflight_queue_id[0] = '\0';
+            acknowledged = true;
+        } else if (s_sending_queue_item && s_inflight_queue_id[0] != '\0') {
+            s_early_ack_message_id = event->msg_id;
+        }
+        portEXIT_CRITICAL(&s_queue_mux);
+        if (acknowledged) {
+            portENTER_CRITICAL(&s_queue_mux);
+            s_retry_delay_ms = QUEUE_RETRY_INITIAL_MS;
+            portEXIT_CRITICAL(&s_queue_mux);
+            if (telemetry_queue_remove(queue_id) != ESP_OK) {
+                ESP_LOGE(TAG, "PUBACK recebido, mas não foi possível remover item persistido");
+                schedule_queue_retry();
+            } else {
+                publish_next_queued_telemetry();
+            }
+        }
         break;
     }
     default:
@@ -201,6 +274,11 @@ esp_err_t mqtt_manager_start(void)
         return error;
     }
 
+    if (xTaskCreate(queue_retry_task, "mqtt_queue_retry", 3072, NULL, 5,
+                    &s_retry_task) != pdPASS) {
+        return ESP_ERR_NO_MEM;
+    }
+
     return esp_mqtt_client_start(s_client);
 }
 
@@ -209,7 +287,7 @@ esp_err_t mqtt_manager_publish_telemetry(const mqtt_telemetry_reading_t *reading
                                          const double *latitude,
                                          const double *longitude)
 {
-    if (s_client == NULL || !is_connected()) {
+    if (s_client == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -220,15 +298,83 @@ esp_err_t mqtt_manager_publish_telemetry(const mqtt_telemetry_reading_t *reading
         return error;
     }
 
-    int message_id = esp_mqtt_client_publish(
-        s_client, s_topic, payload, 0, 1, 0);
+    error = telemetry_queue_enqueue(payload);
     cJSON_free(payload);
-    if (message_id < 0) {
-        ESP_LOGE(TAG, "falha ao publicar telemetria QoS 1");
-        return ESP_FAIL;
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "telemetria não coube na fila persistente: %s", esp_err_to_name(error));
+        return error;
     }
 
-    ESP_LOGI(TAG, "telemetria enviada ao broker; aguardando confirmação QoS 1, id=%d",
-             message_id);
+    if (is_connected()) publish_next_queued_telemetry();
     return ESP_OK;
+}
+
+static void publish_next_queued_telemetry(void)
+{
+    if (s_client == NULL || !is_connected()) return;
+
+    portENTER_CRITICAL(&s_queue_mux);
+    if (s_sending_queue_item || s_inflight_message_id >= 0) {
+        portEXIT_CRITICAL(&s_queue_mux);
+        return;
+    }
+    s_sending_queue_item = true;
+    portEXIT_CRITICAL(&s_queue_mux);
+
+    char *payload = NULL;
+    char queue_id[sizeof(s_inflight_queue_id)] = {0};
+    esp_err_t error = telemetry_queue_peek(&payload, queue_id, sizeof(queue_id));
+    if (error == ESP_ERR_NOT_FOUND) {
+        portENTER_CRITICAL(&s_queue_mux);
+        s_sending_queue_item = false;
+        portEXIT_CRITICAL(&s_queue_mux);
+        return;
+    }
+    if (error != ESP_OK) {
+        ESP_LOGE(TAG, "falha ao ler fila persistente: %s", esp_err_to_name(error));
+        portENTER_CRITICAL(&s_queue_mux);
+        s_sending_queue_item = false;
+        portEXIT_CRITICAL(&s_queue_mux);
+        return;
+    }
+
+    portENTER_CRITICAL(&s_queue_mux);
+    memcpy(s_inflight_queue_id, queue_id, sizeof(s_inflight_queue_id));
+    s_early_ack_message_id = -1;
+    portEXIT_CRITICAL(&s_queue_mux);
+    int message_id = esp_mqtt_client_publish(s_client, s_topic, payload, 0, 1, 0);
+    free(payload);
+
+    bool acknowledged_early = false;
+    portENTER_CRITICAL(&s_queue_mux);
+    s_sending_queue_item = false;
+    if (message_id >= 0) {
+        if (s_early_ack_message_id == message_id) {
+            s_early_ack_message_id = -1;
+            s_inflight_queue_id[0] = '\0';
+            acknowledged_early = true;
+        } else {
+            s_inflight_message_id = message_id;
+        }
+    } else {
+        s_inflight_queue_id[0] = '\0';
+    }
+    portEXIT_CRITICAL(&s_queue_mux);
+
+    if (message_id < 0) {
+        ESP_LOGW(TAG, "falha ao publicar; item permanece na fila para nova tentativa");
+        schedule_queue_retry();
+    } else if (acknowledged_early) {
+        portENTER_CRITICAL(&s_queue_mux);
+        s_retry_delay_ms = QUEUE_RETRY_INITIAL_MS;
+        portEXIT_CRITICAL(&s_queue_mux);
+        if (telemetry_queue_remove(queue_id) != ESP_OK) {
+            ESP_LOGE(TAG, "PUBACK recebido, mas não foi possível remover item persistido");
+            schedule_queue_retry();
+        } else {
+            publish_next_queued_telemetry();
+        }
+    } else {
+        ESP_LOGI(TAG, "publicação MQTT QoS 1 iniciada; aguardando PUBACK id=%d", message_id);
+    }
 }

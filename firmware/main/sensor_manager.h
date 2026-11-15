@@ -12,8 +12,10 @@
 
 typedef enum {
     SENSOR_SOURCE_ADC1,
+    SENSOR_SOURCE_GPIO_DIGITAL,
     SENSOR_SOURCE_RAIN_PULSE,
     SENSOR_SOURCE_WIND_PULSE,
+    SENSOR_SOURCE_DHT11,
 } sensor_source_t;
 
 typedef struct {
@@ -30,6 +32,10 @@ typedef struct {
         struct {
             gpio_num_t pin;
             gpio_pull_mode_t pull_mode;
+        } digital;
+        struct {
+            gpio_num_t pin;
+            gpio_pull_mode_t pull_mode;
             double millimeters_per_pulse;
         } rain;
         struct {
@@ -37,6 +43,15 @@ typedef struct {
             gpio_pull_mode_t pull_mode;
             double kilometers_per_hour_per_hz;
         } wind;
+        struct {
+            gpio_num_t pin;
+            const char *temperature_name;
+            double temperature_factor;
+            double temperature_gain;
+            const char *humidity_name;
+            double humidity_factor;
+            double humidity_gain;
+        } dht11;
     } input;
 } sensor_config_t;
 

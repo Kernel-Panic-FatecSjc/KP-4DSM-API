@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -12,6 +13,7 @@
 #include "freertos/task.h"
 
 #include "sensor_manager.h"
+#include "dht11.h"
 
 typedef struct {
     sensor_config_t config;
@@ -41,6 +43,38 @@ static bool pull_mode_is_valid(gpio_pull_mode_t mode)
            mode == GPIO_PULLDOWN_ONLY;
 }
 
+static bool parameter_name_is_valid(const char *name)
+{
+    if (name == NULL) return false;
+    size_t length = strlen(name);
+    if (length == 0 || length > 120 ||
+        isspace((unsigned char)name[0]) || isspace((unsigned char)name[length - 1])) {
+        return false;
+    }
+    for (size_t i = 0; i < length; i++) {
+        unsigned char character = (unsigned char)name[i];
+        if (character < 0x20 || character == 0x7f) return false;
+    }
+    return true;
+}
+
+static size_t sensor_output_count(const sensor_config_t *sensor)
+{
+    if (sensor->source != SENSOR_SOURCE_DHT11) return 1;
+    return (sensor->input.dht11.temperature_name != NULL) +
+           (sensor->input.dht11.humidity_name != NULL);
+}
+
+static const char *sensor_output_name(const sensor_config_t *sensor, size_t output_index)
+{
+    if (sensor->source != SENSOR_SOURCE_DHT11) return sensor->name;
+    if (sensor->input.dht11.temperature_name != NULL) {
+        if (output_index == 0) return sensor->input.dht11.temperature_name;
+        output_index--;
+    }
+    return output_index == 0 ? sensor->input.dht11.humidity_name : NULL;
+}
+
 static esp_err_t validate_sensor_config(const sensor_config_t *sensor)
 {
     if (sensor->name == NULL || sensor->name[0] == '\0' ||
@@ -59,6 +93,14 @@ static esp_err_t validate_sensor_config(const sensor_config_t *sensor)
             return ESP_ERR_INVALID_ARG;
         }
         break;
+    case SENSOR_SOURCE_GPIO_DIGITAL:
+        if (!gpio_is_safe_input(sensor->input.digital.pin) ||
+            !pull_mode_is_valid(sensor->input.digital.pull_mode) ||
+            (sensor->input.digital.pin >= GPIO_NUM_34 &&
+             sensor->input.digital.pull_mode != GPIO_FLOATING)) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        break;
     case SENSOR_SOURCE_RAIN_PULSE:
         if (!gpio_is_safe_input(sensor->input.rain.pin) ||
             !pull_mode_is_valid(sensor->input.rain.pull_mode) ||
@@ -72,6 +114,28 @@ static esp_err_t validate_sensor_config(const sensor_config_t *sensor)
             !pull_mode_is_valid(sensor->input.wind.pull_mode) ||
             !isfinite(sensor->input.wind.kilometers_per_hour_per_hz) ||
             sensor->input.wind.kilometers_per_hour_per_hz <= 0.0) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        break;
+    case SENSOR_SOURCE_DHT11:
+        if (!gpio_is_safe_input(sensor->input.dht11.pin) ||
+            sensor->input.dht11.pin >= GPIO_NUM_34 ||
+            (sensor->input.dht11.temperature_name == NULL &&
+             sensor->input.dht11.humidity_name == NULL) ||
+            (sensor->input.dht11.temperature_name != NULL &&
+             (!parameter_name_is_valid(sensor->input.dht11.temperature_name) ||
+              !isfinite(sensor->input.dht11.temperature_factor) ||
+              sensor->input.dht11.temperature_factor == 0.0 ||
+              !isfinite(sensor->input.dht11.temperature_gain))) ||
+            (sensor->input.dht11.humidity_name != NULL &&
+             (!parameter_name_is_valid(sensor->input.dht11.humidity_name) ||
+              !isfinite(sensor->input.dht11.humidity_factor) ||
+              sensor->input.dht11.humidity_factor == 0.0 ||
+              !isfinite(sensor->input.dht11.humidity_gain))) ||
+            (sensor->input.dht11.temperature_name != NULL &&
+             sensor->input.dht11.humidity_name != NULL &&
+             strcmp(sensor->input.dht11.temperature_name,
+                    sensor->input.dht11.humidity_name) == 0)) {
             return ESP_ERR_INVALID_ARG;
         }
         break;
@@ -162,6 +226,29 @@ static esp_err_t configure_pulse_inputs(void)
     return ESP_OK;
 }
 
+static esp_err_t configure_digital_inputs(void)
+{
+    for (size_t index = 0; index < s_sensor_count; index++) {
+        const sensor_config_t *sensor = &s_sensors[index].config;
+        if (sensor->source != SENSOR_SOURCE_GPIO_DIGITAL) continue;
+
+        const gpio_config_t pin_config = {
+            .pin_bit_mask = 1ULL << sensor->input.digital.pin,
+            .mode = GPIO_MODE_INPUT,
+            .pull_up_en = sensor->input.digital.pull_mode == GPIO_PULLUP_ONLY
+                              ? GPIO_PULLUP_ENABLE
+                              : GPIO_PULLUP_DISABLE,
+            .pull_down_en = sensor->input.digital.pull_mode == GPIO_PULLDOWN_ONLY
+                                ? GPIO_PULLDOWN_ENABLE
+                                : GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        ESP_RETURN_ON_ERROR(gpio_config(&pin_config), TAG,
+                            "falha ao configurar entrada digital");
+    }
+    return ESP_OK;
+}
+
 static uint32_t take_pulses(sensor_runtime_t *sensor)
 {
     portENTER_CRITICAL(&s_pulse_mux);
@@ -187,6 +274,13 @@ static bool sample_sensor(sensor_runtime_t *sensor,
             return false;
         }
         raw_value = (double)raw_adc;
+    } else if (config->source == SENSOR_SOURCE_GPIO_DIGITAL) {
+        int level = gpio_get_level(config->input.digital.pin);
+        if (level != 0 && level != 1) {
+            ESP_LOGW(TAG, "leitura digital invÃ¡lida; sensor ignorado");
+            return false;
+        }
+        raw_value = (double)level;
     } else {
         uint32_t pulses = take_pulses(sensor);
         if (config->source == SENSOR_SOURCE_RAIN_PULSE) {
@@ -205,6 +299,39 @@ static bool sample_sensor(sensor_runtime_t *sensor,
     return true;
 }
 
+static void append_dht11_readings(sensor_runtime_t *sensor,
+                                  mqtt_telemetry_reading_t *readings,
+                                  size_t *reading_count)
+{
+    float temperature_c;
+    float humidity_percent;
+    esp_err_t error = dht11_read(sensor->config.input.dht11.pin,
+                                 &temperature_c, &humidity_percent);
+    if (error != ESP_OK) {
+        ESP_LOGW(TAG, "DHT11 sem leitura válida: %s", esp_err_to_name(error));
+        return;
+    }
+
+    if (sensor->config.input.dht11.temperature_name != NULL) {
+        double temperature = (double)temperature_c *
+                             sensor->config.input.dht11.temperature_factor +
+                             sensor->config.input.dht11.temperature_gain;
+        if (!isfinite(temperature)) return;
+        readings[*reading_count].name = sensor->config.input.dht11.temperature_name;
+        readings[*reading_count].value = temperature;
+        (*reading_count)++;
+    }
+    if (sensor->config.input.dht11.humidity_name != NULL) {
+        double humidity = (double)humidity_percent *
+                          sensor->config.input.dht11.humidity_factor +
+                          sensor->config.input.dht11.humidity_gain;
+        if (!isfinite(humidity)) return;
+        readings[*reading_count].name = sensor->config.input.dht11.humidity_name;
+        readings[*reading_count].value = humidity;
+        (*reading_count)++;
+    }
+}
+
 static void collect_readings(void)
 {
     const int64_t now_us = esp_timer_get_time();
@@ -217,6 +344,10 @@ static void collect_readings(void)
     mqtt_telemetry_reading_t readings[SENSOR_MANAGER_MAX_SENSORS];
     size_t valid_count = 0;
     for (size_t index = 0; index < s_sensor_count; index++) {
+        if (s_sensors[index].config.source == SENSOR_SOURCE_DHT11) {
+            append_dht11_readings(&s_sensors[index], readings, &valid_count);
+            continue;
+        }
         double value;
         if (sample_sensor(&s_sensors[index], elapsed_seconds, &value)) {
             readings[valid_count].name = s_sensors[index].config.name;
@@ -265,12 +396,25 @@ esp_err_t sensor_manager_start(const sensor_config_t *sensors,
         return ESP_ERR_INVALID_ARG;
     }
 
+    size_t total_output_count = 0;
     for (size_t index = 0; index < sensor_count; index++) {
         ESP_RETURN_ON_ERROR(validate_sensor_config(&sensors[index]), TAG,
                             "configuração de sensor inválida");
-        for (size_t previous = 0; previous < index; previous++) {
-            if (strcmp(sensors[index].name, sensors[previous].name) == 0) {
-                return ESP_ERR_INVALID_ARG;
+        total_output_count += sensor_output_count(&sensors[index]);
+        if (total_output_count > MQTT_TELEMETRY_MAX_READINGS) return ESP_ERR_INVALID_SIZE;
+        for (size_t output_index = 0; output_index < sensor_output_count(&sensors[index]);
+             output_index++) {
+            for (size_t previous = 0; previous <= index; previous++) {
+                size_t previous_count = previous == index
+                                            ? output_index
+                                            : sensor_output_count(&sensors[previous]);
+                for (size_t previous_output = 0; previous_output < previous_count;
+                     previous_output++) {
+                    if (strcmp(sensor_output_name(&sensors[index], output_index),
+                               sensor_output_name(&sensors[previous], previous_output)) == 0) {
+                        return ESP_ERR_INVALID_ARG;
+                    }
+                }
             }
         }
     }
@@ -286,6 +430,10 @@ esp_err_t sensor_manager_start(const sensor_config_t *sensors,
 
     if (has_source(SENSOR_SOURCE_ADC1)) {
         ESP_RETURN_ON_ERROR(configure_adc(), TAG, "falha ao inicializar sensores analógicos");
+    }
+    if (has_source(SENSOR_SOURCE_GPIO_DIGITAL)) {
+        ESP_RETURN_ON_ERROR(configure_digital_inputs(), TAG,
+                            "falha ao inicializar entradas digitais");
     }
     if (has_source(SENSOR_SOURCE_RAIN_PULSE) ||
         has_source(SENSOR_SOURCE_WIND_PULSE)) {

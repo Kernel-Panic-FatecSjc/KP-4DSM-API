@@ -1,6 +1,6 @@
 # Firmware do Data Logger (ESP32, C)
 
-Implementação das SCRUM-31 e SCRUM-33 em C, com PlatformIO e ESP-IDF. O firmware conecta o ESP32 ao Wi-Fi, sincroniza o relógio por NTP, autentica no broker MQTT, tenta restabelecer as conexões quando elas caem e disponibiliza a publicação de telemetria MQTT. O código da aplicação usa fontes `.c` e APIs nativas do ESP-IDF.
+Firmware exclusivamente em C com PlatformIO e ESP-IDF. O dispositivo conecta ao Wi-Fi, sincroniza o relógio por NTP, autentica no broker MQTT e publica telemetria na fila persistente SPIFFS. A aquisição da bancada está configurada para DHT11 (GPIO14) e TEMT6000 (GPIO32), sem inventar leituras quando algum sensor falha.
 
 ## Configuração local
 
@@ -10,6 +10,7 @@ Na pasta `firmware`, copie `include/secrets.example.h` para `include/secrets.h` 
 - `STATION_VID`: identificador da estação cadastrada no Data Panic;
 - `STATION_KEY`: chave de ingestão da estação;
 - `MQTT_HOST` e `MQTT_PORT`: endereço e porta do broker.
+- `INGESTION_API_HOST` e `INGESTION_API_PORT` são opcionais para consultar os parâmetros cadastrados. O padrão é `MQTT_HOST:3002`; defina os dois se a ingestão estiver em outro endereço.
 
 O cliente MQTT usa o `VID` como usuário e a chave de ingestão como senha, conforme o cadastro do broker. O arquivo `include/secrets.h` é ignorado pelo Git; não publique credenciais.
 
@@ -32,21 +33,35 @@ O primeiro comando gera `compile_commands.json`, usado pelo IntelliSense do VS C
 
 ## Publicar telemetria MQTT
 
-`mqtt_manager_publish_telemetry()` aceita de 1 a 50 leituras nomeadas e publica JSON UTF-8 no tópico `estacoes/{STATION_VID}/telemetria`, com QoS 1 e `retain` desativado. O payload usa o horário Unix obtido após a sincronização NTP e o objeto `leituras`; latitude e longitude são incluídas quando fornecidas. Quando não são fornecidas, a ingestão usa a localização cadastrada para a estação.
+`mqtt_manager_publish_telemetry()` aceita de 1 a 50 leituras nomeadas e persiste o JSON UTF-8 antes de tentar publicar no tópico `estacoes/{STATION_VID}/telemetria`, com QoS 1 e `retain` desativado. O payload guarda o horário Unix da leitura e o objeto `leituras`; latitude e longitude são incluídas quando fornecidas. Quando não são fornecidas, a ingestão usa a localização cadastrada para a estação.
 
-Cada nome deve corresponder a um parâmetro cadastrado para a estação, e valores não numéricos, nomes inválidos ou duplicados são recusados. A função retorna erro se o MQTT estiver desconectado ou o relógio ainda não estiver válido. O evento `MQTT_EVENT_PUBLISHED` registra o PUBACK do broker; isso confirma a entrega MQTT, não a gravação no banco.
+Cada nome deve corresponder a um parâmetro cadastrado para a estação, e valores não numéricos, nomes inválidos ou duplicados são recusados. Se o MQTT estiver desconectado, o payload permanece na fila local. O item só é removido após o `MQTT_EVENT_PUBLISHED` correspondente (PUBACK QoS 1), que confirma o broker, não a gravação no banco nem a chegada à tela.
 
 O chamador deve passar as leituras reais do sensor e respeitar o intervalo de cinco minutos da estação. A aquisição e o agendamento pertencem à etapa de leitura dos sensores; esta implementação não inventa nem publica leituras de teste.
 
+## Fila persistente e recuperação
+
+`telemetry_queue` armazena cada payload como arquivo independente na partição SPIFFS `telemetry`, antes da publicação. Após reinício, a fila é percorrida em ordem crescente do identificador persistido. O firmware mantém um item MQTT em voo por vez; um PUBACK remove somente o item correspondente. QoS 1 pode repetir publicação, então a deduplicação da plataforma continua necessária.
+
+A fila persistente é FIFO limitada a 1.024 itens e ao espaço livre da partição SPIFFS (2.801.411 bytes úteis observados nesta placa). Se atingir qualquer limite, rejeita a nova leitura e preserva as já enfileiradas; não apaga a mais antiga. A 5 minutos por ciclo, o limite de itens equivale a até 3 dias e 13 h 20 min, mas payloads grandes podem reduzir esse período. Não há expurgo automático por idade. Esta é a política adotada para SCRUM-34 e ainda precisa ser exercitada em bancada até o limite.
+
+O ESP-MQTT tenta reconectar a rede/broker. A fila usa retentativa exponencial para novas tentativas de envio quando a conexão/publicação falha, com intervalo inicial de 1 s e teto de 60 s; quando a conexão MQTT é restabelecida, o item pendente é retomado. O cliente MQTT gerencia a retransmissão QoS 1 de uma mensagem já em voo. Os intervalos são parâmetros de implementação a revisar com a equipe, e o comportamento ainda precisa ser medido no dispositivo.
+
 ## Amostragem dos sensores
 
-`sensor_manager` fornece uma base configurável para ADC1, pluviômetro por pulsos e anemômetro por frequência de pulsos. O timer periódico não usa `delay()` bloqueante. Para cada sensor, a configuração fornece o nome do parâmetro, a entrada física, `fator` e `ganho` obtidos de `GET /ingestao/estacoes/{vid}/parametros`; a conversão aplicada é `valor bruto × fator + ganho`. O firmware ainda não busca esse endpoint automaticamente: o chamador deverá fornecer os valores recebidos. Para sensores de pulso também deve ser informado o valor físico por pulso (chuva) ou a constante km/h por Hz (vento).
+`sensor_manager` é extensível e oferece fontes ADC1, nível digital GPIO, pulsos de pluviômetro/anemômetro e DHT11 (temperatura e umidade). Cada sensor físico tem uma associação local explícita a um nome de parâmetro e pino/canal, pois a API de parâmetros não fornece pinagem nem protocolo elétrico. Ao iniciar, o firmware consulta `GET /ingestao/estacoes/{vid}/parametros` com `x-chave-estacao` e aplica `fator`/`ganho` para os nomes associados. Se o serviço estiver indisponível, mantém as conversões locais e registra o erro; uma nova interface/protocolo exige um driver compatível.
+
+## Configuração atual dos sensores de bancada
+
+A aplicação agora inicia o DHT11 em GPIO14 e o TEMT6000 no canal ADC1_CH4/GPIO32, com período de 300 s. As leituras configuradas são `temperatura_c` (°C), `umidade_pct` (%RH) e `luminosidade_adc` (contagem ADC bruta de 0 a 4095). Os fatores são 1 e os ganhos 0: DHT11 já fornece temperatura/umidade em unidades físicas; o valor do TEMT6000 permanece como contagem bruta, não lux, pois a resistência/circuito de conversão e a calibração de lux não foram informados.
+
+Cadastre esses nomes exatamente como parâmetros da estação antes de esperar medidas tratadas no backend. A alimentação máxima de 3,3 V do TEMT6000 foi informada, mas a saída analógica não foi medida. O ADC está com atenuação de 12 dB; para melhor precisão no ESP32, a faixa efetiva recomendada chega a cerca de 2,45 V. Acima disso o valor bruto pode perder precisão ou saturar; valide a tensão e o resultado no monitor serial antes de interpretar como luminosidade.
 
 ## Estado do protótipo e bloqueios
 
-Até o momento, não há sensor ambiental identificado/configurado. O módulo azul fotografado está ligado ao conector Módulo_4, tem terminais `VCC`, `I/O` e `GND`, não apresenta modelo legível e parece ser um buzzer, não um sensor de medição. O sinal de Módulo_4 foi identificado como possivelmente GPIO35/RTC_GPIO5, mas essa ligação não foi confirmada por esquemático. GPIO35/RTC_GPIO5 é um pino de entrada, não deve ser usado para acionar o buzzer.
+Os sensores informados são DHT11 no GPIO14 e TEMT6000 no GPIO32; consulte o [inventário e bloqueios de SCRUM-30](hardware/README.md). A pinagem foi informada para este teste, mas ainda falta esquema/continuidade verificada da carrier. O módulo azul ligado ao Módulo_4 permanece sem identificação e não será tratado como sensor nem acionado. O possível roteamento para GPIO35/RTC_GPIO5 não foi confirmado por esquema.
 
-A aplicação inicia o gerenciador com zero sensores e mantém todos os GPIOs de aquisição desativados. Para configurar a coleta, ainda são necessários o modelo e tipo de saída do sensor ambiental, o mapeamento validado do conector para GPIO, o nome do parâmetro na estação e as constantes de conversão/calibração. A tolerância de comparação com instrumento de referência também precisa ser definida pelo time. Até essas informações e sensores reais estarem disponíveis, não haverá leitura ou publicação de telemetria.
+Nos ciclos recentes, o ESP32 conectou ao Wi-Fi e preservou a fila após reinícios/gravações. O TEMT6000 foi lido em 1.296, 1.203 e 1.223 contagens ADC; ainda não há conversão/calibração em lux. O DHT11 primeiro produziu `2,5 °C / 3% RH` (fora da faixa do componente) e esse pacote ficou na fila antes de a validação de faixa ser adicionada; nos ciclos seguintes, quadros fora da resolução/faixa foram descartados. Esse item histórico permanece na fila para respeitar a política de remoção somente após PUBACK. O endpoint de parâmetros, NTP e broker não estavam acessíveis durante o teste; os payloads foram enfileirados sem `unixtime`. Nenhuma leitura foi inventada.
 
 Leituras ADC com erro ou fora da faixa configurada são ignoradas; detectar desconexão requer limites adequados ao sensor. O firmware genérico não inclui drivers específicos I2C/SPI. Não use valores de exemplo como calibração.
 
@@ -58,6 +73,8 @@ Leituras ADC com erro ou fora da faixa configurada são ignoradas; detectar desc
 4. Grave o firmware e abra o monitor serial. Reinicie o ESP32 se necessário.
 5. Confirme no log: `conectado; endereço IP`, `relógio sincronizado` e `conexão autenticada estabelecida`.
 6. Para validar reconexão, com o firmware em execução desligue e religue o ponto de acesso Wi-Fi; depois faça o mesmo com o broker, se puder controlar esse serviço. Confirme as mensagens de desconexão e a reconexão. Encerre o monitor com `Ctrl+C`.
+
+Para SCRUM-35, siga o [roteiro ponta a ponta](hardware/SCRUM-35-roteiro.md) e anexe logs e consultas reais. O roteiro não substitui execução nem constitui evidência de teste.
 
 O MQTT de desenvolvimento usa a porta 1883 sem TLS, portanto faça o teste somente em rede confiável. A validação de reconexão exige que o broker esteja ativo e que VID/chave correspondam a uma estação cadastrada nele.
 
@@ -82,4 +99,4 @@ git commit -m "feat(SCRUM-31): create ESP32 firmware foundation"
 
 O broker do repositório está configurado em TCP porta 1883, sem TLS. Essa configuração serve para desenvolvimento em uma rede confiável; não transmita credenciais por redes públicas sem habilitar TLS no broker.
 
-O firmware implementa a base de conexão e autenticação da SCRUM-31 e a publicação MQTT QoS 1 da SCRUM-33. A publicação de leituras reais e na periodicidade configurada depende do chamador fornecer as medições obtidas pelos sensores.
+O firmware contém MQTT, fila persistente limitada e fontes extensíveis para tipos elétricos comuns. SCRUM-30 ainda precisa demonstrar individualmente os sensores ligados; SCRUM-31 precisa do teste de reconexão; SCRUM-32 precisa de leitura válida do DHT11, valor ADC observado e comparação com referência (a tolerância numérica segue pendente); SCRUM-33 precisa confirmar recepção no broker/ingestão; SCRUM-34 precisa dos cenários de recuperação e limite da fila; SCRUM-35 precisa das evidências ponta a ponta no backend.
