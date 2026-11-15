@@ -1,0 +1,21 @@
+idf_component_register(
+  SRCS
+    "app_main.c"
+    "clock_sync.c"
+    "mqtt_manager.c"
+    "sensor_manager.c"
+    "wifi_manager.c"
+  INCLUDE_DIRS
+    "."
+    "../include"
+  REQUIRES
+    esp_event
+    esp_netif
+    esp_adc
+    esp_driver_gpio
+    esp_timer
+    esp_wifi
+    json
+    mqtt
+    nvs_flash
+)
