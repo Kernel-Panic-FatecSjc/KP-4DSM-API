@@ -337,13 +337,64 @@ jobs:
       - name: Seed
         run: npm run db:seed
 
+  # Último estágio: o pacote que a pré-release e a produção instalam (o mesmo
+  # arquivo nos dois, só a configuração muda). Só para commits da main (push e
+  # suíte noturna): no PR seriam minutos a mais por um arquivo que ninguém usa.
+  pacote:
+    name: Empacotar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [backend, testes, frontend, frontend-testes, migrations]
+    if: >-
+      !cancelled() && github.event_name != 'pull_request' &&
+      !contains(needs.*.result, 'failure')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'npm'
+          cache-dependency-path: |
+            kernelpanic-backend/package-lock.json
+            frontend/frontend/package-lock.json
+
+      - name: Build do backend e dos serviços
+        working-directory: ./kernelpanic-backend
+        run: |
+          npm ci
+          npm run build
+          npm run build:servicos
+
+      # A URL pública da API entra no bundle do Next.js (limite registrado em
+      # .github/scripts/empacotar.sh). Variável do repositório, não segredo.
+      - name: Build do front
+        working-directory: ./frontend/frontend
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Gerar pacote-<sha>.tar.gz e o SHA-256
+        run: bash .github/scripts/empacotar.sh "$GITHUB_SHA" pacote
+
+      - name: Publicar o pacote
+        uses: actions/upload-artifact@v4
+        with:
+          name: pacote-${{ github.sha }}
+          path: pacote/
+          if-no-files-found: error
+          retention-days: 30
+
   # Check único exigido na main: os jobs acima são pulados conforme o que o PR
   # altera, e um job pulado conta como aprovado. Assim o ruleset não precisa
   # listar cada job, e um job novo entra no portão só por estar no needs.
   ci-ok:
     name: CI ok
     if: always()
-    needs: [alteracoes, backend, testes, frontend, frontend-testes, migrations]
+    needs: [alteracoes, backend, testes, frontend, frontend-testes, migrations, pacote]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
