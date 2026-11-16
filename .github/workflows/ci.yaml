@@ -339,8 +339,28 @@ jobs:
     needs: [alteracoes, backend, testes, frontend, frontend-testes, migrations]
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      actions: read
 
     steps:
+      # Meta do commit build: ~10 min (Fowler, "Keep the build fast"). Job que
+      # passar disso é candidato à suíte noturna (critério na wiki, página de CI).
+      - name: Tempo dos jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### Tempo dos jobs"
+            echo
+            echo "| Job | Resultado | Duração |"
+            echo "|---|---|---|"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" --paginate               --jq '.jobs[] | select(.completed_at != null and .started_at != null)
+                | ((.completed_at | fromdate) - (.started_at | fromdate)) as $s
+                | "| \(.name) | \(.conclusion) | \($s / 60 | floor)m\($s % 60)s |"'
+            echo
+            echo "Meta do PR: ~10 min por job. Acima disso, avalie mover para a suíte noturna."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # Diz qual job quebrou e onde olhar, em vez de só "falhou".
       - name: Algum job falhou ou foi cancelado
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
