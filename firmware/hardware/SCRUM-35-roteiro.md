@@ -7,7 +7,7 @@ Este roteiro prepara a validação; os campos de resultado ficam vazios até o t
 - [ ] Sensor real identificado e ligado conforme esquema revisado.
 - [ ] Parâmetro cadastrado na estação e nome idêntico ao enviado em `leituras`.
 - [ ] Conversão `fator`/`ganho` confirmada; constante de pulso definida quando aplicável.
-- [ ] Relógio NTP válido e intervalo da estação configurado para cinco minutos.
+- [ ] Relógio NTP válido e intervalo da estação configurado para cinco minutos na validação nominal (a aplicação está em modo temporário de teste/apresentação de 30 s).
 - [ ] Firmware compilado e gravado; anotar versão/commit e porta serial sem registrar segredos.
 - [ ] Broker, serviço de ingestão e tratamento disponíveis; acesso às leituras brutas e medidas.
 - [ ] Capacidade física da fila SPIFFS medida e procedimento aprovado para o cenário “buffer cheio”.
@@ -26,7 +26,7 @@ Este roteiro prepara a validação; os campos de resultado ficam vazios até o t
 - Inicialização: tabela de partições correta, fila SPIFFS montada (`0/2801411 bytes`), Wi-Fi conectado e IP recebido.
 - NTP não sincronizou durante a janela inicial de 15 s. O firmware continuou tentando e omitiu `unixtime` no payload.
 - Broker `192.168.0.18:1883` expirou repetidamente; não houve PUBACK nem validação de ingestão/backend.
-- No ciclo de 300 s após a correção de temporização, GPIO14 retornou um quadro DHT11 com umidade 2%, temperatura 1 e bytes decimais 111/35; o firmware descartou-o como inválido. Em ciclo anterior, um quadro checksum-válido de 3% RH e 2,5 °C foi enfileirado antes da validação de faixa e continua preservado na fila.
+- A identificação do sensor em GPIO14 foi corrigida pelo usuário de DHT11 para DHT22 depois desses ciclos. Os quadros/valores então decodificados pelo firmware DHT11 não são evidência válida para o DHT22; um payload histórico chegou a receber PUBACK do broker e deve ser tratado como inválido caso tenha sido ingerido. A validação do driver DHT22 corrigido permanece pendente.
 - O ADC/GPIO32 foi registrado no serial como 1296, 1203 e 1223 em amostras sucessivas; os pacotes correspondentes foram enfileirados (38 bytes quando só ADC válido).
 - Após novas gravações/reinício, a fila montou com itens ainda pendentes (2.510 bytes usados antes do ciclo mais recente), evidência parcial de persistência local.
 - Reconexão de Wi-Fi não foi testada; o usuário fará esse teste depois. Nenhum dado sintético foi usado.
@@ -48,4 +48,4 @@ Este roteiro prepara a validação; os campos de resultado ficam vazios até o t
 
 PUBACK confirma a publicação QoS 1 no broker. Ele não prova, isoladamente, que a ingestão gravou a linha no banco. Por isso, a validação de SCRUM-35 também confere o subscriber e as tabelas/telas do backend depois da recuperação.
 
-O roteiro foi executado parcialmente na placa; a conexão com broker/ingestão não ocorreu e o DHT11 não forneceu resposta válida. SCRUM-35 permanece pendente até concluir a recuperação e anexar evidências reais do backend.
+O roteiro foi executado parcialmente na placa; a conexão com broker/ingestão não ocorreu durante esse registro e não houve leitura válida do DHT22 com o driver correto. SCRUM-35 permanece pendente até concluir a recuperação e anexar evidências reais do backend.

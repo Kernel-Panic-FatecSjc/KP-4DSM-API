@@ -18,15 +18,18 @@
 
 static const char *TAG = "data_logger";
 
+/* Intervalo temporário para teste/apresentação; use 300000U na operação nominal. */
+#define APP_SENSOR_SAMPLE_INTERVAL_MS 30000U
+
 /* Names and identity conversions chosen from each sensor's native output.
  * Register these exact parameter names on the station before treating data. */
 static sensor_config_t s_test_sensors[] = {
     {
-        .name = "dht11",
-        .source = SENSOR_SOURCE_DHT11,
+        .name = "dht22",
+        .source = SENSOR_SOURCE_DHT22,
         .factor = 1.0,
         .gain = 0.0,
-        .input.dht11 = {
+        .input.dht22 = {
             .pin = GPIO_NUM_14,
             .temperature_name = "temperatura_c",
             .temperature_factor = 1.0,
@@ -118,6 +121,6 @@ void app_main(void)
     ESP_ERROR_CHECK(mqtt_manager_start());
     ESP_ERROR_CHECK(sensor_manager_start(
         s_test_sensors, sizeof(s_test_sensors) / sizeof(s_test_sensors[0]),
-        SENSOR_MANAGER_SAMPLE_INTERVAL_DEFAULT_MS,
+        APP_SENSOR_SAMPLE_INTERVAL_MS,
         publish_sensor_readings, NULL));
 }

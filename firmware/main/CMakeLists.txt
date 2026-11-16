@@ -2,7 +2,7 @@ idf_component_register(
   SRCS
     "app_main.c"
     "clock_sync.c"
-    "dht11.c"
+    "dht22.c"
     "mqtt_manager.c"
     "sensor_manager.c"
     "station_parameters.c"

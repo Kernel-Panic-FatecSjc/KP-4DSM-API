@@ -139,15 +139,15 @@ esp_err_t station_parameters_apply(sensor_config_t *sensors, size_t sensor_count
     size_t applied = 0;
     for (size_t index = 0; index < sensor_count; index++) {
         sensor_config_t *sensor = &sensors[index];
-        if (sensor->source == SENSOR_SOURCE_DHT11) {
+        if (sensor->source == SENSOR_SOURCE_DHT22) {
             applied += apply_parameter(parameters,
-                                       sensor->input.dht11.temperature_name,
-                                       &sensor->input.dht11.temperature_factor,
-                                       &sensor->input.dht11.temperature_gain);
+                                       sensor->input.dht22.temperature_name,
+                                       &sensor->input.dht22.temperature_factor,
+                                       &sensor->input.dht22.temperature_gain);
             applied += apply_parameter(parameters,
-                                       sensor->input.dht11.humidity_name,
-                                       &sensor->input.dht11.humidity_factor,
-                                       &sensor->input.dht11.humidity_gain);
+                                       sensor->input.dht22.humidity_name,
+                                       &sensor->input.dht22.humidity_factor,
+                                       &sensor->input.dht22.humidity_gain);
         } else {
             applied += apply_parameter(parameters, sensor->name,
                                        &sensor->factor, &sensor->gain);
