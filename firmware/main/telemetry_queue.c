@@ -21,7 +21,15 @@
 #define QUEUE_META_NAMESPACE "queue"
 #define QUEUE_META_READY_KEY "spiffs_ready"
 #define QUEUE_ID_LENGTH 17
-#define QUEUE_MAX_ITEMS 1024U
+/* Capacidade da fila (SCRUM-34). 1.024 leituras a cada 5 min cobrem ~3,5 dias
+ * sem rede; o ambiente esp32dev_teste_buffer usa 10 para testar fila cheia. */
+#ifndef TELEMETRY_QUEUE_MAX_ITEMS
+#define TELEMETRY_QUEUE_MAX_ITEMS 1024U
+#endif
+#if TELEMETRY_QUEUE_MAX_ITEMS < 1U || TELEMETRY_QUEUE_MAX_ITEMS > 4096U
+#error "TELEMETRY_QUEUE_MAX_ITEMS deve ficar entre 1 e 4096"
+#endif
+#define QUEUE_MAX_ITEMS ((size_t)TELEMETRY_QUEUE_MAX_ITEMS)
 #define QUEUE_MAX_PAYLOAD_BYTES (64U * 1024U)
 
 static const char *TAG = "telemetry_queue";
@@ -148,7 +156,11 @@ esp_err_t telemetry_queue_start(void)
             return error;
         }
     }
-    ESP_LOGI(TAG, "fila persistente pronta: %u/%u bytes usados",
+    size_t pending_items = 0;
+    if (queue_item_count(&pending_items) != ESP_OK) pending_items = 0;
+    ESP_LOGI(TAG, "fila persistente pronta: %u/%u itens pendentes, %u/%u bytes usados; "
+                  "fila cheia descarta a leitura mais antiga",
+             (unsigned)pending_items, (unsigned)QUEUE_MAX_ITEMS,
              (unsigned)used, (unsigned)total);
     s_started = true;
     return ESP_OK;
@@ -163,18 +175,35 @@ esp_err_t telemetry_queue_enqueue(const char *payload)
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     size_t item_count = 0;
     esp_err_t error = queue_item_count(&item_count);
-    if (error != ESP_OK || item_count >= QUEUE_MAX_ITEMS) {
+    if (error != ESP_OK) {
         xSemaphoreGive(s_mutex);
-        if (error == ESP_OK) {
-            ESP_LOGE(TAG, "fila atingiu o limite de %u itens; pendências existentes preservadas",
-                     (unsigned)QUEUE_MAX_ITEMS);
-            return ESP_ERR_NO_MEM;
-        }
         return error;
     }
 
     uint64_t minimum = 0, maximum = 0;
     bool found = false;
+    /* Política de fila cheia (SCRUM-34): descarta a leitura mais antiga para
+     * guardar a nova. Cada descarte é registrado no log com o id removido. */
+    while (item_count >= QUEUE_MAX_ITEMS) {
+        error = sequence_bounds(&minimum, &maximum, &found);
+        if (error != ESP_OK || !found) {
+            xSemaphoreGive(s_mutex);
+            return error == ESP_OK ? ESP_FAIL : error;
+        }
+        char oldest[32];
+        snprintf(oldest, sizeof(oldest), "%s/q%016" PRIx64, QUEUE_PATH, minimum);
+        if (remove(oldest) != 0) {
+            int saved_errno = errno;
+            ESP_LOGE(TAG, "fila cheia e falha ao descartar o item mais antigo (errno=%d)",
+                     saved_errno);
+            xSemaphoreGive(s_mutex);
+            return ESP_FAIL;
+        }
+        ESP_LOGW(TAG, "fila cheia (%u itens): leitura mais antiga descartada, id=q%016" PRIx64,
+                 (unsigned)QUEUE_MAX_ITEMS, minimum);
+        item_count--;
+    }
+
     error = sequence_bounds(&minimum, &maximum, &found);
     if (error != ESP_OK || (found && maximum == UINT64_MAX)) {
         xSemaphoreGive(s_mutex);
@@ -264,6 +293,11 @@ esp_err_t telemetry_queue_remove(const char *queue_id)
     int result = remove(path);
     int saved_errno = errno;
     xSemaphoreGive(s_mutex);
+    if (result != 0 && saved_errno == ENOENT) {
+        /* O item foi descartado por fila cheia enquanto aguardava o PUBACK. */
+        ESP_LOGW(TAG, "PUBACK de item já descartado da fila: id=%s", queue_id);
+        return ESP_OK;
+    }
     if (result != 0) {
         ESP_LOGE(TAG, "falha ao remover item confirmado (errno=%d)", saved_errno);
         return ESP_FAIL;
