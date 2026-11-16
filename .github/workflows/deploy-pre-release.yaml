@@ -1,0 +1,37 @@
+name: Deploy na pré-release
+
+# RASCUNHO, NÃO VALIDADO: depende da VM (Roadmap DevOps, Fase 4).
+# Só manual. Recebe o SHA de um candidato (tag candidato/AAAA-MM-DD), confere
+# que ele passou na suíte noturna e instala o pacote dele na pré-release, clone
+# da produção. É o ensaio das migrations: o migrate deploy roda aqui antes de
+# rodar na produção. Verde grava o status "pre-release" no commit, que a
+# release.yaml exige.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: SHA do candidato (git rev-list -n 1 candidato/AAAA-MM-DD)
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  candidato:
+    permissions:
+      statuses: read
+    uses: ./.github/workflows/verificar-candidato.yaml
+    with:
+      sha: ${{ inputs.sha }}
+
+  deploy:
+    needs: candidato
+    permissions:
+      actions: read
+      statuses: write
+    uses: ./.github/workflows/deploy-vm.yaml
+    with:
+      sha: ${{ inputs.sha }}
+      ambiente: pre-release
+    secrets: inherit

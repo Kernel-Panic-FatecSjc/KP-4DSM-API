@@ -1,0 +1,47 @@
+name: Release
+
+# RASCUNHO, NÃO VALIDADO: depende da VM (Roadmap DevOps, Fase 5).
+# Só manual. Leva para a produção o MESMO pacote que passou na pré-release:
+# exige o status "pre-release" verde no SHA. O Environment "producao" tem
+# revisores obrigatórios (configuração do admin): o job espera a aprovação
+# humana antes de conectar na VM.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: SHA que já passou na pré-release
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  pre-release-ok:
+    name: Passou na pré-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      statuses: read
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          estado=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/status" \
+            --jq '.statuses[] | select(.context == "pre-release") | .state' | head -n 1) || estado=""
+          if [ "$estado" != "success" ]; then
+            echo "::error::${SHA:0:7} não passou na pré-release (status: ${estado:-nenhum}). Rode Actions > Deploy na pré-release com este SHA primeiro. Urgência em produção: use o Hotfix."
+            exit 1
+          fi
+
+  deploy:
+    needs: pre-release-ok
+    permissions:
+      actions: read
+      statuses: write
+    uses: ./.github/workflows/deploy-vm.yaml
+    with:
+      sha: ${{ inputs.sha }}
+      ambiente: producao
+    secrets: inherit

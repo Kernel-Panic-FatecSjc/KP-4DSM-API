@@ -1,0 +1,107 @@
+name: Deploy na VM
+
+# RASCUNHO, NÃO VALIDADO: depende da VM (Roadmap DevOps, Fase 4).
+# Reutilizável: deploy-pre-release.yaml, release.yaml e hotfix.yaml chamam
+# este workflow para instalar o MESMO pacote-<sha> em cada ambiente; muda só a
+# configuração, que vem do Environment (segredos SSH) e do .env da VM.
+# Travado por vars.CD_HABILITADO == 'true': enquanto a VM não existir, o job
+# falha com a explicação em vez de tentar conectar.
+#
+# Environment (configurado pelo admin): VM_HOST, VM_USUARIO, VM_CHAVE_SSH
+# (segredos) e URL_SAUDE (variável, ex.: https://api.exemplo/saude).
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        type: string
+        required: true
+      ambiente:
+        description: pre-release ou producao (nome do Environment)
+        type: string
+        required: true
+      run_id:
+        description: Run que publicou o artefato pacote-<sha> (vazio = a suíte noturna desse SHA; "atual" = o run que chamou, caso do hotfix)
+        type: string
+        default: ''
+
+jobs:
+  deploy:
+    name: Deploy em ${{ inputs.ambiente }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.ambiente }}
+    permissions:
+      actions: read
+      statuses: write
+    concurrency:
+      group: deploy-${{ inputs.ambiente }}
+      cancel-in-progress: false
+
+    steps:
+      - name: CD habilitado?
+        if: vars.CD_HABILITADO != 'true'
+        run: |
+          echo "::error::CD ainda é rascunho: depende da VM. Quando ela existir, o admin cria os Environments e define a variável CD_HABILITADO=true (wiki, Roadmap DevOps, Ações manuais)."
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+
+      # Hotfix: o pacote saiu do ci.yaml chamado neste mesmo run.
+      - name: Baixar pacote-${{ inputs.sha }} deste run
+        if: inputs.run_id == 'atual'
+        uses: actions/download-artifact@v4
+        with:
+          name: pacote-${{ inputs.sha }}
+          path: pacote
+
+      - name: Baixar pacote-${{ inputs.sha }} de outro run
+        if: inputs.run_id != 'atual'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          if [ -z "$RUN_ID" ]; then
+            RUN_ID=$(gh run list --workflow suite-noturna.yaml --commit "$SHA" --status success \
+              --json databaseId --jq '.[0].databaseId')
+          fi
+          [ -n "$RUN_ID" ] || { echo "::error::Nenhum run com pacote-$SHA. Rode a suíte noturna nesse commit."; exit 1; }
+          gh run download "$RUN_ID" -n "pacote-$SHA" -D pacote
+
+      - name: Conferir o SHA-256
+        run: cd pacote && sha256sum -c "pacote-${{ inputs.sha }}.tar.gz.sha256"
+
+      - name: Instalar na VM
+        env:
+          SHA: ${{ inputs.sha }}
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USUARIO: ${{ secrets.VM_USUARIO }}
+          VM_CHAVE_SSH: ${{ secrets.VM_CHAVE_SSH }}
+        run: |
+          install -m 600 /dev/null ~/.ssh_vm && printf '%s\n' "$VM_CHAVE_SSH" > ~/.ssh_vm
+          ssh_() { ssh -i ~/.ssh_vm -o StrictHostKeyChecking=accept-new "$VM_USUARIO@$VM_HOST" "$@"; }
+          scp -i ~/.ssh_vm -o StrictHostKeyChecking=accept-new \
+            "pacote/pacote-$SHA.tar.gz" .github/scripts/deploy-vm.sh "$VM_USUARIO@$VM_HOST:/tmp/"
+          ssh_ "bash /tmp/deploy-vm.sh $SHA /tmp/pacote-$SHA.tar.gz"
+
+      - name: Smoke na /saude pública
+        env:
+          URL_SAUDE: ${{ vars.URL_SAUDE }}
+        run: curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "$URL_SAUDE"
+
+      - name: Status deploy no commit
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+          AMBIENTE: ${{ inputs.ambiente }}
+          RESULTADO: ${{ job.status }}
+          URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          [ "$RESULTADO" = success ] && estado=success || estado=failure
+          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state="$estado" -f context="$AMBIENTE" \
+            -f target_url="$URL_RUN" -f description="Deploy em $AMBIENTE: $RESULTADO" > /dev/null
+          echo "Deploy de \`${SHA:0:7}\` em **$AMBIENTE**: $RESULTADO, por @$GITHUB_ACTOR em $(date -u +%FT%TZ)." >> "$GITHUB_STEP_SUMMARY"
