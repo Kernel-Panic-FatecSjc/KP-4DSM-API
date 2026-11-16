@@ -6,14 +6,14 @@
 #include "esp_rom_sys.h"
 #include "freertos/FreeRTOS.h"
 
-#include "dht11.h"
+#include "dht22.h"
 
-#define DHT11_START_LOW_US 20000
-#define DHT11_EDGE_TIMEOUT_US 120
-#define DHT11_BIT_HIGH_TIMEOUT_US 100
+#define DHT22_START_LOW_US 20000
+#define DHT22_EDGE_TIMEOUT_US 120
+#define DHT22_BIT_HIGH_TIMEOUT_US 100
 
 static portMUX_TYPE s_dht_mux = portMUX_INITIALIZER_UNLOCKED;
-static const char *TAG = "dht11";
+static const char *TAG = "dht22";
 
 static bool wait_for_level(gpio_num_t pin, int level, uint32_t timeout_us)
 {
@@ -39,33 +39,31 @@ static esp_err_t read_frame(gpio_num_t pin, uint8_t bytes[5])
     if ((error = gpio_set_level(pin, 1)) != ESP_OK) return error;
     esp_rom_delay_us(10);
     if ((error = gpio_set_level(pin, 0)) != ESP_OK) return error;
-    esp_rom_delay_us(DHT11_START_LOW_US);
+    esp_rom_delay_us(DHT22_START_LOW_US);
     if ((error = gpio_set_level(pin, 1)) != ESP_OK) return error;
 
-    /* Keep Wi-Fi/RTOS scheduling from stretching the 80 us DHT response and
-     * bit pulses beyond their sampling windows. The input path stays enabled
-     * while the open-drain output is released. */
+    /* Protect the timing-critical DHT frame from RTOS/Wi-Fi scheduling. */
     portENTER_CRITICAL(&s_dht_mux);
     esp_rom_delay_us(30);
 
-    if (!wait_for_level(pin, 0, DHT11_EDGE_TIMEOUT_US) ||
-        !wait_for_level(pin, 1, DHT11_EDGE_TIMEOUT_US) ||
-        !wait_for_level(pin, 0, DHT11_EDGE_TIMEOUT_US)) {
+    if (!wait_for_level(pin, 0, DHT22_EDGE_TIMEOUT_US) ||
+        !wait_for_level(pin, 1, DHT22_EDGE_TIMEOUT_US) ||
+        !wait_for_level(pin, 0, DHT22_EDGE_TIMEOUT_US)) {
         error = ESP_ERR_TIMEOUT;
         goto done;
     }
 
     for (size_t bit_index = 0; bit_index < 40; bit_index++) {
-        if (!wait_for_level(pin, 1, DHT11_EDGE_TIMEOUT_US)) {
+        if (!wait_for_level(pin, 1, DHT22_EDGE_TIMEOUT_US)) {
             error = ESP_ERR_TIMEOUT;
             goto done;
         }
         uint32_t high_us = 0;
-        while (gpio_get_level(pin) == 1 && high_us < DHT11_BIT_HIGH_TIMEOUT_US) {
+        while (gpio_get_level(pin) == 1 && high_us < DHT22_BIT_HIGH_TIMEOUT_US) {
             esp_rom_delay_us(1);
             high_us++;
         }
-        if (high_us >= DHT11_BIT_HIGH_TIMEOUT_US) {
+        if (high_us >= DHT22_BIT_HIGH_TIMEOUT_US) {
             error = ESP_ERR_TIMEOUT;
             goto done;
         }
@@ -80,7 +78,7 @@ done:
     return error;
 }
 
-esp_err_t dht11_read(gpio_num_t pin, float *temperature_c, float *humidity_percent)
+esp_err_t dht22_read(gpio_num_t pin, float *temperature_c, float *humidity_percent)
 {
     if (pin < GPIO_NUM_0 || pin >= GPIO_NUM_34 ||
         (pin >= GPIO_NUM_6 && pin <= GPIO_NUM_11) ||
@@ -95,15 +93,16 @@ esp_err_t dht11_read(gpio_num_t pin, float *temperature_c, float *humidity_perce
         return ESP_ERR_INVALID_CRC;
     }
 
-    float temperature = (float)bytes[2];
-    float humidity = (float)bytes[0];
-    /* DHT11 resolution is 1 C and 1 %RH; fractional/reserved bytes are zero.
-     * Reject frames outside its specified 0..50 C and 20..90 %RH range. */
-    if ((bytes[2] & 0x80) != 0 || bytes[1] != 0 || bytes[3] != 0 ||
-        temperature < 0.0F || temperature > 50.0F ||
-        humidity < 20.0F || humidity > 90.0F) {
-        ESP_LOGW(TAG, "quadro fora da resolução/faixa válida (umidade=%u, temperatura=%u, decimais=%u/%u)",
-                 bytes[0], bytes[2], bytes[1], bytes[3]);
+    const uint16_t humidity_raw = ((uint16_t)bytes[0] << 8) | bytes[1];
+    const uint16_t temperature_raw = ((uint16_t)bytes[2] << 8) | bytes[3];
+    const bool is_negative = (temperature_raw & 0x8000U) != 0;
+    const float humidity = (float)humidity_raw / 10.0F;
+    float temperature = (float)(temperature_raw & 0x7fffU) / 10.0F;
+    if (is_negative) temperature = -temperature;
+
+    if ((temperature_raw & 0x7fffU) > 800U || humidity_raw > 999U) {
+        ESP_LOGW(TAG, "quadro fora da faixa válida (umidade=%.1f, temperatura=%.1f)",
+                 humidity, temperature);
         return ESP_ERR_INVALID_RESPONSE;
     }
     *temperature_c = temperature;

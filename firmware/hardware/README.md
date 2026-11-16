@@ -1,53 +1,29 @@
-# SCRUM-30 — inventário e montagem do protótipo
+# Inventário e estado do hardware
 
-Este registro separa os dados informados pelo usuário das verificações ainda pendentes. Não é um esquema elétrico aprovado.
+## Componentes e configuração confirmada
 
-## Inventário da bancada
-
-| Item | Informação confirmada/informada | Situação |
+| Componente | Informação confirmada | Estado no firmware |
 | --- | --- | --- |
-| ESP32 | ESP-WROOM-32; Xtensa LX6 dual-core, flash de 4 MB | Firmware compilado e gravado na COM3 |
-| Carrier verde | Feita para ESP-WROOM-32 | Modelo e esquema não identificados; continuidade dos sinais não verificada |
-| DHT11 | GPIO14, VCC 3,3 V, pull-up e GND comum | Driver configurado; quadros recentes incompatíveis com a resolução/faixa foram descartados. Um quadro anterior gerou 2,5 °C/3% RH e foi enfileirado antes da validação mais estrita |
-| TEMT6000 | GPIO32, saída analógica, VCC 3,3 V e GND comum; usuário informa limite de 3,3 V | ADC1_CH4 configurado; contagens 1296, 1203 e 1223 observadas; conversão/calibração em lux pendente |
-| Módulo azul no Módulo_4 | Terminais VCC/I/O/GND, modelo não legível | Não usar como sensor nem acionar; possível GPIO35 não confirmado por esquema |
+| ESP-WROOM-32 em carrier verde | Flash informada de 4 MB | PlatformIO `esp32dev`, ESP-IDF |
+| DHT22 | GPIO14, pull-up, 3,3 V e GND comum | Driver DHT22, temperatura e umidade |
 
-## Ligações informadas para a bancada
+O sinal do DHT22 foi informado no GPIO14; ainda não há esquemático da carrier que confirme as trilhas. O firmware só configura o GPIO14 para a interface DHT22 informada. Nenhum outro pino de sensor está ativo.
 
-O desenho representa os fios informados pelo usuário; não valida trilhas internas da carrier nem valor/posição do pull-up do módulo DHT11.
+## Pendências de validação
 
-```mermaid
-flowchart LR
-  esp[ESP-WROOM-32 / carrier]
-  dht[DHT11 com pull-up]
-  light[TEMT6000 analógico]
-  esp -- 3,3 V --> dht
-  esp -- GPIO14 / DATA --> dht
-  esp -- 3,3 V --> light
-  light -- AO / GPIO32 ADC1_CH4 --> esp
-  dht -- GND comum --> esp
-  light -- GND comum --> esp
-```
+- Confirmar a pinagem no esquema ou por continuidade elétrica da carrier.
+- Obter novas leituras válidas do DHT22 após gravar a versão com o driver correto.
+- Comparar temperatura e umidade com instrumento de referência; a tolerância deve ser definida pelo time.
+- Confirmar os nomes `temperatura_c` e `umidade_pct` cadastrados na estação e os fatores/ganhos aplicados.
+- Registrar evidências de leitura individual para SCRUM-30/32 e de ingestão ponta a ponta para SCRUM-35.
 
-GPIO14 é usado como sinal digital do DHT11, então a limitação do ADC2 com Wi-Fi não se aplica. GPIO32 corresponde a ADC1_CH4. A tabela oficial de [GPIO do ESP-IDF](https://docs.espressif.com/projects/esp-idf/en/v5.4/esp32/api-reference/peripherals/gpio.html) descreve essas funções. O ADC está em atenuação de 12 dB; a faixa de melhor precisão no ESP32 vai até aproximadamente 2,45 V segundo o [datasheet do ESP32-WROOM-32](https://documentation.espressif.com/esp32-wroom-32_datasheet_en.html). O limite informado de alimentação do módulo não substitui a medição da tensão de saída analógica.
+## Inventário
 
-## Pendências para fechar SCRUM-30
-
-- Identificar modelo/revisão da carrier e obter esquema ou verificar continuidade entre conectores e GPIOs.
-- Investigar por que o DHT11 fornece quadros inválidos; conferir sinal/VCC/GND e comparar temperatura/umidade com instrumento de referência.
-- Medir a tensão de saída do TEMT6000 em condições de luz distintas e calibrar em lux se necessário.
-- Confirmar os parâmetros cadastrados na estação: `temperatura_c`, `umidade_pct` e `luminosidade_adc`. O firmware está configurado com fator 1 e ganho 0 para os três; luminosidade representa contagem ADC, não lux.
-- Se o requisito for lux, obter circuito/resistência e calibração contra instrumento de referência.
-- Definir pelo time tolerância de comparação, e anexar evidência de montagem/leitura individual.
-
-## Lista conhecida
-
-| Quantidade | Componente | Função/configuração |
+| Quantidade | Componente | Estado |
 | --- | --- | --- |
-| 1 | ESP-WROOM-32 | Controlador, flash de 4 MB informada |
-| 1 | Carrier verde | Modelo e esquema pendentes |
-| 1 | DHT11 | Temperatura e umidade, GPIO14, 3,3 V, pull-up informado |
-| 1 | TEMT6000 | Luz ambiente, saída analógica no GPIO32, 3,3 V informado |
-| 1 | Módulo azul, Módulo_4 | Não identificado; fora da aquisição |
+| 1 | ESP-WROOM-32 | Em uso |
+| 1 | Carrier verde | Modelo/esquema pendente |
+| 1 | DHT22 | Temperatura e umidade em GPIO14, pull-up informado |
+| 1 | Módulo azul no Módulo_4 | Não identificado; não configurado nem acionado |
 
-Há evidência parcial de execução na placa, mas sem esquema revisado e sem leitura válida do DHT11. SCRUM-30 não está totalmente concluída.
+A SCRUM-30 permanece parcialmente validada até haver evidência das leituras reais e do mapa elétrico revisado.

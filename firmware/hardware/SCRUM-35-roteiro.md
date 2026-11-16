@@ -1,51 +1,39 @@
 # SCRUM-35 — roteiro de validação ponta a ponta
 
-Este roteiro prepara a validação; os campos de resultado ficam vazios até o teste ser executado com sensor identificado, esquema confirmado e acesso ao broker/ingestão. Não registrar credenciais nem conteúdo de `secrets.h` nas evidências.
-
 ## Pré-condições
 
-- [ ] Sensor real identificado e ligado conforme esquema revisado.
-- [ ] Parâmetro cadastrado na estação e nome idêntico ao enviado em `leituras`.
-- [ ] Conversão `fator`/`ganho` confirmada; constante de pulso definida quando aplicável.
-- [ ] Relógio NTP válido e intervalo da estação configurado para cinco minutos.
-- [ ] Firmware compilado e gravado; anotar versão/commit e porta serial sem registrar segredos.
-- [ ] Broker, serviço de ingestão e tratamento disponíveis; acesso às leituras brutas e medidas.
-- [ ] Capacidade física da fila SPIFFS medida e procedimento aprovado para o cenário “buffer cheio”.
+- [ ] DHT22 identificado, ligado ao GPIO14 e alimentação/pull-up confirmados.
+- [ ] `temperatura_c` e `umidade_pct` cadastrados na estação com fator/ganho confirmados.
+- [ ] Firmware compilado e gravado; registrar versão e porta, sem credenciais.
+- [ ] NTP, broker, subscriber/ingestão e backend disponíveis.
+- [ ] Procedimento e capacidade da fila persistente revisados antes de simular fila cheia.
 
-## Cenários
+## Cenários e evidências
 
-| Cenário | Procedimento | Resultado a verificar | Evidência |
-| --- | --- | --- | --- |
-| Wi-Fi indisponível | Com o datalogger coletando dados reais, interromper o ponto de acesso por alguns minutos e restaurá-lo. | Leituras mantidas na fila local durante a queda; reenvio em ordem de `unixtime`; PUBACKs após retorno; pacote presente na ingestão. | Log serial, horário da queda/retorno e consulta de `leituras_brutas`/`medidas`. |
-| Ingestão indisponível | Manter broker ativo e parar o subscriber/serviço de ingestão; publicar dados reais; restaurar a ingestão. | Broker mantém mensagens QoS 1 para a sessão persistente e entrega após retorno; verificar ausência de perda e duplicidade no tratamento. | Logs do broker e da ingestão, contagens e consulta de brutas/medidas. |
-| Reinício com fila cheia | Só após capacidade e política de fila aprovadas: preencher até a condição de cheio, registrar IDs/quantidade, reiniciar o ESP32 e restaurar a comunicação. | Itens persistem após reinício; nenhuma remoção local anterior ao PUBACK; comportamento ao tentar enfileirar item adicional conforme política aprovada. | Log serial antes/depois, contagem de itens, consulta de brutas/medidas. |
+| Cenário | Verificação | Evidência |
+| --- | --- | --- |
+| Operação normal | Leituras reais do DHT22 aparecem no monitor, no broker e na ingestão/backend; conferir horário e parâmetros. | Log serial, log broker e consulta de dados brutos/medidas. |
+| Queda/retorno de Wi-Fi ou broker | Leituras coletadas durante a falha permanecem na fila e são reenviadas após recuperação; conferir PUBACK e backend. | Horários da falha/retorno, IDs da fila e consultas no backend. |
+| Reinício com fila pendente | Itens persistem após reinício e saem somente após PUBACK; não preencher a fila sem procedimento aprovado. | Logs antes/depois e registros recebidos. |
 
-## Registro da execução
+## Evidência já observada
 
-- Execução parcial na placa em 2026-11-15, firmware gravado na COM3; build compilado com PlatformIO/ESP-IDF.
-- Inicialização: tabela de partições correta, fila SPIFFS montada (`0/2801411 bytes`), Wi-Fi conectado e IP recebido.
-- NTP não sincronizou durante a janela inicial de 15 s. O firmware continuou tentando e omitiu `unixtime` no payload.
-- Broker `192.168.0.18:1883` expirou repetidamente; não houve PUBACK nem validação de ingestão/backend.
-- No ciclo de 300 s após a correção de temporização, GPIO14 retornou um quadro DHT11 com umidade 2%, temperatura 1 e bytes decimais 111/35; o firmware descartou-o como inválido. Em ciclo anterior, um quadro checksum-válido de 3% RH e 2,5 °C foi enfileirado antes da validação de faixa e continua preservado na fila.
-- O ADC/GPIO32 foi registrado no serial como 1296, 1203 e 1223 em amostras sucessivas; os pacotes correspondentes foram enfileirados (38 bytes quando só ADC válido).
-- Após novas gravações/reinício, a fila montou com itens ainda pendentes (2.510 bytes usados antes do ciclo mais recente), evidência parcial de persistência local.
-- Reconexão de Wi-Fi não foi testada; o usuário fará esse teste depois. Nenhum dado sintético foi usado.
+Em execuções anteriores houve sincronização NTP e publicações MQTT QoS 1 com PUBACK. Também foram observadas leituras de temperatura/umidade, mas o firmware então decodificava o GPIO14 como DHT11, embora o componente tenha sido identificado pelo usuário como DHT22. Esses valores antigos não comprovam leituras corretas do DHT22. O código foi corrigido para o protocolo DHT22; precisa ser gravado e validado novamente.
 
-### Registro complementar da execução ponta a ponta
+O usuário relatou falhas posteriores de conexão MQTT (`select() timeout`) e acúmulo de fila. A causa de rede ainda não foi conclusivamente identificada. O teste de reconexão do Wi-Fi foi deixado para execução posterior pelo usuário. Não há evidência suficiente de ingestão ponta a ponta para concluir SCRUM-35.
+
+## Registro da próxima execução
 
 - Data/hora e responsável:
-- Commit do firmware:
-- Sensor/modelo e parâmetro cadastrado:
-- Broker/ingestão/tratamento usados:
-- Capacidade observada da partição e política aprovada para fila cheia:
-- Cenários executados e duração:
-- Leituras publicadas, recebidas e tratadas:
-- Perdas/duplicidades encontradas:
-- Links/caminhos das evidências (logs e consultas):
+- Versão do firmware:
+- Parâmetros cadastrados e fatores/ganhos:
+- NTP e endereço IP recebidos:
+- Leituras vistas no monitor:
+- Conexão/publicação/PUBACK no broker:
+- Registros confirmados na ingestão/backend:
+- Cenários de falha e recuperação executados:
+- Duplicidades/perdas encontradas:
+- Links/caminhos das evidências:
 - Resultado/aprovação do time:
 
-## Limite da confirmação MQTT
-
-PUBACK confirma a publicação QoS 1 no broker. Ele não prova, isoladamente, que a ingestão gravou a linha no banco. Por isso, a validação de SCRUM-35 também confere o subscriber e as tabelas/telas do backend depois da recuperação.
-
-O roteiro foi executado parcialmente na placa; a conexão com broker/ingestão não ocorreu e o DHT11 não forneceu resposta válida. SCRUM-35 permanece pendente até concluir a recuperação e anexar evidências reais do backend.
+PUBACK confirma publicação no broker. A confirmação da persistência no backend exige evidência separada da ingestão e da consulta de dados.
