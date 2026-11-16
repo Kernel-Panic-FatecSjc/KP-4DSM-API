@@ -164,7 +164,22 @@ jobs:
             echo "_Atualizado a cada push pelo check **Requisito vinculado**._"
           } > "$mapa"
 
-          [ "$falhas" -eq 0 ] || exit 1
+          if [ "$falhas" -gt 0 ]; then
+          cat <<AJUDA
+
+          Próximo passo (docs/rastreabilidade.md):
+            - Tarefa sem Requisito: no Jira, abra a tarefa > Vincular item >
+              tipo "$TIPO_LINK" > escolha a issue do tipo $TIPO_REQUISITO.
+            - Requisito fora do pai: vincule o mesmo Requisito na história/task pai,
+              ou troque o Requisito da sub-task por um que o pai já tenha.
+            - Não existe ou sem acesso: confira o SCRUM-{ID} na branch e nos commits.
+            - Commit sem tipo(SCRUM-{ID}): corrija com git commit --amend (último)
+              ou git rebase -i (anteriores) e push forçado na sua branch.
+            Depois de ajustar só o Jira, não precisa de push: na aba Checks,
+            clique em "Re-run" neste job.
+          AJUDA
+            exit 1
+          fi
           echo "Todas as tarefas têm Requisito vinculado."
 
       # Fora do check de propósito: falha ao comentar (fork, sem permissão) não

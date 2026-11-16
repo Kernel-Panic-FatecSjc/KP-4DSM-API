@@ -72,5 +72,6 @@ jobs:
           if [ "$aprovacoes" -ge 1 ]; then
             status success "Aprovado por quem não é o autor"
           else
-            status pending "Aguardando 1 aprovação no commit atual"
+            # A descrição do status é o que o dev vê no PR (máx. 140 caracteres).
+            status pending "Falta 1 aprovação de outra pessoa neste commit: peça review (push novo exige nova aprovação)"
           fi

@@ -77,7 +77,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
           cache: 'npm'
           cache-dependency-path: kernelpanic-backend/package-lock.json
 
@@ -122,16 +122,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: alteracoes
-    if: false # temporariamente desabilitado: testes funcionais/unitários com erros de tipo pendentes de migration (ESTACAO_NAO_CADASTRADA)
+    if: needs.alteracoes.outputs.backend_testes == 'true'
     defaults:
       run:
         working-directory: ./kernelpanic-backend
 
-    # Job separado dos demais por causa da versão do Node: @nestjs/common@12 é
-    # ESM-only e o require do sandbox do Jest só delega para o require(esm)
-    # nativo a partir do Node 24.9. Em Node 20 toda spec que importe
-    # @nestjs/common falha com "Must use import to load ES Module". Os outros
-    # jobs seguem no 20 porque lint, typecheck e build não executam o código.
+    # Roda no PR (Fowler: o commit build tem os testes): unitários ~10 s e
+    # funcionais ~60 s. Precisa de Node >= 24.9: @nestjs/common@12 é ESM-only e
+    # o Jest só delega para o require(esm) nativo a partir dessa versão.
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -155,7 +153,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
           cache: 'npm'
           cache-dependency-path: kernelpanic-backend/package-lock.json
 
@@ -166,13 +164,12 @@ jobs:
         run: npm run prisma:generate
 
       - name: Testes unitários
-        if: github.event_name != 'pull_request'
         run: npm run test
 
       # Os testes funcionais recriam e migram o próprio banco (kernelpanic_test)
-      # no globalSetup, então não há passo de migrations aqui.
+      # no globalSetup, então não há passo de migrations aqui. Rodam em série
+      # (--runInBand no package.json): as specs dividem esse banco.
       - name: Testes funcionais
-        if: github.event_name != 'pull_request'
         run: npm run test:functional
 
   frontend:
@@ -190,7 +187,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
           cache: 'npm'
           cache-dependency-path: frontend/frontend/package-lock.json
 
@@ -221,7 +218,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
           cache: 'npm'
           cache-dependency-path: frontend/frontend/package-lock.json
 
@@ -229,7 +226,6 @@ jobs:
         run: npm ci
 
       - name: Testes unitários
-        if: github.event_name != 'pull_request'
         run: npm run test
 
       # Baixa o Chromium da versão do @playwright/test do lockfile, com as
@@ -241,7 +237,6 @@ jobs:
       # do playwright.config.ts). A API não sobe: os testes respondem as rotas
       # interceptando as requisições no navegador.
       - name: Testes funcionais
-        if: github.event_name != 'pull_request'
         run: npm run test:functional
 
       # Na falha, o relatório traz o trace de cada teste: abra com
@@ -261,7 +256,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: alteracoes
-    if: false # temporariamente desabilitado: migration pendente para ESTACAO_NAO_CADASTRADA no enum MotivoLeituraErro
+    if: needs.alteracoes.outputs.banco == 'true'
     defaults:
       run:
         working-directory: ./kernelpanic-backend
@@ -298,14 +293,16 @@ jobs:
           if [ -n "$alteradas" ]; then
             echo "::error::Migrations já existentes na ${{ github.base_ref }} foram alteradas:"
             echo "$alteradas"
-            echo "Crie uma migration NOVA em vez de editar uma existente."
+            echo "Próximo passo: desfaça a edição (git checkout origin/${{ github.base_ref }} -- <arquivo>)"
+            echo "e crie uma migration NOVA com: npx prisma migrate dev --name <descricao>"
+            echo "Migration mergeada já rodou em algum banco; editá-la deixa os ambientes divergentes."
             exit 1
           fi
           echo "Nenhuma migration existente foi alterada."
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
           cache: 'npm'
           cache-dependency-path: kernelpanic-backend/package-lock.json
 
@@ -344,8 +341,22 @@ jobs:
     timeout-minutes: 5
 
     steps:
+      # Diz qual job quebrou e onde olhar, em vez de só "falhou".
       - name: Algum job falhou ou foi cancelado
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
-        run: exit 1
+        env:
+          RESULTADOS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTADOS" | jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "::error::Job \(.key): \(.value.result)"'
+          cat <<'AJUDA'
+          Próximo passo:
+            1. Abra o job com erro (aba Checks do PR) e leia o primeiro ::error::.
+            2. Reproduza local: na pasta da aplicação, npm ci e o mesmo comando
+               do passo que falhou (lint, typecheck, build, test, test:functional).
+               Funcionais do backend precisam do Postgres: docker compose up -d.
+            3. Corrija e faça push na mesma branch: o CI roda de novo.
+            "cancelled" quase sempre é push novo na branch: espere o run mais recente.
+          AJUDA
+          exit 1
 
       - run: echo "Todos os jobs passaram ou foram pulados pelo filtro de alterações."
