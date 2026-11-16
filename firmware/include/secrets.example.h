@@ -9,3 +9,8 @@
 
 #define MQTT_HOST "CHANGE_ME"
 #define MQTT_PORT 1883
+
+// Optional override if the ingestion HTTP service is on another host/port.
+// The default is MQTT_HOST:3002 on the local development network.
+// #define INGESTION_API_HOST "CHANGE_ME"
+// #define INGESTION_API_PORT 3002

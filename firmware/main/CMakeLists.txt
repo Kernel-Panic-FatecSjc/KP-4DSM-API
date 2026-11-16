@@ -2,15 +2,20 @@ idf_component_register(
   SRCS
     "app_main.c"
     "clock_sync.c"
+    "dht11.c"
     "mqtt_manager.c"
     "sensor_manager.c"
+    "station_parameters.c"
+    "telemetry_queue.c"
     "wifi_manager.c"
   INCLUDE_DIRS
     "."
     "../include"
   REQUIRES
     esp_event
+    esp_http_client
     esp_netif
+    esp_rom
     esp_adc
     esp_driver_gpio
     esp_timer
@@ -18,4 +23,6 @@ idf_component_register(
     json
     mqtt
     nvs_flash
+    spiffs
+    spi_flash
 )
