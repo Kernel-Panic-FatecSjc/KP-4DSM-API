@@ -4,3 +4,5 @@
 /sdkconfig
 /sdkconfig.old
 /sdkconfig.esp32dev
+/sdkconfig.esp32dev_demo
+/sdkconfig.esp32dev_teste_buffer

@@ -277,7 +277,7 @@ static bool sample_sensor(sensor_runtime_t *sensor,
     } else if (config->source == SENSOR_SOURCE_GPIO_DIGITAL) {
         int level = gpio_get_level(config->input.digital.pin);
         if (level != 0 && level != 1) {
-            ESP_LOGW(TAG, "leitura digital invÃ¡lida; sensor ignorado");
+            ESP_LOGW(TAG, "leitura digital inválida; sensor ignorado");
             return false;
         }
         raw_value = (double)level;
