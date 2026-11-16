@@ -13,7 +13,7 @@
 #include "freertos/task.h"
 
 #include "sensor_manager.h"
-#include "dht22.h"
+#include "dht11.h"
 
 typedef struct {
     sensor_config_t config;
@@ -60,19 +60,19 @@ static bool parameter_name_is_valid(const char *name)
 
 static size_t sensor_output_count(const sensor_config_t *sensor)
 {
-    if (sensor->source != SENSOR_SOURCE_DHT22) return 1;
-    return (sensor->input.dht22.temperature_name != NULL) +
-           (sensor->input.dht22.humidity_name != NULL);
+    if (sensor->source != SENSOR_SOURCE_DHT11) return 1;
+    return (sensor->input.dht11.temperature_name != NULL) +
+           (sensor->input.dht11.humidity_name != NULL);
 }
 
 static const char *sensor_output_name(const sensor_config_t *sensor, size_t output_index)
 {
-    if (sensor->source != SENSOR_SOURCE_DHT22) return sensor->name;
-    if (sensor->input.dht22.temperature_name != NULL) {
-        if (output_index == 0) return sensor->input.dht22.temperature_name;
+    if (sensor->source != SENSOR_SOURCE_DHT11) return sensor->name;
+    if (sensor->input.dht11.temperature_name != NULL) {
+        if (output_index == 0) return sensor->input.dht11.temperature_name;
         output_index--;
     }
-    return output_index == 0 ? sensor->input.dht22.humidity_name : NULL;
+    return output_index == 0 ? sensor->input.dht11.humidity_name : NULL;
 }
 
 static esp_err_t validate_sensor_config(const sensor_config_t *sensor)
@@ -117,25 +117,25 @@ static esp_err_t validate_sensor_config(const sensor_config_t *sensor)
             return ESP_ERR_INVALID_ARG;
         }
         break;
-    case SENSOR_SOURCE_DHT22:
-        if (!gpio_is_safe_input(sensor->input.dht22.pin) ||
-            sensor->input.dht22.pin >= GPIO_NUM_34 ||
-            (sensor->input.dht22.temperature_name == NULL &&
-             sensor->input.dht22.humidity_name == NULL) ||
-            (sensor->input.dht22.temperature_name != NULL &&
-             (!parameter_name_is_valid(sensor->input.dht22.temperature_name) ||
-              !isfinite(sensor->input.dht22.temperature_factor) ||
-              sensor->input.dht22.temperature_factor == 0.0 ||
-              !isfinite(sensor->input.dht22.temperature_gain))) ||
-            (sensor->input.dht22.humidity_name != NULL &&
-             (!parameter_name_is_valid(sensor->input.dht22.humidity_name) ||
-              !isfinite(sensor->input.dht22.humidity_factor) ||
-              sensor->input.dht22.humidity_factor == 0.0 ||
-              !isfinite(sensor->input.dht22.humidity_gain))) ||
-            (sensor->input.dht22.temperature_name != NULL &&
-             sensor->input.dht22.humidity_name != NULL &&
-             strcmp(sensor->input.dht22.temperature_name,
-                    sensor->input.dht22.humidity_name) == 0)) {
+    case SENSOR_SOURCE_DHT11:
+        if (!gpio_is_safe_input(sensor->input.dht11.pin) ||
+            sensor->input.dht11.pin >= GPIO_NUM_34 ||
+            (sensor->input.dht11.temperature_name == NULL &&
+             sensor->input.dht11.humidity_name == NULL) ||
+            (sensor->input.dht11.temperature_name != NULL &&
+             (!parameter_name_is_valid(sensor->input.dht11.temperature_name) ||
+              !isfinite(sensor->input.dht11.temperature_factor) ||
+              sensor->input.dht11.temperature_factor == 0.0 ||
+              !isfinite(sensor->input.dht11.temperature_gain))) ||
+            (sensor->input.dht11.humidity_name != NULL &&
+             (!parameter_name_is_valid(sensor->input.dht11.humidity_name) ||
+              !isfinite(sensor->input.dht11.humidity_factor) ||
+              sensor->input.dht11.humidity_factor == 0.0 ||
+              !isfinite(sensor->input.dht11.humidity_gain))) ||
+            (sensor->input.dht11.temperature_name != NULL &&
+             sensor->input.dht11.humidity_name != NULL &&
+             strcmp(sensor->input.dht11.temperature_name,
+                    sensor->input.dht11.humidity_name) == 0)) {
             return ESP_ERR_INVALID_ARG;
         }
         break;
@@ -299,34 +299,34 @@ static bool sample_sensor(sensor_runtime_t *sensor,
     return true;
 }
 
-static void append_dht22_readings(sensor_runtime_t *sensor,
+static void append_dht11_readings(sensor_runtime_t *sensor,
                                   mqtt_telemetry_reading_t *readings,
                                   size_t *reading_count)
 {
     float temperature_c;
     float humidity_percent;
-    esp_err_t error = dht22_read(sensor->config.input.dht22.pin,
+    esp_err_t error = dht11_read(sensor->config.input.dht11.pin,
                                  &temperature_c, &humidity_percent);
     if (error != ESP_OK) {
-        ESP_LOGW(TAG, "DHT22 sem leitura válida: %s", esp_err_to_name(error));
+        ESP_LOGW(TAG, "DHT11 sem leitura válida: %s", esp_err_to_name(error));
         return;
     }
 
-    if (sensor->config.input.dht22.temperature_name != NULL) {
+    if (sensor->config.input.dht11.temperature_name != NULL) {
         double temperature = (double)temperature_c *
-                             sensor->config.input.dht22.temperature_factor +
-                             sensor->config.input.dht22.temperature_gain;
+                             sensor->config.input.dht11.temperature_factor +
+                             sensor->config.input.dht11.temperature_gain;
         if (!isfinite(temperature)) return;
-        readings[*reading_count].name = sensor->config.input.dht22.temperature_name;
+        readings[*reading_count].name = sensor->config.input.dht11.temperature_name;
         readings[*reading_count].value = temperature;
         (*reading_count)++;
     }
-    if (sensor->config.input.dht22.humidity_name != NULL) {
+    if (sensor->config.input.dht11.humidity_name != NULL) {
         double humidity = (double)humidity_percent *
-                          sensor->config.input.dht22.humidity_factor +
-                          sensor->config.input.dht22.humidity_gain;
+                          sensor->config.input.dht11.humidity_factor +
+                          sensor->config.input.dht11.humidity_gain;
         if (!isfinite(humidity)) return;
-        readings[*reading_count].name = sensor->config.input.dht22.humidity_name;
+        readings[*reading_count].name = sensor->config.input.dht11.humidity_name;
         readings[*reading_count].value = humidity;
         (*reading_count)++;
     }
@@ -344,8 +344,8 @@ static void collect_readings(void)
     mqtt_telemetry_reading_t readings[SENSOR_MANAGER_MAX_SENSORS];
     size_t valid_count = 0;
     for (size_t index = 0; index < s_sensor_count; index++) {
-        if (s_sensors[index].config.source == SENSOR_SOURCE_DHT22) {
-            append_dht22_readings(&s_sensors[index], readings, &valid_count);
+        if (s_sensors[index].config.source == SENSOR_SOURCE_DHT11) {
+            append_dht11_readings(&s_sensors[index], readings, &valid_count);
             continue;
         }
         double value;

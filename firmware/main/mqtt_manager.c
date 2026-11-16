@@ -27,41 +27,17 @@ static char s_broker_uri[160];
 static char s_client_id[96];
 static char s_topic[160];
 static bool s_connected;
-static bool s_connecting;
 static portMUX_TYPE s_connection_mux = portMUX_INITIALIZER_UNLOCKED;
 static int s_inflight_message_id = -1;
 static bool s_sending_queue_item;
 static char s_inflight_queue_id[18];
 static int s_early_ack_message_id = -1;
 static TaskHandle_t s_retry_task;
-static bool s_client_started;
 static uint32_t s_retry_delay_ms = QUEUE_RETRY_INITIAL_MS;
 static portMUX_TYPE s_queue_mux = portMUX_INITIALIZER_UNLOCKED;
 
 static void publish_next_queued_telemetry(void);
-static void set_connected(bool connected);
 static bool is_connected(void);
-static bool is_connecting(void);
-static void set_connecting(bool connecting);
-static void notify_queue_worker_now(void);
-
-static esp_err_t queue_has_pending(bool *pending)
-{
-    if (pending == NULL) return ESP_ERR_INVALID_ARG;
-
-    char *payload = NULL;
-    char queue_id[18] = {0};
-    esp_err_t error = telemetry_queue_peek(&payload, queue_id, sizeof(queue_id));
-    if (error == ESP_ERR_NOT_FOUND) {
-        *pending = false;
-        return ESP_OK;
-    }
-    if (error != ESP_OK) return error;
-
-    free(payload);
-    *pending = true;
-    return ESP_OK;
-}
 
 static void schedule_queue_retry(void)
 {
@@ -77,84 +53,16 @@ static void schedule_queue_retry(void)
     xTaskNotify(s_retry_task, delay_ms, eSetValueWithOverwrite);
 }
 
-static void notify_queue_worker_now(void)
-{
-    if (s_retry_task != NULL) {
-        xTaskNotify(s_retry_task, 0, eSetValueWithOverwrite);
-    }
-}
-
-static esp_err_t start_or_reconnect_client(void)
-{
-    esp_err_t error;
-    if (s_client_started) {
-        /* A previous batch may have ended either by an explicit stop or a
-         * transport failure. Stop the old MQTT task before creating a fresh
-         * connection attempt instead of reusing a stale reconnect state. */
-        error = esp_mqtt_client_stop(s_client);
-        if (error != ESP_OK) {
-            return error;
-        }
-        s_client_started = false;
-    }
-
-    error = esp_mqtt_client_start(s_client);
-    if (error == ESP_OK) s_client_started = true;
-    return error;
-}
-
 static void queue_retry_task(void *argument)
 {
     (void)argument;
     for (;;) {
         uint32_t delay_ms = 0;
         if (xTaskNotifyWait(0, UINT32_MAX, &delay_ms, portMAX_DELAY) == pdTRUE) {
-            if (delay_ms > 0) vTaskDelay(pdMS_TO_TICKS(delay_ms));
-
-            bool pending = false;
-            esp_err_t error = queue_has_pending(&pending);
-            if (error != ESP_OK) {
-                ESP_LOGE(TAG, "falha ao consultar fila persistente: %s",
-                         esp_err_to_name(error));
-                schedule_queue_retry();
-                continue;
-            }
-
-            if (!pending) {
-                if (s_client_started) {
-                    ESP_LOGI(TAG, "fila vazia; parando cliente MQTT até a próxima leitura");
-                    error = esp_mqtt_client_stop(s_client);
-                    if (error != ESP_OK) {
-                        ESP_LOGW(TAG, "falha ao parar cliente MQTT ocioso: %s",
-                                 esp_err_to_name(error));
-                    } else {
-                        s_client_started = false;
-                        set_connected(false);
-                        set_connecting(false);
-                    }
-                }
-                continue;
-            }
-
+            vTaskDelay(pdMS_TO_TICKS(delay_ms));
             if (is_connected()) {
                 publish_next_queued_telemetry();
-                continue;
-            }
-
-            /* Notifications can arrive from both the queue and MQTT events.
-             * Do not ask ESP-MQTT to reconnect while its prior attempt is
-             * still in progress. */
-            if (is_connecting()) {
-                continue;
-            }
-
-            ESP_LOGI(TAG, "abrindo conexão MQTT para enviar telemetria pendente");
-            set_connecting(true);
-            error = start_or_reconnect_client();
-            if (error != ESP_OK) {
-                set_connecting(false);
-                ESP_LOGW(TAG, "não foi possível iniciar/reconectar MQTT: %s",
-                         esp_err_to_name(error));
+            } else {
                 schedule_queue_retry();
             }
         }
@@ -175,22 +83,6 @@ static bool is_connected(void)
     connected = s_connected;
     portEXIT_CRITICAL(&s_connection_mux);
     return connected;
-}
-
-static void set_connecting(bool connecting)
-{
-    portENTER_CRITICAL(&s_connection_mux);
-    s_connecting = connecting;
-    portEXIT_CRITICAL(&s_connection_mux);
-}
-
-static bool is_connecting(void)
-{
-    bool connecting;
-    portENTER_CRITICAL(&s_connection_mux);
-    connecting = s_connecting;
-    portEXIT_CRITICAL(&s_connection_mux);
-    return connecting;
 }
 
 static bool reading_name_is_valid(const char *name)
@@ -303,24 +195,17 @@ static void mqtt_event_handler(void *handler_argument,
 
     switch (event_id) {
     case MQTT_EVENT_CONNECTED:
-        set_connecting(false);
         set_connected(true);
-        portENTER_CRITICAL(&s_queue_mux);
-        s_retry_delay_ms = QUEUE_RETRY_INITIAL_MS;
-        portEXIT_CRITICAL(&s_queue_mux);
         ESP_LOGI(TAG, "conexão autenticada estabelecida");
-        notify_queue_worker_now();
+        publish_next_queued_telemetry();
         break;
     case MQTT_EVENT_DISCONNECTED:
         set_connected(false);
-        set_connecting(false);
-        ESP_LOGW(TAG, "conexão MQTT encerrada; itens sem PUBACK permanecem na fila");
+        ESP_LOGW(TAG, "conexão perdida; o cliente tentará reconectar");
         schedule_queue_retry();
         break;
     case MQTT_EVENT_ERROR:
-        ESP_LOGE(TAG, "erro de conexão MQTT");
-        /* MQTT_EVENT_DISCONNECTED schedules the retry for this failed
-         * connection. Scheduling here as well doubles the backoff twice. */
+        ESP_LOGE(TAG, "erro de conexão MQTT; o cliente tentará reconectar");
         break;
     case MQTT_EVENT_PUBLISHED: {
         const esp_mqtt_event_handle_t event = event_data;
@@ -345,7 +230,7 @@ static void mqtt_event_handler(void *handler_argument,
                 ESP_LOGE(TAG, "PUBACK recebido, mas não foi possível remover item persistido");
                 schedule_queue_retry();
             } else {
-                notify_queue_worker_now();
+                publish_next_queued_telemetry();
             }
         }
         break;
@@ -374,9 +259,7 @@ esp_err_t mqtt_manager_start(void)
     config.credentials.username = STATION_VID;
     config.credentials.client_id = s_client_id;
     config.credentials.authentication.password = STATION_KEY;
-    config.session.keepalive = 15;
-    config.network.disable_auto_reconnect = true;
-    config.network.timeout_ms = 5000;
+    config.session.keepalive = 30;
     config.network.reconnect_timeout_ms = 5000;
 
     s_client = esp_mqtt_client_init(&config);
@@ -384,8 +267,7 @@ esp_err_t mqtt_manager_start(void)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "MQTT preparado para envio sob demanda em %s como estação %s",
-             s_broker_uri, STATION_VID);
+    ESP_LOGI(TAG, "conectando ao broker %s como estação %s", s_broker_uri, STATION_VID);
     esp_err_t error = esp_mqtt_client_register_event(
         s_client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     if (error != ESP_OK) {
@@ -397,11 +279,7 @@ esp_err_t mqtt_manager_start(void)
         return ESP_ERR_NO_MEM;
     }
 
-    bool pending = false;
-    error = queue_has_pending(&pending);
-    if (error != ESP_OK) return error;
-    if (pending) notify_queue_worker_now();
-    return ESP_OK;
+    return esp_mqtt_client_start(s_client);
 }
 
 esp_err_t mqtt_manager_publish_telemetry(const mqtt_telemetry_reading_t *readings,
@@ -427,7 +305,7 @@ esp_err_t mqtt_manager_publish_telemetry(const mqtt_telemetry_reading_t *reading
         return error;
     }
 
-    notify_queue_worker_now();
+    if (is_connected()) publish_next_queued_telemetry();
     return ESP_OK;
 }
 
@@ -450,7 +328,6 @@ static void publish_next_queued_telemetry(void)
         portENTER_CRITICAL(&s_queue_mux);
         s_sending_queue_item = false;
         portEXIT_CRITICAL(&s_queue_mux);
-        notify_queue_worker_now();
         return;
     }
     if (error != ESP_OK) {
@@ -495,7 +372,7 @@ static void publish_next_queued_telemetry(void)
             ESP_LOGE(TAG, "PUBACK recebido, mas não foi possível remover item persistido");
             schedule_queue_retry();
         } else {
-            notify_queue_worker_now();
+            publish_next_queued_telemetry();
         }
     } else {
         ESP_LOGI(TAG, "publicação MQTT QoS 1 iniciada; aguardando PUBACK id=%d", message_id);

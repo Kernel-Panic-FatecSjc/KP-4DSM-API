@@ -15,7 +15,7 @@ typedef enum {
     SENSOR_SOURCE_GPIO_DIGITAL,
     SENSOR_SOURCE_RAIN_PULSE,
     SENSOR_SOURCE_WIND_PULSE,
-    SENSOR_SOURCE_DHT22,
+    SENSOR_SOURCE_DHT11,
 } sensor_source_t;
 
 typedef struct {
@@ -51,7 +51,7 @@ typedef struct {
             const char *humidity_name;
             double humidity_factor;
             double humidity_gain;
-        } dht22;
+        } dht11;
     } input;
 } sensor_config_t;
 
