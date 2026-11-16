@@ -17,9 +17,9 @@ concurrency:
 jobs:
   requisito:
     name: Requisito vinculado
-    # Título e descrição do PR não entram na checagem: editar só vale se o
-    # destino mudou.
-    if: github.event.action != 'edited' || github.event.changes.base
+    # Roda em toda edição, até só de descrição: com cancel-in-progress, a
+    # edição cancela o run do push, e um run pulado no lugar conta como
+    # aprovado (falso verde). Rodar de novo custa segundos.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
