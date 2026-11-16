@@ -13,12 +13,15 @@ describe('Trilha de auditoria (funcional)', () => {
   let adminA: string[];
   let usuarioA: string[];
   let usuarioAId: string;
+  let consultantes: string[];
   let licitacaoA: string;
   let registroId: string;
   const marca = `trilha-${Date.now()}`;
 
   const api = () => request(app.getHttpServer());
-  const contar = () => prisma.logAuditoria.count();
+  // Só registros desta suíte: as outras specs gravam na mesma tabela em paralelo.
+  const contarDaMarca = () => prisma.logAuditoria.count({ where: { acao: { startsWith: marca } } });
+  const contarDosConsultantes = () => prisma.logAuditoria.count({ where: { usuarioId: { in: consultantes } } });
   /** O middleware de acesso grava no 'finish' da resposta, sem segurar o retorno. */
   const esperarGravacao = () => new Promise((resolve) => setTimeout(resolve, 200));
 
@@ -26,8 +29,11 @@ describe('Trilha de auditoria (funcional)', () => {
     app = await criarAppDeTeste();
     prisma = app.get(PrismaService);
     licitacaoA = (await criarLicitacaoDeTeste(app)).id;
-    tecsus = (await criarSessaoDeTeste(app, 'ADMIN_TECSUS')).cookie;
-    adminA = (await criarSessaoDeTeste(app, 'ADMIN_LICITACAO', licitacaoA)).cookie;
+    const sessaoTecsus = await criarSessaoDeTeste(app, 'ADMIN_TECSUS');
+    const sessaoAdminA = await criarSessaoDeTeste(app, 'ADMIN_LICITACAO', licitacaoA);
+    tecsus = sessaoTecsus.cookie;
+    adminA = sessaoAdminA.cookie;
+    consultantes = [sessaoTecsus.usuarioId, sessaoAdminA.usuarioId];
     const sessao = await criarSessaoDeTeste(app, 'USUARIO_LICITACAO', licitacaoA);
     usuarioA = sessao.cookie;
     usuarioAId = sessao.usuarioId;
@@ -57,9 +63,9 @@ describe('Trilha de auditoria (funcional)', () => {
       await expect(prisma.logAuditoria.delete({ where: { id: registroId } })).rejects.toThrow('Registros de auditoria são imutáveis');
       await expect(prisma.$executeRawUnsafe('DELETE FROM logs_auditoria')).rejects.toThrow('Registros de auditoria são imutáveis');
 
-      const antes = await contar();
+      const antes = await contarDaMarca();
       await expect(prisma.$executeRawUnsafe('TRUNCATE logs_auditoria')).rejects.toThrow('Registros de auditoria são imutáveis');
-      expect(await contar()).toBe(antes);
+      expect(await contarDaMarca()).toBe(antes);
       await expect(prisma.logAuditoria.findUnique({ where: { id: registroId } })).resolves.toMatchObject({ acao: `${marca}.criar` });
     });
 
@@ -98,11 +104,11 @@ describe('Trilha de auditoria (funcional)', () => {
     });
 
     it('a consulta da trilha (Tecsus e admin da licitação) não gera registro novo', async () => {
-      const antes = await contar();
+      const antes = await contarDosConsultantes();
       await api().get('/auditoria').query({ acao: marca }).set('Cookie', tecsus).expect(200);
       await api().get('/auditoria').set('Cookie', adminA).expect(200);
       await esperarGravacao();
-      expect(await contar()).toBe(antes);
+      expect(await contarDosConsultantes()).toBe(antes);
     });
   });
 

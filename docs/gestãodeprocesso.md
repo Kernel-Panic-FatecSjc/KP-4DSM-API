@@ -10,7 +10,7 @@ Antes do fluxo em si, o time mantém um conjunto de políticas que orientam as d
 
 * **Definition of Ready (DoR):** critérios para um item de backlog estar claro e pronto para entrar em uma sprint. Aplicada na etapa de Produto e Backlog.
 * **Definition of Done (DoD):** critérios para considerar uma entrega concluída. Aplicada antes do merge na main.
-* **Pipeline de CI:** configurada para executar build, lint, testes unitários e testes de integração a cada Pull Request.
+* **Pipeline de CI:** a cada Pull Request roda lint, typecheck, build, contrato OpenAPI, testes unitários e funcionais (backend com banco real, frontend com Playwright) e as migrations do zero; o check exigido é o `CI ok`. Os testes passaram a rodar no PR a partir do #116 (antes, `testes` e `migrations` estavam desligados). O que é lento (ponta a ponta com a pilha real, carga, segurança completa, restauração do banco) roda na **suíte noturna** sobre a main. Detalhes em Integração contínua e Roadmap DevOps, na wiki.
 * **Estratégia de branches:** define como as branches das tarefas nascem e voltam para a main.
 * **[Rastreabilidade](rastreabilidade.md):** todo trabalho nasce de um Requisito. User Stories, Tasks e bugs são ligados aos Requisitos no Jira.
 

@@ -1,0 +1,39 @@
+name: Double check de banco
+
+# Política de banco, 7.2: mudança estrutural ou em regra que roda no banco
+# (migrations, inclusive o SQL da trg_avaliar_alertas_lote) precisa do registro
+# de aprovação no Confluence, assinado por 2 devs. Este check exige o link no
+# corpo do PR e diz onde colocá-lo. A regra está em
+# .github/scripts/double-check-banco.sh, testável localmente.
+# PR que não toca prisma/migrations passa direto.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  double-check:
+    name: Double check de banco
+    # Roda em toda edição, até só de título: um run pulado conta como aprovado
+    # e apagaria um vermelho anterior.
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Link do registro de aprovação quando há migration
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          CORPO_PR: ${{ github.event.pull_request.body }}
+        run: git diff --name-only "$BASE_SHA" HEAD | bash .github/scripts/double-check-banco.sh

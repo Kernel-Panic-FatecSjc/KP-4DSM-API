@@ -1,5 +1,10 @@
 name: Publicar em staging
 
+# Na prática é um PREVIEW, não um ambiente de staging: não há deploy nem banco
+# próprio, e ele não bloqueia o merge. O ambiente clone da produção é a
+# pré-release (deploy-pre-release.yaml, depois da suíte noturna). O label
+# continua "staging" para não quebrar o hábito do time.
+#
 # O revisor leva o PR para staging colocando o label "staging": o PR entra
 # integrado com a main atual, para testar o código antes de aprovar. Não há
 # deploy; o push feito com o GITHUB_TOKEN não dispara outros workflows. Se

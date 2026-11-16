@@ -1,0 +1,95 @@
+name: Main vermelha
+
+# Fowler, prática "Fix broken builds immediately": a main vermelha é a
+# prioridade zero do time. Quando o CI (ou a suíte noturna) falha na main,
+# abre uma issue com o label main-vermelha: link do run, commit e autor. Quando
+# o mesmo workflow volta a ficar verde na main, a issue fecha sozinha.
+# Uma issue por workflow: falha nova enquanto ela está aberta vira comentário.
+
+on:
+  workflow_run:
+    workflows: [CI, Suíte noturna]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  issues: write
+
+concurrency:
+  group: main-vermelha-${{ github.event.workflow_run.name }}
+  cancel-in-progress: false
+
+jobs:
+  issue:
+    name: Abrir ou fechar a issue
+    # Cancelado (push novo) ou pulado não diz nada sobre a main.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Issue da main vermelha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          LABEL: main-vermelha
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          CONCLUSAO: ${{ github.event.workflow_run.conclusion }}
+          URL_RUN: ${{ github.event.workflow_run.html_url }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          ASSUNTO: ${{ github.event.workflow_run.head_commit.message }}
+          AUTOR: ${{ github.event.workflow_run.head_commit.author.name }}
+          QUEM: ${{ github.event.workflow_run.triggering_actor.login }}
+        run: |
+          titulo="Main vermelha: $WORKFLOW"
+          assunto=$(printf '%s' "$ASSUNTO" | head -n 1)
+
+          gh label create "$LABEL" --color B60205 \
+            --description "A main está quebrada: corrigir ou reverter, prioridade zero" 2>/dev/null || true
+
+          aberta=$(gh issue list --label "$LABEL" --state open --json number,title \
+            --jq ".[] | select(.title == \"$titulo\") | .number" | head -n 1)
+
+          if [ "$CONCLUSAO" = "success" ]; then
+            if [ -n "$aberta" ]; then
+              gh issue close "$aberta" --comment "Verde de novo em \`${SHA:0:7}\`: [run]($URL_RUN). Fechada automaticamente."
+              echo "Issue #$aberta fechada: $WORKFLOW voltou a ficar verde."
+            else
+              echo "$WORKFLOW verde na main, nenhuma issue aberta."
+            fi
+            exit 0
+          fi
+
+          falha=$(cat <<EOF
+          | | |
+          |---|---|
+          | Workflow | [$WORKFLOW]($URL_RUN) |
+          | Commit | \`${SHA:0:7}\` $assunto |
+          | Autor | $AUTOR (merge por @$QUEM) |
+          EOF
+          )
+
+          if [ -n "$aberta" ]; then
+            gh issue comment "$aberta" --body "Falhou de novo.
+
+          $falha"
+            echo "Issue #$aberta já aberta: falha nova comentada."
+            exit 0
+          fi
+
+          gh issue create --title "$titulo" --label "$LABEL" --body "$(cat <<EOF
+          A main está vermelha. **Corrigir ou reverter é a prioridade zero do time**: ninguém faz merge de outra coisa até ela voltar a ficar verde.
+
+          $falha
+
+          ### O que fazer agora
+
+          1. Abra o [run]($URL_RUN) e leia o primeiro \`::error::\`.
+          2. Correção rápida (minutos): branch \`fix/SCRUM-{ID}-...\`, PR para a main.
+          3. Não dá para corrigir rápido: reverta com a branch \`revert/SCRUM-{ID}-...\` (docs/padraocommit.md). Não use o botão Revert do GitHub.
+          4. Esta issue fecha sozinha quando o $WORKFLOW passar na main.
+          EOF
+          )"
+          echo "Issue aberta: $titulo"

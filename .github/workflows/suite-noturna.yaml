@@ -1,0 +1,239 @@
+name: Suíte noturna
+
+# Estágio secundário do pipeline (Fowler, "deployment pipeline"): o que é
+# lento ou precisa da pilha inteira e não cabe nos ~10 min do PR.
+#   - o CI inteiro, sem filtro por caminho (o mesmo ci.yaml, via workflow_call)
+#   - segurança completa (npm audit e varredura de segredos no histórico)
+#   - pilha real: migrations do zero + seed, API + ingestão + tratamento +
+#     broker + front, simulador MQTT, Playwright sem API falsa, carga leve e
+#     restauração testada do banco (.github/scripts/pilha-e2e.sh)
+# Verde: grava o status "suite-noturna" no SHA testado e a tag
+# candidato/AAAA-MM-DD. Só um SHA com esse status pode ir para a pré-release
+# (verificar-candidato.yaml). Vermelha: o run falha e main-vermelha.yaml abre
+# a issue.
+# Limites da carga (P18/P19 ainda em aberto) ficam em variáveis do repositório
+# (Settings > Secrets and variables > Actions > Variables), com os padrões do
+# plano de QA quando não definidas.
+
+on:
+  schedule:
+    - cron: '0 5 * * *' # 02:00 em Brasília (o cron do GitHub é UTC)
+  workflow_dispatch:
+    inputs:
+      forcar:
+        description: Rodar mesmo se o HEAD da main já tem a suíte verde
+        type: boolean
+        default: false
+
+permissions: {}
+
+concurrency:
+  group: suite-noturna
+  cancel-in-progress: false
+
+jobs:
+  preparar:
+    name: Decidir se roda
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      statuses: read
+    outputs:
+      sha: ${{ steps.decidir.outputs.sha }}
+      rodar: ${{ steps.decidir.outputs.rodar }}
+
+    steps:
+      - id: decidir
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORCAR: ${{ inputs.forcar || false }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::A suíte noturna testa a main. Rode de novo escolhendo a branch main em \"Use workflow from\"."
+            exit 1
+          fi
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+          estado=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/status" \
+            --jq '.statuses[] | select(.context == "suite-noturna") | .state' | head -n 1)
+          if [ "$estado" = "success" ] && [ "$FORCAR" != "true" ]; then
+            echo "rodar=false" >> "$GITHUB_OUTPUT"
+            echo "O HEAD da main (${GITHUB_SHA:0:7}) já passou na suíte noturna: nada a fazer. Para repetir, rode manualmente com \"forcar\"." | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "rodar=true" >> "$GITHUB_OUTPUT"
+            echo "Testando a main em ${GITHUB_SHA:0:7}." | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+  ci:
+    name: CI completo
+    needs: preparar
+    if: needs.preparar.outputs.rodar == 'true'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/ci.yaml
+
+  seguranca:
+    name: Segurança completa
+    needs: preparar
+    if: needs.preparar.outputs.rodar == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    # Informativo por enquanto: o resultado vai para o resumo, mas não impede o
+    # candidato. Vira bloqueante quando a equipe zerar os achados "high" (decisão
+    # registrada na wiki, Roadmap DevOps).
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Dependências com vulnerabilidade alta ou crítica
+        run: |
+          falhou=0
+          for app in kernelpanic-backend frontend/frontend; do
+            echo "== $app"
+            if (cd "$app" && npm audit --audit-level=high); then
+              echo "- \`$app\`: sem vulnerabilidade high/critical" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "- \`$app\`: **há vulnerabilidade high/critical**: rode \`npm audit\` na pasta e \`npm audit fix\` (ou atualize a dependência)" >> "$GITHUB_STEP_SUMMARY"
+              falhou=1
+            fi
+          done
+          exit "$falhou"
+
+      # Histórico inteiro: segredo que já foi commitado continua exposto mesmo
+      # apagado depois. A action oficial pede licença paga para organização; o
+      # binário em contêiner não.
+      - name: Segredos no histórico (gitleaks)
+        if: always()
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 \
+            detect --source /repo --redact --no-banner --exit-code 1 \
+            || { echo "::error::gitleaks achou possível segredo. Se for real: revogue/troque o segredo AGORA (apagar do código não basta) e avise o time. Se for falso positivo: adicione ao .gitleaksignore."; exit 1; }
+
+  pilha:
+    name: Pilha real (ponta a ponta, carga, restauração)
+    needs: preparar
+    if: needs.preparar.outputs.rodar == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'npm'
+          cache-dependency-path: |
+            kernelpanic-backend/package-lock.json
+            frontend/frontend/package-lock.json
+
+      - name: Build do backend e dos serviços
+        working-directory: ./kernelpanic-backend
+        run: |
+          npm ci
+          npm run build
+          npm run build:servicos
+
+      # A URL da API entra no build do Next.js: aponta para a pilha local.
+      - name: Build do front
+        working-directory: ./frontend/frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:3001
+        run: |
+          npm ci
+          npm run build
+          npx playwright install --with-deps chromium
+
+      - name: Pilha real
+        env:
+          CARGA_TAXAS: ${{ vars.CARGA_TAXAS }}
+          CARGA_ESTACOES: ${{ vars.CARGA_ESTACOES }}
+          CARGA_DURACAO_S: ${{ vars.CARGA_DURACAO_S }}
+          CARGA_LIMITE_P95_MS: ${{ vars.CARGA_LIMITE_P95_MS }}
+        run: |
+          # Variável vazia = padrão do script (plano de QA).
+          for v in CARGA_TAXAS CARGA_ESTACOES CARGA_DURACAO_S CARGA_LIMITE_P95_MS; do
+            [ -n "${!v}" ] || unset "$v"
+          done
+          bash .github/scripts/pilha-e2e.sh
+
+      - name: Publicar logs da pilha
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pilha-logs
+          path: pilha-logs/
+          retention-days: 14
+
+      - name: Publicar relatório do ponta a ponta
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-e2e
+          path: |
+            frontend/frontend/playwright-report-e2e/
+            frontend/frontend/test-results-e2e/
+          retention-days: 14
+
+  marcar:
+    name: Marcar o candidato
+    needs: [preparar, ci, seguranca, pilha]
+    if: always() && needs.preparar.outputs.rodar == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: write
+      statuses: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preparar.outputs.sha }}
+
+      - name: Status suite-noturna e tag candidato/AAAA-MM-DD
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.preparar.outputs.sha }}
+          CI: ${{ needs.ci.result }}
+          PILHA: ${{ needs.pilha.result }}
+          SEGURANCA: ${{ needs.seguranca.result }}
+          URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          status() {
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state="$1" -f context=suite-noturna \
+              -f target_url="$URL_RUN" -f description="$2" > /dev/null
+          }
+
+          {
+            echo "### Suíte noturna em \`${SHA:0:7}\`"
+            echo "| Etapa | Resultado |"
+            echo "|---|---|"
+            echo "| CI completo | $CI |"
+            echo "| Pilha real | $PILHA |"
+            echo "| Segurança (informativa) | $SEGURANCA |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$CI" != "success" ] || [ "$PILHA" != "success" ]; then
+            status failure "Suíte noturna vermelha: não é candidato à pré-release"
+            echo "::error::Suíte noturna vermelha (CI: $CI, pilha: $PILHA). A main-vermelha abre a issue; corrija ou reverta antes da próxima noite."
+            exit 1
+          fi
+
+          status success "Candidato: passou na suíte noturna"
+          dia=$(TZ=America/Sao_Paulo date +%F)
+          tag="candidato/$dia"
+          n=2
+          while git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; do
+            tag="candidato/$dia.$n"; n=$((n + 1))
+          done
+          git tag "$tag" "$SHA"
+          git push origin "refs/tags/$tag"
+          echo "Candidato: \`$tag\` → \`${SHA:0:7}\`" >> "$GITHUB_STEP_SUMMARY"

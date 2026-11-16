@@ -26,11 +26,9 @@ permissions:
 jobs:
   revisao:
     name: Revisão exigida
-    # Editar a descrição não muda o tipo nem os arquivos do PR.
-    if: >-
-      github.event_name != 'pull_request' ||
-      github.event.action != 'edited' ||
-      github.event.changes.title
+    # Roda em toda edição, até só de descrição: com cancel-in-progress, a
+    # edição cancela o run do push e, se este fosse pulado, o commit novo
+    # ficaria sem o status revisao/aprovada. Rodar de novo custa segundos.
     runs-on: ubuntu-latest
     timeout-minutes: 3
 
@@ -72,5 +70,6 @@ jobs:
           if [ "$aprovacoes" -ge 1 ]; then
             status success "Aprovado por quem não é o autor"
           else
-            status pending "Aguardando 1 aprovação no commit atual"
+            # A descrição do status é o que o dev vê no PR (máx. 140 caracteres).
+            status pending "Falta 1 aprovação de outra pessoa neste commit: peça review (push novo exige nova aprovação)"
           fi

@@ -1,0 +1,89 @@
+name: Testes unitários na branch
+
+# Feedback antes do PR: a cada push em qualquer branch de trabalho, rodam os
+# testes unitários da aplicação que a branch alterou (comparado com a main).
+# Roda no GitHub, então não dá para pular com --no-verify. São só os
+# unitários (~10 s cada aplicação): funcionais, banco e build ficam no CI do PR.
+# Push na main e na staging não entram: a main tem o CI completo e a staging é
+# só preview.
+
+on:
+  push:
+    branches-ignore: [main, staging]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  alteracoes:
+    name: Detectar alterações
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      backend: ${{ steps.filtro.outputs.backend_testes }}
+      frontend: ${{ steps.filtro.outputs.frontend_testes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Tudo o que a branch mudou desde que saiu da main, não só o último
+      # push: o resultado vale pela branch inteira. Mesma regra do CI.
+      - id: filtro
+        run: |
+          echo "Arquivos alterados na branch e o que cada um liga:"
+          git diff --name-only "$(git merge-base origin/main HEAD)" HEAD \
+            | bash .github/scripts/detectar-alteracoes.sh | tee -a "$GITHUB_OUTPUT"
+
+  backend:
+    name: Unitários (NestJS)
+    needs: alteracoes
+    if: needs.alteracoes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ./kernelpanic-backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'npm'
+          cache-dependency-path: kernelpanic-backend/package-lock.json
+      - run: npm ci
+      # O pretest gera o Prisma Client.
+      - name: Testes unitários
+        run: |
+          npm run test || {
+            echo "::error::Teste unitário do backend falhou. Reproduza: cd kernelpanic-backend && npm run test (o primeiro erro está acima). Corrija e faça push de novo."
+            exit 1
+          }
+
+  frontend:
+    name: Unitários (Next.js)
+    needs: alteracoes
+    if: needs.alteracoes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: ./frontend/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'npm'
+          cache-dependency-path: frontend/frontend/package-lock.json
+      - run: npm ci
+      - name: Testes unitários
+        run: |
+          npm run test || {
+            echo "::error::Teste unitário do frontend falhou. Reproduza: cd frontend/frontend && npm run test (o primeiro erro está acima). Corrija e faça push de novo."
+            exit 1
+          }

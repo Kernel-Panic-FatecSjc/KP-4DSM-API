@@ -26,4 +26,9 @@ for (const [chave, valor] of Object.entries(PADROES_DE_TESTE)) {
   process.env[chave] = valor;
 }
 
-process.env.DATABASE_URL = obterUrlBancoDeTeste();
+// Só aponta para o banco de teste quando há um banco configurado: os unitários
+// (Prisma mockado) rodam sem banco. Os funcionais continuam exigindo, pelo
+// global-setup, que chama obterUrlBancoDeTeste() e falha sem DATABASE_URL.
+if (process.env.DATABASE_URL || process.env.DATABASE_URL_TESTE) {
+  process.env.DATABASE_URL = obterUrlBancoDeTeste();
+}
