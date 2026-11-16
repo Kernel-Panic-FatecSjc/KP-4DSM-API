@@ -18,6 +18,7 @@ describe('Exportação CSV em streaming (funcional)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let tecsus: string[];
+  let tecsusId: string;
   let licitacaoId: string;
   let vid: string;
   const idsBrutas = Array.from({ length: TOTAL }, () => randomUUID());
@@ -26,7 +27,7 @@ describe('Exportação CSV em streaming (funcional)', () => {
   beforeAll(async () => {
     app = await criarAppDeTeste();
     prisma = app.get(PrismaService);
-    ({ cookie: tecsus } = await criarSessaoDeTeste(app, 'ADMIN_TECSUS'));
+    ({ cookie: tecsus, usuarioId: tecsusId } = await criarSessaoDeTeste(app, 'ADMIN_TECSUS'));
     licitacaoId = (await criarLicitacaoDeTeste(app)).id;
     vid = `${PREFIXO_TESTE}stream-${Date.now()}`;
 
@@ -131,10 +132,10 @@ describe('Exportação CSV em streaming (funcional)', () => {
     });
 
     it('a exportação é registrada na trilha, mas consultar a tela não', async () => {
-      const exportacoes = () => prisma.logAuditoria.count({ where: { acao: 'auditoria.exportar' } });
+      const exportacoes = () => prisma.logAuditoria.count({ where: { acao: 'auditoria.exportar', usuarioId: tecsusId } });
       const antes = await exportacoes();
 
-      await request(app.getHttpServer()).get(`/auditoria/exportar?${periodo}&licitacaoId=${licitacaoId}&acao=nada`).set('Cookie', tecsus).expect(200);
+      await request(app.getHttpServer()).get(`/auditoria/exportar?${periodo}&licitacaoId=${licitacaoId}`).set('Cookie', tecsus).expect(200);
       await request(app.getHttpServer()).get(`/auditoria?licitacaoId=${licitacaoId}`).set('Cookie', tecsus).expect(200);
       await new Promise((resolver) => setTimeout(resolver, 100)); // o middleware grava no "finish" da resposta
 

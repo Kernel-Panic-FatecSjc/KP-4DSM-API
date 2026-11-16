@@ -7,6 +7,8 @@
 ![Defesa Civil](https://img.shields.io/badge/Defesa%20Civil-Sistema%20de%20Alertas-blue)
 ![Status](https://img.shields.io/badge/Status-Em%20Desenvolvimento-yellow)
 ![Sprint](https://img.shields.io/badge/Sprint-2-green)
+[![CI](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/actions/workflows/ci.yaml?query=branch%3Amain)
+[![Suíte noturna](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/actions/workflows/suite-noturna.yaml/badge.svg?branch=main)](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/actions/workflows/suite-noturna.yaml)
 
 [A Dor do Cliente](#a-dor) | 
 [A Solução](#a-solução) |
