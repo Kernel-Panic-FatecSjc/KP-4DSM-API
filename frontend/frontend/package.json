@@ -13,7 +13,8 @@
     "test:cov": "vitest run --coverage",
     "test:functional": "playwright test",
     "test:functional:ui": "playwright test --ui",
-    "commit": "npm --prefix ../.. run commit"
+    "commit": "npm --prefix ../.. run commit",
+    "test:e2e": "playwright test -c playwright.e2e.config.ts"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
