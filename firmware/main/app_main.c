@@ -18,8 +18,31 @@
 
 static const char *TAG = "data_logger";
 
-/* Intervalo de teste/apresentação; a operação nominal usa 300000 ms. */
-#define APP_SENSOR_SAMPLE_INTERVAL_MS 30000U
+/* Intervalo de amostragem e envio. O nominal da estação é 5 min (UC05-R1);
+ * o ambiente esp32dev_demo do platformio.ini compila com 30 s para
+ * demonstração. Definido por build flag, sem alterar o código. */
+#ifndef APP_SENSOR_SAMPLE_INTERVAL_S
+#define APP_SENSOR_SAMPLE_INTERVAL_S 300U
+#endif
+#if APP_SENSOR_SAMPLE_INTERVAL_S < 5U || APP_SENSOR_SAMPLE_INTERVAL_S > 86400U
+#error "APP_SENSOR_SAMPLE_INTERVAL_S deve ficar entre 5 s e 24 h"
+#endif
+#define APP_SENSOR_SAMPLE_INTERVAL_MS (APP_SENSOR_SAMPLE_INTERVAL_S * 1000U)
+
+/* Posição fixa da estação, opcional, configurada no secrets.h local como o
+ * VID. Sem ela a plataforma usa a localização cadastrada (UC05-R4). */
+#if defined(STATION_LATITUDE) != defined(STATION_LONGITUDE)
+#error "Defina STATION_LATITUDE e STATION_LONGITUDE juntas no secrets.h"
+#endif
+#ifdef STATION_LATITUDE
+static const double s_station_latitude = STATION_LATITUDE;
+static const double s_station_longitude = STATION_LONGITUDE;
+#define APP_LATITUDE (&s_station_latitude)
+#define APP_LONGITUDE (&s_station_longitude)
+#else
+#define APP_LATITUDE NULL
+#define APP_LONGITUDE NULL
+#endif
 
 /* Names and identity conversions chosen from each sensor's native output.
  * Register these exact parameter names on the station before treating data. */
@@ -51,7 +74,7 @@ static void publish_sensor_readings(const mqtt_telemetry_reading_t *readings,
                  readings[index].name, readings[index].value);
     }
     esp_err_t error = mqtt_manager_publish_telemetry(
-        readings, reading_count, NULL, NULL);
+        readings, reading_count, APP_LATITUDE, APP_LONGITUDE);
     if (error != ESP_OK) {
         ESP_LOGW(TAG, "telemetria não publicada: %s", esp_err_to_name(error));
     }
@@ -103,8 +126,13 @@ void app_main(void)
     }
 
     ESP_ERROR_CHECK(clock_sync_start());
-    if (!clock_sync_wait(pdMS_TO_TICKS(15000))) {
-        ESP_LOGW(TAG, "NTP ainda não sincronizou; o serviço continuará tentando");
+    /* Toda leitura precisa de unixtime (SCRUM-33). Sem ele, a ingestão usaria
+     * o horário de recebimento: itens reenviados da fila ficariam com horário
+     * errado e duplicatas do QoS 1 não seriam descartadas pelo tratamento
+     * (índice parametroId + unixtime). Por isso a amostragem só começa depois
+     * do primeiro sincronismo; depois dele o relógio segue sem rede. */
+    while (!clock_sync_wait(pdMS_TO_TICKS(15000))) {
+        ESP_LOGW(TAG, "NTP ainda não sincronizou; amostragem aguardando horário válido");
     }
 
     ESP_ERROR_CHECK(mqtt_manager_start());

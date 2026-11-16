@@ -19,6 +19,14 @@
 
 #define QUEUE_RETRY_INITIAL_MS 1000U
 #define QUEUE_RETRY_MAX_MS 60000U
+/* Sem PUBACK nesse prazo, a publicação é considerada perdida: o cliente é
+ * reiniciado e o item, que continua na fila SPIFFS, é publicado de novo. */
+#define PUBACK_TIMEOUT_MS 20000U
+/* Tentativa de conexão sem CONNECTED/DISCONNECTED nesse prazo é abandonada. */
+#define CONNECT_ATTEMPT_TIMEOUT_MS 30000U
+/* Enquanto há publicação ou conexão pendente, o worker acorda nesse período
+ * para conferir os prazos acima. */
+#define WORKER_WATCHDOG_PERIOD_MS 5000U
 #include "secrets.h"
 
 static const char *TAG = "mqtt";
@@ -37,6 +45,15 @@ static TaskHandle_t s_retry_task;
 static bool s_client_started;
 static uint32_t s_retry_delay_ms = QUEUE_RETRY_INITIAL_MS;
 static portMUX_TYPE s_queue_mux = portMUX_INITIALIZER_UNLOCKED;
+/* Incrementado a cada perda/reinício da conexão. Uma publicação iniciada em
+ * uma geração não pode virar "em voo" em outra: o PUBACK dela nunca chegará. */
+static uint32_t s_connection_generation;
+static TickType_t s_inflight_since;
+static TickType_t s_connecting_since;
+static uint32_t s_stat_connects;
+static uint32_t s_stat_disconnects;
+static uint32_t s_stat_pubacks;
+static uint32_t s_stat_inflight_resets;
 
 static void publish_next_queued_telemetry(void);
 static void set_connected(bool connected);
@@ -44,6 +61,67 @@ static bool is_connected(void);
 static bool is_connecting(void);
 static void set_connecting(bool connecting);
 static void notify_queue_worker_now(void);
+
+/* Exige s_queue_mux tomado. */
+static void clear_inflight_locked(void)
+{
+    s_inflight_message_id = -1;
+    s_inflight_queue_id[0] = '\0';
+    s_early_ack_message_id = -1;
+}
+
+/* Esquece a publicação em voo. O item não é removido da fila SPIFFS: será
+ * publicado de novo na próxima conexão (possível duplicata, tratada pelo
+ * tratamento via parametroId + unixtime). Necessário porque
+ * esp_mqtt_client_stop() apaga o outbox do ESP-MQTT e, com reconexão
+ * automática desligada, o PUBACK da publicação antiga nunca chega. */
+static void forget_inflight(const char *reason)
+{
+    bool had_inflight;
+    portENTER_CRITICAL(&s_queue_mux);
+    had_inflight = s_inflight_message_id >= 0 || s_inflight_queue_id[0] != '\0';
+    clear_inflight_locked();
+    s_connection_generation++;
+    if (had_inflight) s_stat_inflight_resets++;
+    portEXIT_CRITICAL(&s_queue_mux);
+    if (had_inflight) {
+        ESP_LOGW(TAG, "publicação sem PUBACK abandonada (%s); item segue na fila e será reenviado",
+                 reason);
+    }
+}
+
+static bool inflight_expired(void)
+{
+    bool expired;
+    const TickType_t now = xTaskGetTickCount();
+    portENTER_CRITICAL(&s_queue_mux);
+    expired = s_inflight_message_id >= 0 &&
+              (now - s_inflight_since) >= pdMS_TO_TICKS(PUBACK_TIMEOUT_MS);
+    portEXIT_CRITICAL(&s_queue_mux);
+    return expired;
+}
+
+static bool has_inflight(void)
+{
+    bool inflight;
+    portENTER_CRITICAL(&s_queue_mux);
+    inflight = s_inflight_message_id >= 0;
+    portEXIT_CRITICAL(&s_queue_mux);
+    return inflight;
+}
+
+static void log_connection_stats(void)
+{
+    uint32_t connects, disconnects, pubacks, resets;
+    portENTER_CRITICAL(&s_queue_mux);
+    connects = s_stat_connects;
+    disconnects = s_stat_disconnects;
+    pubacks = s_stat_pubacks;
+    resets = s_stat_inflight_resets;
+    portEXIT_CRITICAL(&s_queue_mux);
+    ESP_LOGI(TAG, "estatísticas MQTT: conexões=%u desconexões=%u pubacks=%u reenvios_sem_puback=%u",
+             (unsigned)connects, (unsigned)disconnects, (unsigned)pubacks, (unsigned)resets);
+}
 
 static esp_err_t queue_has_pending(bool *pending)
 {
@@ -87,6 +165,10 @@ static void notify_queue_worker_now(void)
 static esp_err_t start_or_reconnect_client(void)
 {
     esp_err_t error;
+    /* stop() envia DISCONNECT (se conectado), fecha o socket e apaga o
+     * outbox; qualquer publicação em voo precisa ser reenviada da fila. */
+    set_connected(false);
+    forget_inflight("cliente MQTT reiniciado");
     if (s_client_started) {
         /* A previous batch may have ended either by an explicit stop or a
          * transport failure. Stop the old MQTT task before creating a fresh
@@ -108,9 +190,39 @@ static void queue_retry_task(void *argument)
     (void)argument;
     for (;;) {
         uint32_t delay_ms = 0;
-        if (xTaskNotifyWait(0, UINT32_MAX, &delay_ms, portMAX_DELAY) == pdTRUE) {
-            if (delay_ms > 0) vTaskDelay(pdMS_TO_TICKS(delay_ms));
+        const TickType_t wait_ticks = (has_inflight() || is_connecting())
+                                          ? pdMS_TO_TICKS(WORKER_WATCHDOG_PERIOD_MS)
+                                          : portMAX_DELAY;
+        const bool notified = xTaskNotifyWait(0, UINT32_MAX, &delay_ms, wait_ticks) == pdTRUE;
+        if (notified && delay_ms > 0) vTaskDelay(pdMS_TO_TICKS(delay_ms));
 
+        if (is_connected() && inflight_expired()) {
+            ESP_LOGW(TAG, "PUBACK não recebido em %u ms; reiniciando conexão",
+                     (unsigned)PUBACK_TIMEOUT_MS);
+            set_connecting(true);
+            esp_err_t restart_error = start_or_reconnect_client();
+            if (restart_error != ESP_OK) {
+                set_connecting(false);
+                ESP_LOGW(TAG, "não foi possível reiniciar MQTT: %s",
+                         esp_err_to_name(restart_error));
+                schedule_queue_retry();
+            }
+            continue;
+        }
+
+        if (is_connecting()) {
+            TickType_t since;
+            portENTER_CRITICAL(&s_connection_mux);
+            since = s_connecting_since;
+            portEXIT_CRITICAL(&s_connection_mux);
+            if ((xTaskGetTickCount() - since) >= pdMS_TO_TICKS(CONNECT_ATTEMPT_TIMEOUT_MS)) {
+                ESP_LOGW(TAG, "tentativa de conexão sem resposta em %u ms; nova tentativa",
+                         (unsigned)CONNECT_ATTEMPT_TIMEOUT_MS);
+                set_connecting(false);
+            }
+        }
+
+        {
             bool pending = false;
             esp_err_t error = queue_has_pending(&pending);
             if (error != ESP_OK) {
@@ -123,6 +235,7 @@ static void queue_retry_task(void *argument)
             if (!pending) {
                 if (s_client_started) {
                     ESP_LOGI(TAG, "fila vazia; parando cliente MQTT até a próxima leitura");
+                    /* stop() envia DISCONNECT ao broker e fecha o socket. */
                     error = esp_mqtt_client_stop(s_client);
                     if (error != ESP_OK) {
                         ESP_LOGW(TAG, "falha ao parar cliente MQTT ocioso: %s",
@@ -131,6 +244,9 @@ static void queue_retry_task(void *argument)
                         s_client_started = false;
                         set_connected(false);
                         set_connecting(false);
+                        forget_inflight("cliente MQTT parado");
+                        ESP_LOGI(TAG, "cliente MQTT parado: DISCONNECT enviado (se conectado) e socket fechado");
+                        log_connection_stats();
                     }
                 }
                 continue;
@@ -179,8 +295,10 @@ static bool is_connected(void)
 
 static void set_connecting(bool connecting)
 {
+    const TickType_t now = xTaskGetTickCount();
     portENTER_CRITICAL(&s_connection_mux);
     s_connecting = connecting;
+    if (connecting) s_connecting_since = now;
     portEXIT_CRITICAL(&s_connection_mux);
 }
 
@@ -236,7 +354,10 @@ static esp_err_t build_telemetry_payload(const mqtt_telemetry_reading_t *reading
     int64_t unix_time;
     bool has_valid_time = clock_sync_get_unixtime(&unix_time);
     if (!has_valid_time) {
-        ESP_LOGW(TAG, "relógio ainda não sincronizado; ingestão aplicará o horário de recebimento");
+        /* Não enfileira leitura sem horário: o reenvio receberia o horário
+         * de chegada, e a deduplicação por unixtime deixaria de funcionar. */
+        ESP_LOGW(TAG, "relógio não sincronizado; leitura descartada sem gerar pacote");
+        return ESP_ERR_INVALID_STATE;
     }
 
     cJSON *root = cJSON_CreateObject();
@@ -248,8 +369,7 @@ static esp_err_t build_telemetry_payload(const mqtt_telemetry_reading_t *reading
     }
 
     esp_err_t error = ESP_OK;
-    if ((has_valid_time &&
-         cJSON_AddNumberToObject(root, "unixtime", (double)unix_time) == NULL) ||
+    if (cJSON_AddNumberToObject(root, "unixtime", (double)unix_time) == NULL ||
         (latitude != NULL &&
          (cJSON_AddNumberToObject(root, "latitude", *latitude) == NULL ||
           cJSON_AddNumberToObject(root, "longitude", *longitude) == NULL))) {
@@ -303,18 +423,27 @@ static void mqtt_event_handler(void *handler_argument,
 
     switch (event_id) {
     case MQTT_EVENT_CONNECTED:
+        /* Sessão nova (outbox vazio após stop/start): nada antigo está em voo. */
+        forget_inflight("nova conexão");
         set_connecting(false);
         set_connected(true);
         portENTER_CRITICAL(&s_queue_mux);
         s_retry_delay_ms = QUEUE_RETRY_INITIAL_MS;
+        s_stat_connects++;
         portEXIT_CRITICAL(&s_queue_mux);
         ESP_LOGI(TAG, "conexão autenticada estabelecida");
+        log_connection_stats();
         notify_queue_worker_now();
         break;
     case MQTT_EVENT_DISCONNECTED:
         set_connected(false);
         set_connecting(false);
+        portENTER_CRITICAL(&s_queue_mux);
+        s_stat_disconnects++;
+        portEXIT_CRITICAL(&s_queue_mux);
+        forget_inflight("conexão encerrada antes do PUBACK");
         ESP_LOGW(TAG, "conexão MQTT encerrada; itens sem PUBACK permanecem na fila");
+        log_connection_stats();
         schedule_queue_retry();
         break;
     case MQTT_EVENT_ERROR:
@@ -332,6 +461,7 @@ static void mqtt_event_handler(void *handler_argument,
             memcpy(queue_id, s_inflight_queue_id, sizeof(queue_id));
             s_inflight_message_id = -1;
             s_inflight_queue_id[0] = '\0';
+            s_stat_pubacks++;
             acknowledged = true;
         } else if (s_sending_queue_item && s_inflight_queue_id[0] != '\0') {
             s_early_ack_message_id = event->msg_id;
@@ -441,6 +571,7 @@ static void publish_next_queued_telemetry(void)
         return;
     }
     s_sending_queue_item = true;
+    const uint32_t generation = s_connection_generation;
     portEXIT_CRITICAL(&s_queue_mux);
 
     char *payload = NULL;
@@ -469,22 +600,34 @@ static void publish_next_queued_telemetry(void)
     free(payload);
 
     bool acknowledged_early = false;
+    bool connection_lost = false;
+    const TickType_t published_at = xTaskGetTickCount();
     portENTER_CRITICAL(&s_queue_mux);
     s_sending_queue_item = false;
-    if (message_id >= 0) {
+    if (generation != s_connection_generation) {
+        /* A conexão caiu ou foi reiniciada durante o publish: o PUBACK dele
+         * não virá. O item continua na fila para a próxima conexão. */
+        clear_inflight_locked();
+        connection_lost = true;
+    } else if (message_id >= 0) {
         if (s_early_ack_message_id == message_id) {
             s_early_ack_message_id = -1;
             s_inflight_queue_id[0] = '\0';
+            s_stat_pubacks++;
             acknowledged_early = true;
         } else {
             s_inflight_message_id = message_id;
+            s_inflight_since = published_at;
         }
     } else {
         s_inflight_queue_id[0] = '\0';
     }
     portEXIT_CRITICAL(&s_queue_mux);
 
-    if (message_id < 0) {
+    if (connection_lost) {
+        /* MQTT_EVENT_DISCONNECTED já agendou a nova tentativa. */
+        ESP_LOGW(TAG, "conexão perdida durante a publicação; item permanece na fila");
+    } else if (message_id < 0) {
         ESP_LOGW(TAG, "falha ao publicar; item permanece na fila para nova tentativa");
         schedule_queue_retry();
     } else if (acknowledged_early) {
