@@ -16,6 +16,9 @@ on:
       - '.github/*.md'
   pull_request:
     branches: [main]
+  # A suíte noturna (suite-noturna.yaml) reaproveita este mesmo pipeline, sem
+  # filtro de caminho: lá github.event_name é schedule ou workflow_dispatch.
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -47,8 +50,12 @@ jobs:
         run: |
           if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
             base="$BASE_SHA"
-          else
+          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
             base="$BEFORE_SHA"
+          else
+            echo "Chamado pela suíte noturna ($GITHUB_EVENT_NAME): todos os jobs rodam."
+            echo .github/workflows/ci.yaml | bash .github/scripts/detectar-alteracoes.sh >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
           # Push sem commit anterior no histórico (branch nova ou push forçado):

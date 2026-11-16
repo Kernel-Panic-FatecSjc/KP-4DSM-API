@@ -74,7 +74,7 @@ while IFS= read -r arquivo; do
     # build (public/, next.config.ts, postcss) também liga os testes.
     $WEB/app/* | $WEB/components/* | $WEB/lib/* | $WEB/test/* | $WEB/public/* | \
       $WEB/package.json | $WEB/package-lock.json | $WEB/tsconfig.json | \
-      $WEB/next.config.ts | $WEB/postcss.config.mjs | $WEB/vitest.config.mts | $WEB/playwright.config.ts)
+      $WEB/next.config.ts | $WEB/postcss.config.mjs | $WEB/vitest.config.mts | $WEB/playwright.config.ts | $WEB/playwright.e2e.config.ts)
       jobs=(frontend frontend_testes) ;;
     # Só o lint usa.
     $WEB/eslint.config.mjs)
