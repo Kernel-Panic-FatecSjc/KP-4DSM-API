@@ -94,6 +94,24 @@ describe('SensoresService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
       expect(prismaMock.tipoParametro.create).not.toHaveBeenCalled();
     });
+
+    it('cria o sensor na licitação do admin dela', async () => {
+      await service.criar({ nome: 'Termômetro', unidade: UnidadeSensor.GRAU_CELSIUS, fator: 1, ganho: 0 }, ADMIN_A);
+
+      expect(prismaMock.tipoParametro.create.mock.calls[0][0].data.licitacaoId).toBe(LICITACAO_A);
+    });
+
+    it('a Tecsus precisa informar a licitação', async () => {
+      await expect(
+        service.criar({ nome: 'Termômetro', unidade: UnidadeSensor.GRAU_CELSIUS, fator: 1, ganho: 0 }, TECSUS),
+      ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('o nome só precisa ser único dentro da licitação', async () => {
+      await service.criar({ nome: 'Termômetro', unidade: UnidadeSensor.GRAU_CELSIUS, fator: 1, ganho: 0 }, ADMIN_A);
+
+      expect(prismaMock.tipoParametro.findFirst.mock.calls[0][0].where.licitacaoId).toBe(LICITACAO_A);
+    });
   });
 
   describe('atualizar', () => {
@@ -169,6 +187,13 @@ describe('SensoresService', () => {
         NotFoundException,
       );
     });
+
+    it('nega editar sensor de outra licitação', async () => {
+      prismaMock.tipoParametro.findUnique.mockResolvedValue(SENSOR);
+
+      await expect(service.atualizar('sensor-1', { ganho: 1 }, ADMIN_B)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.tipoParametro.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('remover', () => {
@@ -196,34 +221,16 @@ describe('SensoresService', () => {
       await expect(service.remover('sumido', TECSUS)).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.tipoParametro.delete).not.toHaveBeenCalled();
     });
-  });
 
-  describe('escopo de licitação', () => {
-    it('cria o sensor na licitação do admin dela', async () => {
-      await service.criar({ nome: 'Termômetro', unidade: UnidadeSensor.GRAU_CELSIUS, fator: 1, ganho: 0 }, ADMIN_A);
-
-      expect(prismaMock.tipoParametro.create.mock.calls[0][0].data.licitacaoId).toBe(LICITACAO_A);
-    });
-
-    it('a Tecsus precisa informar a licitação', async () => {
-      await expect(
-        service.criar({ nome: 'Termômetro', unidade: UnidadeSensor.GRAU_CELSIUS, fator: 1, ganho: 0 }, TECSUS),
-      ).rejects.toBeInstanceOf(BadRequestException);
-    });
-
-    it('o nome só precisa ser único dentro da licitação', async () => {
-      await service.criar({ nome: 'Termômetro', unidade: UnidadeSensor.GRAU_CELSIUS, fator: 1, ganho: 0 }, ADMIN_A);
-
-      expect(prismaMock.tipoParametro.findFirst.mock.calls[0][0].where.licitacaoId).toBe(LICITACAO_A);
-    });
-
-    it('nega editar ou remover sensor de outra licitação', async () => {
+    it('nega remover sensor de outra licitação', async () => {
       prismaMock.tipoParametro.findUnique.mockResolvedValue(SENSOR);
 
-      await expect(service.atualizar('sensor-1', { ganho: 1 }, ADMIN_B)).rejects.toBeInstanceOf(ForbiddenException);
       await expect(service.remover('sensor-1', ADMIN_B)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.tipoParametro.delete).not.toHaveBeenCalled();
     });
+  });
 
+  describe('listar', () => {
     it('lista paginado, preso à licitação do usuário', async () => {
       prismaMock.tipoParametro.findMany.mockResolvedValue([SENSOR]);
       const prisma = prismaMock as unknown as { $transaction: jest.Mock; tipoParametro: { count: jest.Mock } };

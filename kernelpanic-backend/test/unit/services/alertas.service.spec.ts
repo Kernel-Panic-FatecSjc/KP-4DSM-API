@@ -5,13 +5,13 @@ import { CriarAlertaDto } from '../../../src/alertas/dto/criar-alerta.dto';
 import { PrismaService } from '../../../src/prisma/prisma.service';
 import { EstacoesProximasService } from '../../../src/regiao/estacoes-proximas.service';
 import { ALERTA_COM_RELACOES, NOVO_ALERTA, PARAMETRO_CHUVA } from '../../fixtures';
-import { ADMIN_B, LICITACAO_A, TECSUS } from '../sessoes';
+import { ADMIN_A, ADMIN_B, LICITACAO_A, TECSUS } from '../sessoes';
 
 describe('AlertasService', () => {
   let service: AlertasService;
   const prismaMock = {
     parametro: { findUnique: jest.fn() },
-    alerta: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+    alerta: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
   };
 
   beforeEach(async () => {
@@ -115,6 +115,35 @@ describe('AlertasService', () => {
 
       await expect(service.inativar('sumido', TECSUS)).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.alerta.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listar', () => {
+    beforeEach(() => {
+      prismaMock.alerta.findMany.mockResolvedValue([ALERTA_COM_RELACOES]);
+      prismaMock.alerta.count.mockResolvedValue(1);
+    });
+
+    it('o visitante vê os alertas de qualquer licitação, paginados', async () => {
+      const resultado = await service.listar({ pagina: 2, tamanho: 10 }, undefined, null);
+
+      expect(resultado).toMatchObject({ total: 1, pagina: 2, tamanho: 10 });
+      expect(prismaMock.alerta.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 10, take: 10, where: expect.objectContaining({ licitacaoId: undefined }) }),
+      );
+    });
+
+    it('o admin da licitação vê só os alertas da licitação dele', async () => {
+      await service.listar({}, undefined, ADMIN_A);
+
+      expect(prismaMock.alerta.findMany.mock.calls[0][0].where.licitacaoId).toBe(LICITACAO_A);
+    });
+
+    it('nega ao admin da licitação filtrar a licitação de outro', async () => {
+      await expect(service.listar({ licitacaoId: 'outra-licitacao' }, undefined, ADMIN_A)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prismaMock.alerta.findMany).not.toHaveBeenCalled();
     });
   });
 });
