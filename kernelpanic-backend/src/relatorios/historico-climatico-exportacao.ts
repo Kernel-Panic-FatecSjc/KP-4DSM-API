@@ -1,43 +1,45 @@
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
 import { graficoLinhasSvg, montarRelatorioPdf, secaoPdf, tabelaPdf, type FiltroRelatorio, type SerieGrafico } from '../exportacao/pdf';
+import type {
+  EstatisticasHistoricoDto,
+  HistoricoClimaticoRespostaDto,
+  ParametroHistoricoClimaticoDto,
+} from './dto/historico-climatico-resposta.dto';
 
 // Exportação do relatório de histórico climático (US09, SCRUM-56): CSV e PDF
-// montados a partir do mesmo resultado da consulta da tela (SCRUM-54), para os
-// arquivos baterem com o que o usuário viu.
+// montados a partir da mesma resposta de GET /relatorios/historico-climatico
+// (SCRUM-54) que a tela usa, com as mesmas colunas e os períodos em UTC, para
+// os arquivos baterem com o que o usuário viu.
 
-export type Granularidade = 'hora' | 'dia';
-export type Agregacao = 'SOMA' | 'MEDIA';
+/** Largura útil do A4 deitado (842 - margens de 40). */
+const LARGURA_PDF = 762;
 
-/** Uma linha da tabela: um período (hora ou dia) de um parâmetro numa estação. */
-export interface LinhaHistoricoClimatico {
-  /** Início do período, em UTC. */
-  periodo: Date;
-  estacaoId: string;
-  estacaoNome: string;
-  parametroId: string;
-  parametroNome: string;
-  unidade: string;
-  /** Regra do tipo de parâmetro (SCRUM-53): SOMA tem acumulado, MEDIA não. */
-  agregacao: Agregacao;
-  minimo: number;
-  maximo: number;
-  media: number;
-  /** Só para parâmetros de SOMA (ex.: precipitação); nulo nos de MEDIA. */
-  acumulado: number | null;
-}
+/**
+ * Acima disso a tabela por período sai do PDF (o CSV traz todas as linhas):
+ * um ano por hora de várias estações daria milhares de páginas.
+ */
+export const LIMITE_LINHAS_TABELA_PDF = 2000;
 
-/** Totalizador do período inteiro, por estação e parâmetro. */
-export type TotalHistoricoClimatico = Omit<LinhaHistoricoClimatico, 'periodo'>;
+/** Colunas da tabela da tela, com o período na frente e a unidade separada para o número ficar puro. */
+export const CABECALHO_CSV_HISTORICO = [
+  'Período',
+  'Estação',
+  'Parâmetro',
+  'Unidade',
+  'Agregação',
+  'Consolidado',
+  'Soma',
+  'Média',
+  'Mínimo',
+  'Máximo',
+  'Leituras',
+];
 
-export interface RelatorioHistoricoClimatico {
-  filtros: {
-    de: Date;
-    ate: Date;
-    granularidade: Granularidade;
-    estacoes: { id: string; nome: string }[];
-  };
-  linhas: LinhaHistoricoClimatico[];
-  totais: TotalHistoricoClimatico[];
+const COLUNAS_ESTATISTICAS = ['Agregação', 'Consolidado', 'Soma', 'Média', 'Mínimo', 'Máximo', 'Leituras'];
+
+export interface FiltrosExportacaoHistorico {
+  /** Estações pedidas no filtro; vazio quando a consulta foi de todas. */
+  estacaoIds: string[];
 }
 
 export interface EmissaoRelatorio {
@@ -47,71 +49,109 @@ export interface EmissaoRelatorio {
   instituicao?: string;
 }
 
-const FUSO = 'America/Sao_Paulo';
-
-/** Colunas da tabela da tela, com a unidade separada para o número ficar puro. */
-export const CABECALHO_CSV_HISTORICO = ['Período', 'Estação', 'Parâmetro', 'Unidade', 'Mínimo', 'Máximo', 'Média', 'Acumulado'];
-
-/** Linhas do CSV: período em ISO 8601 (UTC) e números sem formatação. */
-export function linhasCsvHistorico(relatorio: RelatorioHistoricoClimatico): unknown[][] {
-  return relatorio.linhas.map((linha) => [
-    linha.periodo.toISOString(),
-    linha.estacaoNome,
-    linha.parametroNome,
-    linha.unidade,
-    arredondar(linha.minimo),
-    arredondar(linha.maximo),
-    arredondar(linha.media),
-    linha.acumulado === null ? null : arredondar(linha.acumulado),
-  ]);
+interface LinhaParametro {
+  estacaoId: string;
+  estacaoNome: string;
+  parametro: ParametroHistoricoClimaticoDto;
 }
 
-export function nomeArquivoHistorico(relatorio: RelatorioHistoricoClimatico, extensao: 'csv' | 'pdf'): string {
-  const { de, ate } = relatorio.filtros;
-  return `historico-climatico_${dataIso(de)}_${dataIso(ate)}.${extensao}`;
+function linhasParametro(relatorio: HistoricoClimaticoRespostaDto): LinhaParametro[] {
+  return relatorio.estacoes.flatMap((estacao) =>
+    estacao.parametros.map((parametro) => ({ estacaoId: estacao.id, estacaoNome: estacao.nome, parametro })),
+  );
 }
 
-export function filtrosHistorico(relatorio: RelatorioHistoricoClimatico): FiltroRelatorio[] {
-  const { de, ate, granularidade, estacoes } = relatorio.filtros;
+/** Quantidade de linhas por período (sem os totais): a mesma que vai para o CSV e a tabela do PDF. */
+export function totalLinhasPeriodo(relatorio: HistoricoClimaticoRespostaDto): number {
+  return linhasParametro(relatorio).reduce((total, { parametro }) => total + parametro.periodos.length, 0);
+}
+
+/**
+ * Linhas do CSV: uma por período de cada parâmetro de cada estação, em ISO 8601
+ * (UTC), seguidas dos totalizadores, cujo período é o intervalo ISO 8601
+ * "início/fim" da consulta. Números arredondados como na tela, sem unidade.
+ */
+export function linhasCsvHistorico(relatorio: HistoricoClimaticoRespostaDto): unknown[][] {
+  const linhas = linhasParametro(relatorio);
+  const intervalo = `${relatorio.de}/${relatorio.ate}`;
+  const linha = ({ estacaoNome, parametro }: LinhaParametro, periodo: string, estatisticas: EstatisticasHistoricoDto) => [
+    periodo,
+    estacaoNome,
+    parametro.nome,
+    parametro.unidade,
+    nomeAgregacao(parametro.agregacao),
+    arredondar(estatisticas.valor),
+    arredondar(estatisticas.soma),
+    arredondar(estatisticas.media),
+    arredondar(estatisticas.minimo),
+    arredondar(estatisticas.maximo),
+    estatisticas.leituras,
+  ];
+
   return [
-    { rotulo: 'Período', valor: `${dataHora(de)} a ${dataHora(ate)} (horário de Brasília)` },
-    { rotulo: 'Granularidade', valor: granularidade === 'hora' ? 'Hora' : 'Dia' },
-    { rotulo: 'Estações', valor: estacoes.map((estacao) => estacao.nome).join(', ') || 'Todas' },
+    ...linhas.flatMap((item) => item.parametro.periodos.map((estatisticas) => linha(item, estatisticas.periodo ?? '', estatisticas))),
+    ...linhas.map((item) => linha(item, intervalo, item.parametro.totalPeriodo)),
   ];
 }
 
-export function documentoPdfHistorico(relatorio: RelatorioHistoricoClimatico, emissao: EmissaoRelatorio = {}): TDocumentDefinitions {
-  const granularidade = relatorio.filtros.granularidade;
-  const conteudo: Content[] = relatorio.linhas.length
+export function nomeArquivoHistorico(relatorio: HistoricoClimaticoRespostaDto, extensao: 'csv' | 'pdf'): string {
+  return `historico-climatico_${relatorio.de.slice(0, 10)}_${relatorio.ate.slice(0, 10)}.${extensao}`;
+}
+
+export function filtrosHistorico(relatorio: HistoricoClimaticoRespostaDto, filtros: FiltrosExportacaoHistorico): FiltroRelatorio[] {
+  const comDados = relatorio.estacoes.filter((estacao) => estacao.parametros.length > 0);
+  const nomes = comDados.map((estacao) => estacao.nome).join(', ');
+  let estacoes: string;
+  if (!filtros.estacaoIds.length) {
+    estacoes = comDados.length ? `Todas (com leituras: ${nomes})` : 'Todas';
+  } else {
+    const resumo = `${filtros.estacaoIds.length} selecionada(s), ${comDados.length} com leituras`;
+    estacoes = comDados.length ? `${nomes} (${resumo})` : resumo;
+  }
+
+  return [
+    { rotulo: 'Período', valor: `${dataHoraUtc(relatorio.de)} a ${dataHoraUtc(relatorio.ate)} (UTC)` },
+    { rotulo: 'Granularidade', valor: relatorio.granularidade === 'hora' ? 'Hora' : 'Dia' },
+    { rotulo: 'Estações', valor: estacoes },
+  ];
+}
+
+export function documentoPdfHistorico(
+  relatorio: HistoricoClimaticoRespostaDto,
+  filtros: FiltrosExportacaoHistorico,
+  emissao: EmissaoRelatorio = {},
+): TDocumentDefinitions {
+  const linhas = linhasParametro(relatorio);
+  const totalPeriodos = totalLinhasPeriodo(relatorio);
+  const porPeriodo = relatorio.granularidade === 'hora' ? 'Dados por hora' : 'Dados por dia';
+
+  const conteudo: Content[] = linhas.length
     ? [
-        ...graficosPorParametro(relatorio.linhas, granularidade),
+        ...graficosPorParametro(relatorio),
         secaoPdf('Totalizadores do período'),
         tabelaPdf(
-          ['Estação', 'Parâmetro', 'Mínimo', 'Máximo', 'Média', 'Acumulado'],
-          relatorio.totais.map((total) => [
-            total.estacaoNome,
-            total.parametroNome,
-            comUnidade(total.minimo, total.unidade),
-            comUnidade(total.maximo, total.unidade),
-            comUnidade(total.media, total.unidade),
-            total.acumulado === null ? null : comUnidade(total.acumulado, total.unidade),
-          ]),
-          { larguras: ['*', '*', 60, 60, 60, 70], colunasNumero: [2, 3, 4, 5] },
+          ['Estação', 'Parâmetro', ...COLUNAS_ESTATISTICAS],
+          linhas.map(({ estacaoNome, parametro }) => [estacaoNome, parametro.nome, ...celulasEstatisticas(parametro, parametro.totalPeriodo)]),
+          { larguras: ['*', '*', 52, 70, 70, 70, 70, 70, 50], colunasNumero: [3, 4, 5, 6, 7, 8] },
         ),
-        secaoPdf(granularidade === 'hora' ? 'Dados por hora' : 'Dados por dia'),
-        tabelaPdf(
-          ['Período', 'Estação', 'Parâmetro', 'Mínimo', 'Máximo', 'Média', 'Acumulado'],
-          relatorio.linhas.map((linha) => [
-            rotuloPeriodo(linha.periodo, granularidade),
-            linha.estacaoNome,
-            linha.parametroNome,
-            comUnidade(linha.minimo, linha.unidade),
-            comUnidade(linha.maximo, linha.unidade),
-            comUnidade(linha.media, linha.unidade),
-            linha.acumulado === null ? null : comUnidade(linha.acumulado, linha.unidade),
-          ]),
-          { larguras: [62, '*', '*', 56, 56, 56, 62], colunasNumero: [3, 4, 5, 6] },
-        ),
+        secaoPdf(porPeriodo),
+        totalPeriodos > LIMITE_LINHAS_TABELA_PDF
+          ? {
+              text: `A consulta tem ${totalPeriodos.toLocaleString('pt-BR')} linhas por período, acima do limite de ${LIMITE_LINHAS_TABELA_PDF.toLocaleString('pt-BR')} do PDF. Exporte em CSV para ter a tabela completa ou reduza o período.`,
+              italics: true,
+            }
+          : tabelaPdf(
+              ['Período', 'Estação', 'Parâmetro', ...COLUNAS_ESTATISTICAS],
+              linhas.flatMap(({ estacaoNome, parametro }) =>
+                parametro.periodos.map((estatisticas) => [
+                  rotuloPeriodo(estatisticas.periodo ?? '', relatorio.granularidade),
+                  estacaoNome,
+                  parametro.nome,
+                  ...celulasEstatisticas(parametro, estatisticas),
+                ]),
+              ),
+              { larguras: [58, '*', '*', 52, 64, 64, 64, 64, 64, 46], colunasNumero: [4, 5, 6, 7, 8, 9] },
+            ),
       ]
     : [{ text: 'Nenhuma leitura encontrada para os filtros informados.', margin: [0, 12, 0, 0] }];
 
@@ -119,65 +159,79 @@ export function documentoPdfHistorico(relatorio: RelatorioHistoricoClimatico, em
     titulo: 'Relatório de histórico climático',
     subtitulo: 'Comportamento das variáveis climáticas por período e estação',
     instituicao: emissao.instituicao,
-    filtros: filtrosHistorico(relatorio),
+    filtros: filtrosHistorico(relatorio, filtros),
     conteudo,
     emitidoEm: emissao.emitidoEm,
     emitidoPor: emissao.emitidoPor,
+    orientacao: 'landscape',
   });
 }
 
 /**
- * Um gráfico por parâmetro, uma linha por estação, como na tela: acumulado
- * para parâmetros de SOMA e média para os de MEDIA. Estação sem leitura num
- * período fica com 0 no acumulado e repete a média anterior, para as séries
- * dividirem o mesmo eixo X.
+ * Um gráfico por parâmetro, uma linha por estação, com o valor consolidado de
+ * cada período, como na tela. Estação sem leitura num período fica sem ponto
+ * ali e a linha liga os vizinhos, também como na tela.
  */
-function graficosPorParametro(linhas: LinhaHistoricoClimatico[], granularidade: Granularidade): Content[] {
-  const parametros = new Map<string, LinhaHistoricoClimatico[]>();
-  for (const linha of linhas) {
-    parametros.set(linha.parametroId, [...(parametros.get(linha.parametroId) ?? []), linha]);
+function graficosPorParametro(relatorio: HistoricoClimaticoRespostaDto): Content[] {
+  const parametros = new Map<string, LinhaParametro[]>();
+  for (const linha of linhasParametro(relatorio)) {
+    parametros.set(linha.parametro.id, [...(parametros.get(linha.parametro.id) ?? []), linha]);
   }
 
   return [...parametros.values()].flatMap((doParametro) => {
-    const { parametroNome, unidade, agregacao } = doParametro[0];
-    const periodos = [...new Set(doParametro.map((linha) => linha.periodo.getTime()))].sort((a, b) => a - b);
-    const estacoes = new Map<string, { nome: string; valores: Map<number, number> }>();
-    for (const linha of doParametro) {
-      const estacao = estacoes.get(linha.estacaoId) ?? { nome: linha.estacaoNome, valores: new Map() };
-      estacao.valores.set(linha.periodo.getTime(), agregacao === 'SOMA' ? (linha.acumulado ?? 0) : linha.media);
-      estacoes.set(linha.estacaoId, estacao);
-    }
+    const { nome, unidade, agregacao } = doParametro[0].parametro;
+    const periodos = [...new Set(doParametro.flatMap(({ parametro }) => parametro.periodos.map((item) => item.periodo ?? '')))]
+      .filter(Boolean)
+      .sort();
 
-    const series: SerieGrafico[] = [...estacoes.values()].map((estacao) => {
-      let anterior = 0;
+    const series: SerieGrafico[] = doParametro.map(({ estacaoNome, parametro }) => {
+      const valores = new Map(parametro.periodos.map((item) => [item.periodo, item.valor]));
       return {
-        nome: estacao.nome,
-        pontos: periodos.map((periodo) => {
-          const valor = estacao.valores.get(periodo) ?? (agregacao === 'SOMA' ? 0 : anterior);
-          anterior = valor;
-          return { rotulo: rotuloPeriodo(new Date(periodo), granularidade), valor };
-        }),
+        nome: estacaoNome,
+        pontos: periodos.map((periodo) => ({
+          rotulo: rotuloPeriodo(periodo, relatorio.granularidade),
+          valor: valores.get(periodo) ?? null,
+        })),
       };
     });
 
     return [
-      secaoPdf(`${parametroNome} (${unidade}) · ${agregacao === 'SOMA' ? 'acumulado' : 'média'} por ${granularidade}`),
-      { svg: graficoLinhasSvg(series) },
+      secaoPdf(`${nome} (${unidade}) · ${agregacao === 'SOMA' ? 'soma' : 'média'} por ${relatorio.granularidade}`),
+      { svg: graficoLinhasSvg(series, LARGURA_PDF) },
     ] as Content[];
   });
+}
+
+function celulasEstatisticas(parametro: ParametroHistoricoClimaticoDto, estatisticas: EstatisticasHistoricoDto): string[] {
+  const { unidade } = parametro;
+  return [
+    nomeAgregacao(parametro.agregacao),
+    comUnidade(estatisticas.valor, unidade),
+    comUnidade(estatisticas.soma, unidade),
+    comUnidade(estatisticas.media, unidade),
+    comUnidade(estatisticas.minimo, unidade),
+    comUnidade(estatisticas.maximo, unidade),
+    estatisticas.leituras.toLocaleString('pt-BR'),
+  ];
+}
+
+function nomeAgregacao(agregacao: 'SOMA' | 'MEDIA'): string {
+  return agregacao === 'SOMA' ? 'Soma' : 'Média';
 }
 
 function arredondar(valor: number): number {
   return Math.round(valor * 100) / 100;
 }
 
+/** Duas casas fixas, como a tela. */
 function comUnidade(valor: number, unidade: string): string {
-  return `${valor.toLocaleString('pt-BR', { maximumFractionDigits: 2 })} ${unidade}`;
+  return `${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${unidade}`;
 }
 
-function partes(data: Date): Record<string, string> {
+/** O endpoint agrega em UTC e a tela rotula em UTC: o PDF segue o mesmo fuso. */
+function partesUtc(iso: string): Record<string, string> {
   const formatador = new Intl.DateTimeFormat('pt-BR', {
-    timeZone: FUSO,
+    timeZone: 'UTC',
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -185,20 +239,15 @@ function partes(data: Date): Record<string, string> {
     minute: '2-digit',
     hourCycle: 'h23',
   });
-  return Object.fromEntries(formatador.formatToParts(data).map((parte) => [parte.type, parte.value]));
+  return Object.fromEntries(formatador.formatToParts(new Date(iso)).map((parte) => [parte.type, parte.value]));
 }
 
-function rotuloPeriodo(data: Date, granularidade: Granularidade): string {
-  const { day, month, year, hour } = partes(data);
+function rotuloPeriodo(iso: string, granularidade: string): string {
+  const { day, month, year, hour } = partesUtc(iso);
   return granularidade === 'dia' ? `${day}/${month}/${year}` : `${day}/${month} ${hour}h`;
 }
 
-function dataHora(data: Date): string {
-  const { day, month, year, hour, minute } = partes(data);
+function dataHoraUtc(iso: string): string {
+  const { day, month, year, hour, minute } = partesUtc(iso);
   return `${day}/${month}/${year} ${hour}:${minute}`;
-}
-
-function dataIso(data: Date): string {
-  const { day, month, year } = partes(data);
-  return `${year}-${month}-${day}`;
 }

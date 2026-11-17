@@ -1,138 +1,178 @@
 import type { Content, ContentSvg, ContentTable } from 'pdfmake/interfaces';
 import { gerarPdf } from '../../../src/exportacao/pdf';
+import type {
+  EstatisticasHistoricoDto,
+  HistoricoClimaticoRespostaDto,
+  ParametroHistoricoClimaticoDto,
+} from '../../../src/relatorios/dto/historico-climatico-resposta.dto';
 import {
   CABECALHO_CSV_HISTORICO,
+  LIMITE_LINHAS_TABELA_PDF,
   documentoPdfHistorico,
   filtrosHistorico,
   linhasCsvHistorico,
   nomeArquivoHistorico,
-  type LinhaHistoricoClimatico,
-  type RelatorioHistoricoClimatico,
-  type TotalHistoricoClimatico,
+  totalLinhasPeriodo,
 } from '../../../src/relatorios/historico-climatico-exportacao';
 
-// Dias no horário de Brasília: 01/10 00:00 BRT = 01/10 03:00 UTC.
-const DIA_1 = new Date('2026-10-01T03:00:00.000Z');
-const DIA_2 = new Date('2026-10-02T03:00:00.000Z');
+const DIA_1 = '2026-10-01T00:00:00.000Z';
+const DIA_2 = '2026-10-02T00:00:00.000Z';
 
-function linha(parcial: Partial<LinhaHistoricoClimatico>): LinhaHistoricoClimatico {
-  return {
-    periodo: DIA_1,
-    estacaoId: 'e1',
-    estacaoNome: 'Centro',
-    parametroId: 'chuva',
-    parametroNome: 'Precipitação',
-    unidade: 'mm',
-    agregacao: 'SOMA',
-    minimo: 0,
-    maximo: 5,
-    media: 1.234,
-    acumulado: 12.345,
-    ...parcial,
-  };
+function estatisticas(parcial: Partial<EstatisticasHistoricoDto>): EstatisticasHistoricoDto {
+  return { agregacao: 'SOMA', valor: 12.345, soma: 12.345, media: 1.234, minimo: 0, maximo: 5, leituras: 10, ...parcial };
 }
 
-function total(parcial: Partial<LinhaHistoricoClimatico>): TotalHistoricoClimatico {
-  const { periodo: _periodo, ...resto } = linha(parcial);
-  return resto;
+function chuva(periodos: EstatisticasHistoricoDto[], total: Partial<EstatisticasHistoricoDto> = {}): ParametroHistoricoClimaticoDto {
+  return { id: 'chuva', nome: 'Precipitação', unidade: 'mm', agregacao: 'SOMA', periodos, totalPeriodo: estatisticas(total) };
 }
 
-const RELATORIO: RelatorioHistoricoClimatico = {
-  filtros: {
-    de: DIA_1,
-    ate: new Date('2026-10-03T02:59:59.999Z'),
-    granularidade: 'dia',
-    estacoes: [{ id: 'e1', nome: 'Centro' }, { id: 'e2', nome: 'Norte' }],
-  },
-  linhas: [
-    linha({}),
-    linha({ periodo: DIA_2, acumulado: 3 }),
-    linha({ estacaoId: 'e2', estacaoNome: 'Norte', acumulado: 7 }),
-    linha({ parametroId: 'temp', parametroNome: 'Temperatura', unidade: '°C', agregacao: 'MEDIA', media: 21.5, acumulado: null }),
-  ],
-  totais: [
-    total({ acumulado: 15.345 }),
-    total({ estacaoId: 'e2', estacaoNome: 'Norte', acumulado: 7 }),
+const TEMPERATURA: ParametroHistoricoClimaticoDto = {
+  id: 'temp',
+  nome: 'Temperatura',
+  unidade: '°C',
+  agregacao: 'MEDIA',
+  periodos: [estatisticas({ periodo: DIA_1, agregacao: 'MEDIA', valor: 21.5, soma: 215, media: 21.5, minimo: 18, maximo: 25 })],
+  totalPeriodo: estatisticas({ agregacao: 'MEDIA', valor: 21.5, soma: 215, media: 21.5, minimo: 18, maximo: 25 }),
+};
+
+// Formato de GET /relatorios/historico-climatico (SCRUM-54): o mesmo que a tela recebe.
+const RELATORIO: HistoricoClimaticoRespostaDto = {
+  de: DIA_1,
+  ate: '2026-10-02T23:59:59.999Z',
+  granularidade: 'dia',
+  estacoes: [
+    {
+      id: 'e1',
+      nome: 'Centro',
+      parametros: [
+        chuva([estatisticas({ periodo: DIA_1 }), estatisticas({ periodo: DIA_2, valor: 3, soma: 3 })], { valor: 15.345, soma: 15.345 }),
+        TEMPERATURA,
+      ],
+    },
+    { id: 'e2', nome: 'Norte', parametros: [chuva([estatisticas({ periodo: DIA_1, valor: 7, soma: 7 })], { valor: 7, soma: 7 })] },
   ],
 };
+
+const TODAS = { estacaoIds: [] };
 
 function textoDe(conteudo: unknown): string {
   return JSON.stringify(conteudo);
 }
 
+function tabelas(documento: { content: unknown }): ContentTable[] {
+  return (documento.content as Content[]).filter((item) => (item as ContentTable).table) as ContentTable[];
+}
+
 describe('Exportação do relatório de histórico climático', () => {
-  it('CSV tem as colunas da tabela, período em ISO 8601 e números puros', () => {
-    expect(CABECALHO_CSV_HISTORICO).toEqual(['Período', 'Estação', 'Parâmetro', 'Unidade', 'Mínimo', 'Máximo', 'Média', 'Acumulado']);
+  it('CSV tem as colunas da tabela da tela, período em ISO 8601 e números puros', () => {
+    expect(CABECALHO_CSV_HISTORICO).toEqual([
+      'Período', 'Estação', 'Parâmetro', 'Unidade', 'Agregação', 'Consolidado', 'Soma', 'Média', 'Mínimo', 'Máximo', 'Leituras',
+    ]);
 
     const linhas = linhasCsvHistorico(RELATORIO);
-    expect(linhas).toHaveLength(4);
-    expect(linhas[0]).toEqual(['2026-10-01T03:00:00.000Z', 'Centro', 'Precipitação', 'mm', 0, 5, 1.23, 12.35]);
-    // Parâmetro de MEDIA não tem acumulado: célula vazia, não zero.
-    expect(linhas[3][7]).toBeNull();
+    // 4 períodos + 3 totalizadores (um por estação e parâmetro).
+    expect(linhas).toHaveLength(7);
+    expect(linhas[0]).toEqual([DIA_1, 'Centro', 'Precipitação', 'mm', 'Soma', 12.35, 12.35, 1.23, 0, 5, 10]);
+    expect(linhas[2]).toEqual([DIA_1, 'Centro', 'Temperatura', '°C', 'Média', 21.5, 215, 21.5, 18, 25, 10]);
   });
 
-  it('nomeia o arquivo pelo período no horário de Brasília', () => {
+  it('CSV fecha com os totalizadores, cujo período é o intervalo ISO 8601 da consulta', () => {
+    const totais = linhasCsvHistorico(RELATORIO).slice(4);
+    expect(totais.map((linha) => linha[0])).toEqual(Array(3).fill('2026-10-01T00:00:00.000Z/2026-10-02T23:59:59.999Z'));
+    expect(totais[0].slice(1, 6)).toEqual(['Centro', 'Precipitação', 'mm', 'Soma', 15.35]);
+    expect(totais[2].slice(1, 6)).toEqual(['Norte', 'Precipitação', 'mm', 'Soma', 7]);
+  });
+
+  it('conta as linhas por período sem os totais', () => {
+    expect(totalLinhasPeriodo(RELATORIO)).toBe(4);
+  });
+
+  it('nomeia o arquivo pelas datas UTC da consulta', () => {
     expect(nomeArquivoHistorico(RELATORIO, 'csv')).toBe('historico-climatico_2026-10-01_2026-10-02.csv');
     expect(nomeArquivoHistorico(RELATORIO, 'pdf')).toBe('historico-climatico_2026-10-01_2026-10-02.pdf');
   });
 
-  it('lista os filtros usados no horário de Brasília', () => {
-    expect(filtrosHistorico(RELATORIO)).toEqual([
-      { rotulo: 'Período', valor: '01/10/2026 00:00 a 02/10/2026 23:59 (horário de Brasília)' },
+  it('lista os filtros usados em UTC, como a tela', () => {
+    expect(filtrosHistorico(RELATORIO, TODAS)).toEqual([
+      { rotulo: 'Período', valor: '01/10/2026 00:00 a 02/10/2026 23:59 (UTC)' },
       { rotulo: 'Granularidade', valor: 'Dia' },
-      { rotulo: 'Estações', valor: 'Centro, Norte' },
+      { rotulo: 'Estações', valor: 'Todas (com leituras: Centro, Norte)' },
     ]);
   });
 
-  it('PDF traz filtros, um gráfico por parâmetro, totalizadores e a tabela', () => {
-    const documento = documentoPdfHistorico(RELATORIO, { emitidoPor: 'Ana', instituicao: 'PE-001/2026' });
-    const conteudo = documento.content as Content[];
-    const texto = textoDe(conteudo);
-
-    expect(texto).toContain('Relatório de histórico climático');
-    expect(texto).toContain('01/10/2026 00:00 a 02/10/2026 23:59');
-    expect(texto).toContain('Precipitação (mm) · acumulado por dia');
-    expect(texto).toContain('Temperatura (°C) · média por dia');
-    expect(conteudo.filter((item) => (item as ContentSvg).svg)).toHaveLength(2);
-    expect(texto).toContain('Totalizadores do período');
-
-    const tabelas = conteudo.filter((item) => (item as ContentTable).table) as ContentTable[];
-    // Filtros, totalizadores e dados.
-    expect(tabelas).toHaveLength(3);
-    const dados = tabelas[2].table.body;
-    expect(dados).toHaveLength(1 + RELATORIO.linhas.length);
-    expect(dados[1][0]).toMatchObject({ text: '01/10/2026' });
-    expect(dados[1][6]).toMatchObject({ text: '12,35 mm' });
-    expect(dados[4][6]).toMatchObject({ text: '—' });
+  it('diz quantas estações foram pedidas e quantas tinham leitura', () => {
+    const [, , estacoes] = filtrosHistorico(RELATORIO, { estacaoIds: ['e1', 'e2', 'e3'] });
+    expect(estacoes.valor).toBe('Centro, Norte (3 selecionada(s), 2 com leituras)');
+    const [, , semDados] = filtrosHistorico({ ...RELATORIO, estacoes: [] }, { estacaoIds: ['e3'] });
+    expect(semDados.valor).toBe('1 selecionada(s), 0 com leituras');
   });
 
-  it('gráfico de SOMA põe 0 quando a estação não teve leitura no período', () => {
-    const documento = documentoPdfHistorico({ ...RELATORIO, linhas: RELATORIO.linhas.slice(0, 3) });
+  it('PDF traz filtros, um gráfico por parâmetro, totalizadores e a tabela por período', () => {
+    const documento = documentoPdfHistorico(RELATORIO, TODAS, { emitidoPor: 'Ana', instituicao: 'PE-001/2026' });
+    const texto = textoDe(documento.content);
+
+    expect(documento.pageOrientation).toBe('landscape');
+    expect(texto).toContain('Relatório de histórico climático');
+    expect(texto).toContain('01/10/2026 00:00 a 02/10/2026 23:59 (UTC)');
+    expect(texto).toContain('Precipitação (mm) · soma por dia');
+    expect(texto).toContain('Temperatura (°C) · média por dia');
+    expect((documento.content as Content[]).filter((item) => (item as ContentSvg).svg)).toHaveLength(2);
+
+    // Filtros, totalizadores e dados por período.
+    const [, totais, dados] = tabelas(documento);
+    expect(totais.table.body[0].map((celula) => (celula as { text: string }).text)).toEqual([
+      'Estação', 'Parâmetro', 'Agregação', 'Consolidado', 'Soma', 'Média', 'Mínimo', 'Máximo', 'Leituras',
+    ]);
+    expect(totais.table.body[1][3]).toMatchObject({ text: '15,35 mm' });
+    expect(dados.table.body).toHaveLength(1 + 4);
+    expect(dados.table.body[1][0]).toMatchObject({ text: '01/10/2026' });
+    expect(dados.table.body[1][4]).toMatchObject({ text: '12,35 mm' });
+    expect(dados.table.body[3][4]).toMatchObject({ text: '21,50 °C' });
+  });
+
+  it('gráfico deixa sem ponto a estação sem leitura no período, sem zerar', () => {
+    const documento = documentoPdfHistorico(RELATORIO, TODAS);
     const svg = (documento.content as Content[]).find((item) => (item as ContentSvg).svg) as ContentSvg;
-    // Norte só tem o dia 1: a série dela tem 2 pontos, o segundo em 0.
-    expect((svg.svg as string).match(/<polyline/g)).toHaveLength(2);
+    // Centro tem os dois dias (linha); Norte só o dia 1 (marcador).
+    expect((svg.svg as string).match(/<polyline/g)).toHaveLength(1);
+    expect((svg.svg as string).match(/<circle/g)).toHaveLength(1);
     expect(svg.svg).not.toContain('NaN');
   });
 
-  it('PDF sem leituras avisa em vez de gerar gráfico e tabela vazios', () => {
-    const texto = textoDe(documentoPdfHistorico({ ...RELATORIO, linhas: [], totais: [] }).content);
+  it('PDF sem leituras avisa em vez de gerar gráfico e tabelas vazios', () => {
+    const texto = textoDe(documentoPdfHistorico({ ...RELATORIO, estacoes: [] }, TODAS).content);
     expect(texto).toContain('Nenhuma leitura encontrada para os filtros informados.');
     expect(texto).not.toContain('Totalizadores do período');
   });
 
-  it('granularidade por hora rotula o período com dia e hora', () => {
-    const documento = documentoPdfHistorico({
-      ...RELATORIO,
-      filtros: { ...RELATORIO.filtros, granularidade: 'hora' },
-      linhas: [linha({ periodo: new Date('2026-10-01T17:00:00.000Z') })],
-    });
-    const tabelas = (documento.content as Content[]).filter((item) => (item as ContentTable).table) as ContentTable[];
-    expect(tabelas[2].table.body[1][0]).toMatchObject({ text: '01/10 14h' });
+  it('acima do limite, o PDF tira a tabela por período e manda para o CSV', () => {
+    const periodos = Array.from({ length: LIMITE_LINHAS_TABELA_PDF + 1 }, (_, hora) =>
+      estatisticas({ periodo: new Date(Date.parse(DIA_1) + hora * 3_600_000).toISOString() }),
+    );
+    const documento = documentoPdfHistorico(
+      { ...RELATORIO, granularidade: 'hora', estacoes: [{ id: 'e1', nome: 'Centro', parametros: [chuva(periodos)] }] },
+      TODAS,
+    );
+    // Só filtros e totalizadores.
+    expect(tabelas(documento)).toHaveLength(2);
+    expect(textoDe(documento.content)).toContain('Exporte em CSV para ter a tabela completa');
+  });
+
+  it('granularidade por hora rotula o período com dia e hora UTC', () => {
+    const documento = documentoPdfHistorico(
+      {
+        ...RELATORIO,
+        granularidade: 'hora',
+        estacoes: [{ id: 'e1', nome: 'Centro', parametros: [chuva([estatisticas({ periodo: '2026-10-01T17:00:00.000Z' })])] }],
+      },
+      TODAS,
+    );
+    expect(tabelas(documento)[2].table.body[1][0]).toMatchObject({ text: '01/10 17h' });
     expect(textoDe(documento.content)).toContain('Dados por hora');
   });
 
   it('gera um PDF válido', async () => {
-    const conteudo = await gerarPdf(documentoPdfHistorico(RELATORIO, { emitidoEm: DIA_2 }));
+    const conteudo = await gerarPdf(documentoPdfHistorico(RELATORIO, TODAS, { emitidoEm: new Date(DIA_2) }));
     expect(conteudo.subarray(0, 5).toString()).toBe('%PDF-');
   });
 });

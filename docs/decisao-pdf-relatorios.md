@@ -41,22 +41,7 @@ Para responder, `enviarPdf(resposta, nomeArquivo, documento)` gera o arquivo int
 
 O pdfmake roda com acesso a URL bloqueado e leitura de arquivo restrita às fontes Roboto do próprio pacote: o PDF só usa dados passados pela API.
 
-Esboço do uso numa rota de exportação:
-
-```ts
-@Get('historico-climatico/pdf')
-async exportarPdf(@Query() query, @UsuarioAutenticado() usuario, @Res() resposta: Response) {
-  const relatorio = await this.relatoriosService.historicoClimatico(query, usuario);
-  await this.auditoriaService.registrar({ acao: 'relatorio.historico-climatico.exportar-pdf', ... });
-  await enviarPdf(resposta, 'historico-climatico.pdf', montarRelatorioPdf({
-    titulo: 'Relatório de histórico climático',
-    instituicao: licitacao?.codigoIdentificador, // buscada pelo usuario.licitacaoId
-    filtros: [{ rotulo: 'Período', valor: '...' }, ...],
-    conteudo: [{ svg: graficoLinhasSvg(series) }, tabelaPdf(cabecalhos, linhas, { colunasNumero: [...] })],
-    emitidoPor: nomeDoUsuario, // UsuarioLogado só traz id/e-mail
-  }));
-}
-```
+Uso real: `GET /relatorios/historico-climatico/pdf` (SCRUM-56) em `relatorios.controller.ts`, que monta o documento com `documentoPdfHistorico` (`src/relatorios/historico-climatico-exportacao.ts`) a partir da mesma resposta de `GET /relatorios/historico-climatico` que a tela usa, registra `relatorios.historico-climatico.exportar` na auditoria e responde com `enviarPdf`. O laudo de incidentes (`GET /relatorios/incidentes/pdf`) segue o mesmo caminho.
 
 ## Exemplo
 
