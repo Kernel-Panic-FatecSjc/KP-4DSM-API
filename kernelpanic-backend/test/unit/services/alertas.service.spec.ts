@@ -5,13 +5,15 @@ import { CriarAlertaDto } from '../../../src/alertas/dto/criar-alerta.dto';
 import { PrismaService } from '../../../src/prisma/prisma.service';
 import { EstacoesProximasService } from '../../../src/regiao/estacoes-proximas.service';
 import { ALERTA_COM_RELACOES, NOVO_ALERTA, PARAMETRO_CHUVA } from '../../fixtures';
-import { ADMIN_A, ADMIN_B, LICITACAO_A, TECSUS } from '../sessoes';
+import { ADMIN_A, ADMIN_B, LICITACAO_A, LICITACAO_B, TECSUS } from '../sessoes';
 
 describe('AlertasService', () => {
   let service: AlertasService;
   const prismaMock = {
-    parametro: { findUnique: jest.fn() },
+    parametro: { findUnique: jest.fn(), findMany: jest.fn() },
     alerta: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), findMany: jest.fn(), count: jest.fn() },
+    estacao: { findMany: jest.fn() },
+    tipoParametro: { findMany: jest.fn() },
   };
 
   beforeEach(async () => {
@@ -144,6 +146,46 @@ describe('AlertasService', () => {
         ForbiddenException,
       );
       expect(prismaMock.alerta.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('buscarOpcoesFiltro', () => {
+    beforeEach(() => {
+      prismaMock.estacao.findMany.mockResolvedValue([{ id: 'e1', nome: 'Centro' }]);
+      prismaMock.tipoParametro.findMany.mockResolvedValue([{ id: 't1', nome: 'Temperatura' }]);
+      prismaMock.parametro.findMany.mockResolvedValue([
+        {
+          id: 'p1',
+          estacao: { id: 'e1', nome: 'Centro' },
+          tipoParametro: { nome: 'Temperatura', unidade: '°C' },
+        },
+      ]);
+    });
+
+    it('devolve estações, tipos, parâmetros por estação e as severidades aceitas', async () => {
+      const opcoes = await service.buscarOpcoesFiltro(undefined, null);
+
+      expect(opcoes.estacoes).toEqual([{ id: 'e1', nome: 'Centro' }]);
+      expect(opcoes.tiposParametro).toEqual([{ id: 't1', nome: 'Temperatura' }]);
+      expect(opcoes.parametros).toEqual([
+        { id: 'p1', nome: 'Temperatura', unidade: '°C', estacaoId: 'e1', estacaoNome: 'Centro' },
+      ]);
+      expect(opcoes.severidades).toEqual(['ATENCAO', 'ALERTA', 'EMERGENCIA']);
+    });
+
+    it('prende o admin da licitação às opções da licitação dele', async () => {
+      await service.buscarOpcoesFiltro(undefined, ADMIN_A);
+
+      expect(prismaMock.estacao.findMany.mock.calls[0][0].where.licitacaoId).toBe(LICITACAO_A);
+      expect(prismaMock.tipoParametro.findMany.mock.calls[0][0].where.licitacaoId).toBe(LICITACAO_A);
+      expect(prismaMock.parametro.findMany.mock.calls[0][0].where.estacao.licitacaoId).toBe(LICITACAO_A);
+    });
+
+    it('nega ao admin da licitação pedir as opções de outra licitação', async () => {
+      await expect(service.buscarOpcoesFiltro(undefined, ADMIN_A, LICITACAO_B)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(prismaMock.estacao.findMany).not.toHaveBeenCalled();
     });
   });
 });
