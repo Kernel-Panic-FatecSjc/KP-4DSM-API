@@ -24,7 +24,7 @@ const ESTACAO = {
 describe('EstacoesService', () => {
   let service: EstacoesService;
   const prismaMock = {
-    estacao: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() },
+    estacao: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn(), create: jest.fn() },
     tipoParametro: { findMany: jest.fn() },
     medida: { findFirst: jest.fn() },
     licitacao: { findUnique: jest.fn() },
@@ -157,6 +157,22 @@ describe('EstacoesService', () => {
         ).rejects.toBeInstanceOf(BadRequestException);
       });
     });
+
+    it('nega editar estação de outra licitação', async () => {
+      prismaMock.estacao.findUnique.mockResolvedValue({ ...ESTACAO, parametros: [] });
+
+      await expect(service.atualizar(ESTACAO.id, { nome: 'x' }, ADMIN_B)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.estacao.update).not.toHaveBeenCalled();
+    });
+
+    it('com vid novo, apaga a chave e tira o vid antigo do broker', async () => {
+      prismaMock.estacao.findUnique.mockResolvedValueOnce(ESTACAO).mockResolvedValueOnce(null);
+
+      await service.atualizar(ESTACAO.id, { vid: 'AA:BB:CC:DD:EE:FF' }, ADMIN_A);
+
+      expect(prismaMock.estacao.update.mock.calls[0][0].data.chaveIngestaoHash).toBeNull();
+      expect(brokerMock.removerEstacao).toHaveBeenCalledWith(ESTACAO.vid);
+    });
   });
 
   describe('inativar', () => {
@@ -179,6 +195,13 @@ describe('EstacoesService', () => {
       await expect(service.inativar('sumida', TECSUS)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+
+    it('nega inativar estação de outra licitação', async () => {
+      prismaMock.estacao.findUnique.mockResolvedValue({ ...ESTACAO, parametros: [] });
+
+      await expect(service.inativar(ESTACAO.id, ADMIN_B)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.estacao.update).not.toHaveBeenCalled();
     });
   });
 
@@ -231,6 +254,47 @@ describe('EstacoesService', () => {
       ).rejects.toBeInstanceOf(BadRequestException);
       expect(prismaMock.estacao.create).not.toHaveBeenCalled();
     });
+
+    it('cadastra no broker a estação nova com a mesma chave devolvida', async () => {
+      const { chaveIngestao } = await service.criar({ ...NOVA, licitacaoId: LICITACAO_A }, TECSUS);
+
+      expect(brokerMock.cadastrarEstacao).toHaveBeenCalledWith(NOVA.vid, chaveIngestao);
+    });
+
+    it('não grava a estação se o broker recusar (o erro desfaz a transação)', async () => {
+      brokerMock.cadastrarEstacao.mockRejectedValue(new ServiceUnavailableException('broker fora'));
+
+      await expect(service.criar({ ...NOVA, licitacaoId: LICITACAO_A }, TECSUS)).rejects.toBeInstanceOf(
+        ServiceUnavailableException,
+      );
+    });
+
+    it('a Tecsus precisa informar a licitação', async () => {
+      await expect(service.criar(NOVA, TECSUS)).rejects.toBeInstanceOf(BadRequestException);
+      expect(prismaMock.estacao.create).not.toHaveBeenCalled();
+    });
+
+    it('o admin da licitação cria a estação na licitação dele', async () => {
+      await service.criar(NOVA, ADMIN_A);
+
+      expect(prismaMock.estacao.create.mock.calls[0][0].data.licitacaoId).toBe(LICITACAO_A);
+    });
+
+    it('recusa estação em licitação encerrada', async () => {
+      prismaMock.licitacao.findUnique.mockResolvedValue({ status: 'ENCERRADA' });
+
+      await expect(service.criar({ ...NOVA, licitacaoId: LICITACAO_A }, TECSUS)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it('recusa sensores de outra licitação', async () => {
+      prismaMock.tipoParametro.findMany.mockResolvedValue([{ id: TIPO_CHUVA, licitacaoId: LICITACAO_B }]);
+
+      await expect(
+        service.criar({ ...NOVA, licitacaoId: LICITACAO_A, tipoParametroIds: [TIPO_CHUVA] }, TECSUS),
+      ).rejects.toThrow('mesma licitação');
+    });
   });
 
   describe('regenerarChaveIngestao', () => {
@@ -252,76 +316,43 @@ describe('EstacoesService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(prismaMock.estacao.update).not.toHaveBeenCalled();
     });
-  });
 
-  describe('escopo de licitação e broker', () => {
-    const NOVA = { nome: 'Estação Sul', endereco: 'Rua B', vid: '11:22:33:44:55:66', latitude: -23.2, longitude: -45.9 };
-
-    beforeEach(() => {
-      prismaMock.estacao.create = jest.fn().mockImplementation(({ data }) => ({ id: 'nova', ...data }));
-      prismaMock.tipoParametro.findMany.mockResolvedValue([]);
-    });
-
-    it('cadastra no broker a estação nova com a mesma chave devolvida', async () => {
-      prismaMock.estacao.findUnique.mockResolvedValue(null);
-
-      const { chaveIngestao } = await service.criar({ ...NOVA, licitacaoId: LICITACAO_A }, TECSUS);
-
-      expect(brokerMock.cadastrarEstacao).toHaveBeenCalledWith(NOVA.vid, chaveIngestao);
-    });
-
-    it('não grava a estação se o broker recusar (o erro desfaz a transação)', async () => {
-      prismaMock.estacao.findUnique.mockResolvedValue(null);
-      brokerMock.cadastrarEstacao.mockRejectedValue(new ServiceUnavailableException('broker fora'));
-
-      await expect(service.criar({ ...NOVA, licitacaoId: LICITACAO_A }, TECSUS)).rejects.toBeInstanceOf(
-        ServiceUnavailableException,
-      );
-    });
-
-    it('a Tecsus precisa informar a licitação; o admin da licitação usa a dele', async () => {
-      prismaMock.estacao.findUnique.mockResolvedValue(null);
-
-      await expect(service.criar(NOVA, TECSUS)).rejects.toBeInstanceOf(BadRequestException);
-
-      await service.criar(NOVA, ADMIN_A);
-      expect(prismaMock.estacao.create.mock.calls[0][0].data.licitacaoId).toBe(LICITACAO_A);
-    });
-
-    it('recusa estação em licitação encerrada', async () => {
-      prismaMock.estacao.findUnique.mockResolvedValue(null);
-      prismaMock.licitacao.findUnique.mockResolvedValue({ status: 'ENCERRADA' });
-
-      await expect(service.criar({ ...NOVA, licitacaoId: LICITACAO_A }, TECSUS)).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-    });
-
-    it('recusa sensores de outra licitação', async () => {
-      prismaMock.estacao.findUnique.mockResolvedValue(null);
-      prismaMock.tipoParametro.findMany.mockResolvedValue([{ id: TIPO_CHUVA, licitacaoId: LICITACAO_B }]);
-
-      await expect(
-        service.criar({ ...NOVA, licitacaoId: LICITACAO_A, tipoParametroIds: [TIPO_CHUVA] }, TECSUS),
-      ).rejects.toThrow('mesma licitação');
-    });
-
-    it('nega editar, inativar ou trocar a chave de estação de outra licitação', async () => {
+    it('nega trocar a chave de estação de outra licitação', async () => {
       prismaMock.estacao.findUnique.mockResolvedValue({ ...ESTACAO, parametros: [] });
 
-      await expect(service.atualizar(ESTACAO.id, { nome: 'x' }, ADMIN_B)).rejects.toBeInstanceOf(ForbiddenException);
-      await expect(service.inativar(ESTACAO.id, ADMIN_B)).rejects.toBeInstanceOf(ForbiddenException);
       await expect(service.regenerarChaveIngestao(ESTACAO.id, ADMIN_B)).rejects.toBeInstanceOf(ForbiddenException);
       expect(prismaMock.estacao.update).not.toHaveBeenCalled();
     });
+  });
 
-    it('com vid novo, apaga a chave e tira o vid antigo do broker', async () => {
-      prismaMock.estacao.findUnique.mockResolvedValueOnce(ESTACAO).mockResolvedValueOnce(null);
+  describe('buscar', () => {
+    it('devolve a estação com os sensores quando o usuário tem acesso', async () => {
+      prismaMock.estacao.findUnique.mockResolvedValue(ESTACAO);
 
-      await service.atualizar(ESTACAO.id, { vid: 'AA:BB:CC:DD:EE:FF' }, ADMIN_A);
+      await expect(service.buscar(ESTACAO.id, ADMIN_A)).resolves.toBe(ESTACAO);
+    });
 
-      expect(prismaMock.estacao.update.mock.calls[0][0].data.chaveIngestaoHash).toBeNull();
-      expect(brokerMock.removerEstacao).toHaveBeenCalledWith(ESTACAO.vid);
+    it('lança NotFoundException quando a estação não existe', async () => {
+      prismaMock.estacao.findUnique.mockResolvedValue(null);
+
+      await expect(service.buscar('sumida', TECSUS)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('nega a estação de outra licitação', async () => {
+      prismaMock.estacao.findUnique.mockResolvedValue(ESTACAO);
+
+      await expect(service.buscar(ESTACAO.id, ADMIN_B)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+  });
+
+  describe('listarDaLicitacao', () => {
+    it('lista as estações só da licitação informada, em ordem de nome', async () => {
+      prismaMock.estacao.findMany.mockResolvedValue([ESTACAO]);
+
+      await expect(service.listarDaLicitacao(LICITACAO_A)).resolves.toEqual([ESTACAO]);
+      expect(prismaMock.estacao.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { licitacaoId: LICITACAO_A }, orderBy: { nome: 'asc' } }),
+      );
     });
   });
 });

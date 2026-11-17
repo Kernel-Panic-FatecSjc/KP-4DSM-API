@@ -24,31 +24,33 @@ describe('SaudeService', () => {
     jest.useRealTimers();
   });
 
-  it('informa o banco saudável', async () => {
-    await expect(service.verificar()).resolves.toEqual({ banco: 'ok' });
-  });
+  describe('verificar', () => {
+    it('informa o banco saudável', async () => {
+      await expect(service.verificar()).resolves.toEqual({ banco: 'ok' });
+    });
 
-  it('aponta o banco quando a consulta falha', async () => {
-    queryRaw.mockRejectedValue(new Error('conexão recusada'));
+    it('aponta o banco quando a consulta falha', async () => {
+      queryRaw.mockRejectedValue(new Error('conexão recusada'));
 
-    await expect(service.verificar()).resolves.toEqual({ banco: 'falha' });
-  });
+      await expect(service.verificar()).resolves.toEqual({ banco: 'falha' });
+    });
 
-  it('não pendura com o banco travado: dá o banco como em falha ao estourar o timeout', async () => {
-    jest.useFakeTimers();
-    queryRaw.mockReturnValue(new Promise(() => undefined));
+    it('não pendura com o banco travado: dá o banco como em falha ao estourar o timeout', async () => {
+      jest.useFakeTimers();
+      queryRaw.mockReturnValue(new Promise(() => undefined));
 
-    const resultado = service.verificar();
-    await jest.advanceTimersByTimeAsync(TIMEOUT_BANCO_MS);
+      const resultado = service.verificar();
+      await jest.advanceTimersByTimeAsync(TIMEOUT_BANCO_MS);
 
-    await expect(resultado).resolves.toEqual({ banco: 'falha' });
-  });
+      await expect(resultado).resolves.toEqual({ banco: 'falha' });
+    });
 
-  it('não deixa timer pendente quando o banco responde', async () => {
-    jest.useFakeTimers();
+    it('não deixa timer pendente quando o banco responde', async () => {
+      jest.useFakeTimers();
 
-    await service.verificar();
+      await service.verificar();
 
-    expect(jest.getTimerCount()).toBe(0);
+      expect(jest.getTimerCount()).toBe(0);
+    });
   });
 });

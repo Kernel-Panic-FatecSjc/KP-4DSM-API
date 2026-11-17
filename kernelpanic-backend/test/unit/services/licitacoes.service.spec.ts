@@ -150,7 +150,7 @@ describe('LicitacoesService', () => {
     });
   });
 
-  describe('vincularEstacoes (transferência)', () => {
+  describe('vincularEstacoes', () => {
     const estacaoDaOrigem = {
       id: 'estacao-1',
       nome: 'Estação 1',

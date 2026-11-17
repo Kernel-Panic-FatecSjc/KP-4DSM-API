@@ -168,16 +168,25 @@ describe('UsuariosService', () => {
       expect(prismaMock.usuario.update.mock.calls[0][0].data).toMatchObject({ nome: 'Atualizado', email: 'a@a.com' });
     });
 
-    it('o admin da licitação edita usuário comum dela, mas não outro admin nem usuário de outra', async () => {
+    it('o admin da licitação edita usuário comum dela', async () => {
       prismaMock.usuario.findUnique.mockResolvedValueOnce(comumDaA);
-      prismaMock.usuario.update.mockResolvedValue(comumDaA);
-      await expect(service.atualizar(comumDaA.id, { nome: 'X' }, ADMIN_A)).resolves.toBeDefined();
+      prismaMock.usuario.update.mockResolvedValue({ ...comumDaA, nome: 'X' });
 
+      await expect(service.atualizar(comumDaA.id, { nome: 'X' }, ADMIN_A)).resolves.toMatchObject({ id: comumDaA.id, nome: 'X' });
+    });
+
+    it('o admin da licitação não edita outro admin', async () => {
       prismaMock.usuario.findUnique.mockResolvedValueOnce(adminDaA);
-      await expect(service.atualizar(adminDaA.id, { nome: 'X' }, ADMIN_A)).rejects.toBeInstanceOf(ForbiddenException);
 
+      await expect(service.atualizar(adminDaA.id, { nome: 'X' }, ADMIN_A)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.usuario.update).not.toHaveBeenCalled();
+    });
+
+    it('o admin de outra licitação não edita o usuário', async () => {
       prismaMock.usuario.findUnique.mockResolvedValueOnce(comumDaA);
+
       await expect(service.atualizar(comumDaA.id, { nome: 'X' }, ADMIN_B)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prismaMock.usuario.update).not.toHaveBeenCalled();
     });
 
     it('só a Tecsus muda perfil ou licitação', async () => {
@@ -245,6 +254,62 @@ describe('UsuariosService', () => {
         where: { id: comumDaA.id },
         data: { ativo: true },
       });
+    });
+  });
+
+  describe('buscarVisivel', () => {
+    it('o próprio usuário consulta o seu cadastro', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue({ ...comumDaA, id: USUARIO_A.sub });
+
+      await expect(service.buscarVisivel(USUARIO_A.sub, USUARIO_A)).resolves.toMatchObject({ id: USUARIO_A.sub });
+    });
+
+    it('o admin da licitação consulta usuário comum dela', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue(comumDaA);
+
+      await expect(service.buscarVisivel(comumDaA.id, ADMIN_A)).resolves.toMatchObject({ id: comumDaA.id });
+    });
+
+    it('nega a consulta de usuário que o solicitante não pode gerenciar', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue(comumDaA);
+
+      await expect(service.buscarVisivel(comumDaA.id, ADMIN_B)).rejects.toBeInstanceOf(ForbiddenException);
+    });
+
+    it('lança NotFoundException quando o usuário não existe', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue(null);
+
+      await expect(service.buscarVisivel('sumido', TECSUS)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('buscarParaSessao', () => {
+    it('devolve o usuário com o status da licitação', async () => {
+      const usuario = { ...comumDaA, licitacao: { status: 'VIGENTE' } };
+      prismaMock.usuario.findUnique.mockResolvedValue(usuario);
+
+      await expect(service.buscarParaSessao(comumDaA.id)).resolves.toBe(usuario);
+    });
+
+    it('devolve null, sem lançar erro, quando o banco falha', async () => {
+      prismaMock.usuario.findUnique.mockRejectedValue(new Error('banco fora'));
+
+      await expect(service.buscarParaSessao(comumDaA.id)).resolves.toBeNull();
+    });
+  });
+
+  describe('buscarPorEmail', () => {
+    it('consulta o usuário pelo e-mail informado', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue(comumDaA);
+
+      await expect(service.buscarPorEmail(comumDaA.email)).resolves.toBe(comumDaA);
+      expect(prismaMock.usuario.findUnique).toHaveBeenCalledWith({ where: { email: comumDaA.email } });
+    });
+
+    it('devolve null quando o e-mail não está cadastrado', async () => {
+      prismaMock.usuario.findUnique.mockResolvedValue(null);
+
+      await expect(service.buscarPorEmail('x@x.com')).resolves.toBeNull();
     });
   });
 });
