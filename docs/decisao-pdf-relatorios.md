@@ -34,7 +34,7 @@ Custo aceito: o gráfico do PDF é desenhado pelo backend (`graficoLinhasSvg`), 
 - **Conteúdo** do relatório (`conteudo`), montado com os auxiliares:
   - `secaoPdf(texto)`: título de seção; se cair no pé da página, passa para a seguinte junto com o conteúdo;
   - `tabelaPdf(cabecalhos, linhas, { larguras, colunasNumero, linhasTotal })`: cabeçalho repetido a cada página, linhas zebradas, números em pt-BR alinhados à direita, totalizadores em negrito;
-  - `graficoLinhasSvg(series)`: gráfico de linhas com grade, eixo X (até 8 rótulos) e legenda.
+  - `graficoLinhasSvg(series, largura?)`: gráfico de linhas com grade, eixo X (até 8 rótulos) e legenda. Ponto com `valor: null` (período sem leitura) fica sem marcação e a linha liga os vizinhos; série com um ponto só vira um marcador.
 - **Rodapé** em todas as páginas: "Emitido em dd/mm/aaaa, hh:mm (horário de Brasília) por <usuário>" e "Página X de Y".
 
 Para responder, `enviarPdf(resposta, nomeArquivo, documento)` gera o arquivo inteiro antes de enviar (um erro ainda sai como JSON) e manda `Content-Type: application/pdf`, `Content-Disposition: attachment` e `Cache-Control: no-store`.
