@@ -5,6 +5,7 @@ import { connectAsync, type MqttClient } from 'mqtt';
 import { Client } from 'pg';
 import { topicoTelemetria } from '../src/broker/topicos';
 import { SENSORES_CARGA } from './lib/cenario-carga';
+import { cenarioPorIntervalo } from './lib/cenario-intervalo';
 import { chaveDaEstacaoDeCarga, configBrokerDoAmbiente, prepararCenarioMqtt } from './lib/cenario-mqtt';
 import { resumirLatencias } from './lib/estatisticas';
 import { dormir, gerarEstacoes, gerarPayload } from './lib/simulador-esp32';
@@ -28,8 +29,16 @@ import { dormir, gerarEstacoes, gerarPayload } from './lib/simulador-esp32';
  */
 
 const NUM_ESTACOES = Number(process.env.NUM_ESTACOES ?? 1000);
-const TAXAS = (process.env.TAXAS ?? '100,250,500,1000,1500').split(',').map(Number);
-const DURACAO_POR_TAXA = Number(process.env.DURACAO_POR_TAXA ?? 15);
+// Cenário RNF20.2: com INTERVALO_ENVIO_S (ex.: 300), em vez da escada de taxas
+// roda um degrau só, com a frota inteira enviando a cada intervalo, por CICLOS
+// intervalos (padrão 1).
+const CENARIO_INTERVALO = process.env.INTERVALO_ENVIO_S
+  ? cenarioPorIntervalo(NUM_ESTACOES, Number(process.env.INTERVALO_ENVIO_S), Number(process.env.CICLOS ?? 1))
+  : undefined;
+const TAXAS = CENARIO_INTERVALO
+  ? [CENARIO_INTERVALO.taxa]
+  : (process.env.TAXAS ?? '100,250,500,1000,1500').split(',').map(Number);
+const DURACAO_POR_TAXA = Number(process.env.DURACAO_POR_TAXA ?? CENARIO_INTERVALO?.duracaoS ?? 15);
 const LIMITE_P95_MS = Number(process.env.LIMITE_P95_MS ?? 2000);
 // Uma em cada AMOSTRA mensagens tem o tempo de ponta a ponta medido.
 const AMOSTRA = Number(process.env.AMOSTRA ?? 10);
@@ -113,7 +122,14 @@ class Sonda {
   }
 }
 
-async function executarDegrau(indice: number, taxa: number, estacoes: Estacao[], base: number, banco: Client): Promise<ResultadoDegrau> {
+async function executarDegrau(
+  indice: number,
+  taxa: number,
+  estacoes: Estacao[],
+  base: number,
+  banco: Client,
+  duracaoS = DURACAO_POR_TAXA,
+): Promise<ResultadoDegrau> {
   const inicioFaixa = base + indice * PASSO_UNIXTIME;
   const sequencias = new Int32Array(estacoes.length);
   const pubacks: number[] = [];
@@ -151,7 +167,7 @@ async function executarDegrau(indice: number, taxa: number, estacoes: Estacao[],
   const inicio = performance.now();
   for (;;) {
     const decorrido = performance.now() - inicio;
-    if (decorrido >= DURACAO_POR_TAXA * 1000) break;
+    if (decorrido >= duracaoS * 1000) break;
     const devidas = Math.floor((decorrido * taxa) / 1000) - publicadas;
     for (let i = 0; i < devidas; i++) publicar();
     await dormir(2);
@@ -189,7 +205,7 @@ function tabela(resultados: ResultadoDegrau[]): string {
   const linhas = resultados.map((r) => {
     const perda = r.publicadas - (r.brutas ?? 0);
     return (
-      `| ${r.taxa} | ${r.taxaEfetiva.toFixed(0)} | ${r.puback.p95.toFixed(0)} | ${r.pontaAPonta.p50.toFixed(0)} | ` +
+      `| ${formatarTaxa(r.taxa)} | ${formatarTaxa(r.taxaEfetiva)} | ${r.puback.p95.toFixed(0)} | ${r.pontaAPonta.p50.toFixed(0)} | ` +
       `${r.pontaAPonta.p95.toFixed(0)} | ${r.pontaAPonta.p99.toFixed(0)} | ${r.pontaAPonta.max.toFixed(0)} | ` +
       `${r.publicadas} | ${r.brutas ?? 0} | ${(r.medidas ?? 0) / SENSORES} | ${perda} |`
     );
@@ -199,6 +215,11 @@ function tabela(resultados: ResultadoDegrau[]): string {
     '| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |',
     ...linhas,
   ].join('\n');
+}
+
+/** Taxas baixas (cenário de 5 min) com duas casas; as da escada, inteiras. */
+function formatarTaxa(taxa: number): string {
+  return taxa < 10 ? taxa.toFixed(2) : taxa.toFixed(0);
 }
 
 async function main(): Promise<void> {
@@ -240,20 +261,23 @@ async function main(): Promise<void> {
   console.log(
     `Ambiente: Node ${process.version}, ${cpus().length}× ${cpus()[0].model.trim()}, ` +
       `${(totalmem() / 1024 ** 3).toFixed(1)} GB de RAM. Broker: ${broker.url}. ` +
-      `Degraus: ${TAXAS.join(', ')} msg/s, ${DURACAO_POR_TAXA}s cada, ${NUM_ESTACOES} estações, ` +
+      (CENARIO_INTERVALO
+        ? `Cenário RNF20.2: ${NUM_ESTACOES} estações enviando a cada ${process.env.INTERVALO_ENVIO_S} s ` +
+          `(${CENARIO_INTERVALO.taxa.toFixed(2)} msg/s) por ${DURACAO_POR_TAXA} s, `
+        : `Degraus: ${TAXAS.join(', ')} msg/s, ${DURACAO_POR_TAXA}s cada, ${NUM_ESTACOES} estações, `) +
       `amostra de 1 a cada ${AMOSTRA} mensagens.\n`,
   );
 
   // Base no passado (o unixtime não pode passar de "agora + 5 min").
   const base = Math.floor(Date.now() / 1000) - (TAXAS.length + 2) * PASSO_UNIXTIME;
-  await executarDegrau(TAXAS.length + 1, 20, estacoes, base, banco); // aquecimento, fora da medição
+  await executarDegrau(TAXAS.length + 1, 20, estacoes, base, banco, 15); // aquecimento, fora da medição
 
   const resultados: ResultadoDegrau[] = [];
   for (const [indice, taxa] of TAXAS.entries()) {
     const resultado = await executarDegrau(indice, taxa, estacoes, base, banco);
     resultados.push(resultado);
     console.log(
-      `[${taxa} msg/s] efetiva ${resultado.taxaEfetiva.toFixed(0)}/s | PUBACK p95 ${resultado.puback.p95.toFixed(0)} ms | ` +
+      `[${formatarTaxa(taxa)} msg/s] efetiva ${formatarTaxa(resultado.taxaEfetiva)}/s | PUBACK p95 ${resultado.puback.p95.toFixed(0)} ms | ` +
         `ponta a ponta p50 ${resultado.pontaAPonta.p50.toFixed(0)} / p95 ${resultado.pontaAPonta.p95.toFixed(0)} / ` +
         `máx ${resultado.pontaAPonta.max.toFixed(0)} ms (${resultado.amostras} amostras, ${resultado.amostrasSemMedida} sem medida) | ` +
         `confirmadas ${resultado.confirmadas}/${resultado.publicadas} | erros ${resultado.erros}`,
@@ -288,7 +312,7 @@ async function main(): Promise<void> {
   const pico = sustentaveis.at(-1);
   console.log(
     pico
-      ? `Maior degrau sustentado (ponta a ponta p95 ≤ ${LIMITE_P95_MS} ms, sem erros nem perda): ${pico.taxa} msg/s.`
+      ? `Maior degrau sustentado (ponta a ponta p95 ≤ ${LIMITE_P95_MS} ms, sem erros nem perda): ${formatarTaxa(pico.taxa)} msg/s.`
       : `Nenhum degrau sustentou p95 ≤ ${LIMITE_P95_MS} ms sem erros nem perda.`,
   );
 

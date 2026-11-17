@@ -58,3 +58,6 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 /src/generated/prisma
 *.tsbuildinfo
 /dist-servicos
+
+# Contrato OpenAPI gerado pelo CI (npm run openapi:gerar)
+/openapi.json

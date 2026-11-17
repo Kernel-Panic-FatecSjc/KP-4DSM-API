@@ -36,7 +36,7 @@ describe('AlarmesService', () => {
       const alarme = await service.atualizarStatus('alarme-1', { status: novo as StatusAlarme }, TECSUS);
 
       expect(prismaMock.alarme.update).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { id: 'alarme-1' }, data: { status: novo } }),
+        expect.objectContaining({ where: { id: 'alarme-1' }, data: expect.objectContaining({ status: novo }) }),
       );
       expect(alarme.status).toBe(novo);
     });

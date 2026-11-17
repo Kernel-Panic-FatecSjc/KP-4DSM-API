@@ -35,9 +35,13 @@ describe('IngerirTelemetriaDto', () => {
     expect(validar({ vid: VID_ESTACAO, leituras: { chuvaMm: null } })).not.toHaveLength(0);
   });
 
-  it('rejeita nome de sensor fora do padrão do firmware', () => {
-    expect(validar({ vid: VID_ESTACAO, leituras: { 'chuva-mm': 1 } })).not.toHaveLength(0);
-    expect(validar({ vid: VID_ESTACAO, leituras: { '2chuva': 1 } })).not.toHaveLength(0);
+  it('aceita o nome do sensor como cadastrado no tipo de parâmetro (acento, espaço, hífen)', () => {
+    expect(validar({ vid: VID_ESTACAO, leituras: { Pluviômetro: 1, 'chuva-mm': 2, '2chuva': 3 } })).toHaveLength(0);
+  });
+
+  it('rejeita nome de sensor vazio, com espaço nas pontas ou caractere de controle', () => {
+    expect(validar({ vid: VID_ESTACAO, leituras: { ' chuva': 1 } })).not.toHaveLength(0);
+    expect(validar({ vid: VID_ESTACAO, leituras: { 'chu\tva': 1 } })).not.toHaveLength(0);
   });
 
   it('rejeita mais sensores do que o teto por leitura', () => {

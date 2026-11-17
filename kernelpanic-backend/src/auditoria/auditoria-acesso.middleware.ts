@@ -8,15 +8,17 @@ type RequisicaoComUsuario = Request & {
 
 // /saude: o monitoramento chama de poucos em poucos segundos. GET /auditoria:
 // consultar a trilha não pode criar linha nova nela (a tela recarregaria a
-// lista e veria a própria consulta no topo).
-const ROTAS_SEM_AUDITORIA: { metodo?: string; prefixo: string }[] = [
+// lista e veria a própria consulta no topo). Só a consulta que deu certo fica
+// de fora: a tentativa negada (401/403) de ler a trilha é justamente o acesso
+// que precisa ficar registrado, com o IP (RNF14.4).
+const ROTAS_SEM_AUDITORIA: { metodo?: string; prefixo: string; soSucesso?: boolean }[] = [
   { prefixo: '/saude' },
-  { metodo: 'GET', prefixo: '/auditoria' },
+  { metodo: 'GET', prefixo: '/auditoria', soSucesso: true },
 ];
 
-function semAuditoria(metodo: string, url: string): boolean {
+function rotaSemAuditoria(metodo: string, url: string) {
   const caminho = url.split('?')[0];
-  return ROTAS_SEM_AUDITORIA.some(
+  return ROTAS_SEM_AUDITORIA.find(
     (rota) =>
       (!rota.metodo || rota.metodo === metodo) &&
       (caminho === rota.prefixo || caminho.startsWith(`${rota.prefixo}/`)),
@@ -32,12 +34,14 @@ export class AuditoriaAcessoMiddleware implements NestMiddleware {
   use(request: RequisicaoComUsuario, response: Response, next: NextFunction): void {
     // originalUrl, e não path: com forRoutes('*') o Express corta o prefixo que
     // casou, então request.path chega aqui como '/' e este desvio nunca disparava.
-    if (semAuditoria(request.method, request.originalUrl)) {
+    const desvio = rotaSemAuditoria(request.method, request.originalUrl);
+    if (desvio && !desvio.soSucesso) {
       next();
       return;
     }
 
     response.once('finish', () => {
+      if (desvio && response.statusCode < 400) return;
       // 400 é erro de validação de entrada, não evento de acesso (não há
       // "quem tentou acessar o quê" aqui) — cada rota já decide por conta
       // própria se audita a ação de negócio. 401/403 continuam sendo

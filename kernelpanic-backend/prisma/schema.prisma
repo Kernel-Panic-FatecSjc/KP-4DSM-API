@@ -92,8 +92,10 @@ model Usuario {
   licitacaoId String?
   licitacao   Licitacao? @relation(fields: [licitacaoId], references: [id], onDelete: Restrict)
 
-  estacoes      Estacao[]
-  logsAuditoria LogAuditoria[]
+  estacoes            Estacao[]
+  logsAuditoria       LogAuditoria[]
+  alarmesReconhecidos Alarme[]       @relation("AlarmeReconhecidoPor")
+  alarmesResolvidos   Alarme[]       @relation("AlarmeResolvidoPor")
 
   @@index([licitacaoId])
   @@map("usuarios")
@@ -270,6 +272,22 @@ model Alarme {
   medidaId String
   medida   Medida @relation(fields: [medidaId], references: [id], onDelete: Cascade)
 
+  /// Ações correlacionadas (relatório de incidentes, US10): quem reconheceu e
+  /// quem resolveu o alarme, e quando. Preenchidas na transição de status.
+  reconhecidoEm    DateTime?
+  reconhecidoPorId String?
+  reconhecidoPor   Usuario?  @relation("AlarmeReconhecidoPor", fields: [reconhecidoPorId], references: [id], onDelete: Restrict)
+  resolvidoEm      DateTime?
+  resolvidoPorId   String?
+  resolvidoPor     Usuario?  @relation("AlarmeResolvidoPor", fields: [resolvidoPorId], references: [id], onDelete: Restrict)
+  /// Observação de quem tratou o alarme (a última informada).
+  observacao       String?
+
+  // Relatório de incidentes: parte das medidas do período e acha os alarmes
+  // delas; sem índice, cada consulta varria a tabela de alarmes inteira.
+  @@index([medidaId])
+  // Alarmes de um alerta (filtros por severidade/estação e cascade do alerta).
+  @@index([alertaId])
   @@map("alarmes")
 }
 

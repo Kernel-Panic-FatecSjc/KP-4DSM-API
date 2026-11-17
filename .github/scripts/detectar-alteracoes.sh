@@ -60,7 +60,7 @@ while IFS= read -r arquivo; do
     $API/src/* | $API/servicos/* | $API/test/* | $API/tsconfig.json | $API/jest.config.ts)
       jobs=(backend backend_testes) ;;
     # Entra no lint/typecheck/build, mas não muda o resultado dos testes.
-    $API/teste-carga/* | $API/tsconfig.build.json | $API/tsconfig.servicos.json | $API/nest-cli.json | $API/oxlint.json)
+    $API/teste-carga/* | $API/tsconfig.build.json | $API/tsconfig.servicos.json | $API/nest-cli.json | $API/oxlint.json | $API/.spectral.yaml)
       jobs=(backend) ;;
     # Não é lido por build nem por teste no CI (o CI sobe o próprio Postgres).
     $API/*.md | $API/.env.example | $API/.gitignore | $API/.prettierrc | $API/docker-compose.yml)

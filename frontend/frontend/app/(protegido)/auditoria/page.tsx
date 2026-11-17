@@ -268,6 +268,8 @@ export default function AuditoriaPage() {
 
   const selecionado: RegistroAuditoria | null = lista?.itens.find((item) => item.id === selecionadoId) ?? null;
   const totalPaginas = lista ? Math.max(1, Math.ceil(lista.total / lista.tamanho)) : 1;
+  // UC11-R5: exportar só com pelo menos um registro (a API responde 422 ao filtro vazio).
+  const semRegistros = !lista || lista.total === 0;
   const acoesNaPagina = useMemo(() => new Set(lista?.itens.map((item) => item.acao)).size, [lista]);
   const usuariosNaPagina = useMemo(() => new Set(lista?.itens.map((item) => item.usuario?.id).filter(Boolean)).size, [lista]);
 
@@ -294,7 +296,7 @@ export default function AuditoriaPage() {
       </div>
       <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs text-muted-foreground">A exportação usa os filtros acima. O CSV exige data inicial e final; o Excel formatado vai até {LIMITE_PLANILHA.toLocaleString('pt-BR')} registros.</p>
-        <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" onClick={exportarCsv} disabled={exportandoPlanilha}><Download />CSV</Button><Button type="button" onClick={() => void exportarPlanilha()} disabled={exportandoPlanilha}><FileSpreadsheet />{exportandoPlanilha ? 'Gerando...' : 'Excel formatado'}</Button></div>
+        <div className="flex flex-wrap gap-2" title={semRegistros ? 'Nenhum registro para exportar com os filtros consultados.' : undefined}><Button type="button" variant="outline" onClick={exportarCsv} disabled={exportandoPlanilha || semRegistros}><Download />CSV</Button><Button type="button" onClick={() => void exportarPlanilha()} disabled={exportandoPlanilha || semRegistros}><FileSpreadsheet />{exportandoPlanilha ? 'Gerando...' : 'Excel formatado'}</Button></div>
       </div>
     </form>
 

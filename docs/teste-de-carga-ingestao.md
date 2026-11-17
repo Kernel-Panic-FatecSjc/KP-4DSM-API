@@ -70,7 +70,28 @@ TAXAS=1000 DURACAO_POR_TAXA=120 npm run teste:carga:mqtt
 npm run teste:carga:http
 ```
 
-Variáveis do teste MQTT: `MQTT_URL`, `MQTT_ADMIN_USUARIO`/`MQTT_ADMIN_SENHA` (para cadastrar as estações no broker), `NUM_ESTACOES`, `TAXAS`, `DURACAO_POR_TAXA`, `LIMITE_P95_MS` (2000), `AMOSTRA` (10), `INTERVALO_SONDAGEM_MS` (50).
+Variáveis do teste MQTT: `MQTT_URL`, `INTERVALO_ENVIO_S` e `CICLOS` (cenário RNF20.2, ver abaixo), `MQTT_ADMIN_USUARIO`/`MQTT_ADMIN_SENHA` (para cadastrar as estações no broker), `NUM_ESTACOES`, `TAXAS`, `DURACAO_POR_TAXA`, `LIMITE_P95_MS` (2000), `AMOSTRA` (10), `INTERVALO_SONDAGEM_MS` (50).
+
+## Cenário RNF20.2: estações enviando a cada 5 minutos
+
+O RNF20.2 pede que a plataforma suporte **a quantidade definida de estações enviando a cada 5 minutos** (US16, SCRUM-142). O gerador MQTT tem um modo próprio para isso: com `INTERVALO_ENVIO_S`, ele roda um degrau só, com a frota inteira em rodízio. Cada estação envia uma vez por intervalo, e a taxa da plataforma é estações ÷ intervalo. As métricas e o critério de "sustentado" são os da escada acima: p95 de ponta a ponta ≤ 2 s, sem erro nem perda.
+
+```bash
+# frota do projeto a cada 5 min, por dois ciclos completos
+NUM_ESTACOES=<quantidade definida> INTERVALO_ENVIO_S=300 CICLOS=2 npm run teste:carga:mqtt
+```
+
+O que a escada já mostra: a cadeia sustentou 1.000 mensagens/s, o que equivale a **300 mil estações a cada 5 minutos** (1.000 × 300). Qualquer frota até esse tamanho fica, em média, abaixo da taxa já validada. O modo por intervalo confirma isso com a quantidade de estações do projeto e com cada estação tendo a própria conexão aberta durante o ciclo inteiro, que a escada não exercita por tanto tempo.
+
+### Resultados
+
+> **Pendente de execução.** O modo foi criado na SCRUM-142, mas a rodada ainda não foi feita: precisa do broker, do Postgres e dos dois serviços de pé, e da quantidade de estações definida para o projeto, que não está registrada no RNF20.2. Ao rodar, preencha a tabela com a saída do script (a linha "Ambiente" e a tabela final).
+
+| Estações | Intervalo de envio | Ciclos | Taxa (msg/s) | Ponta a ponta p50 / p95 / máx (ms) | Publicadas | `leituras_brutas` | Leituras com medidas | Perda | Comportamento observado |
+| ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | ---: | --- |
+| — | 300 s | — | — | — | — | — | — | — | — |
+
+Ambiente da rodada: (máquina, versões e onde rodou cada serviço).
 
 ---
 

@@ -10,6 +10,7 @@ import { Select } from '@/components/ui/select';
 import {
   api,
   ErroApi,
+  type AcaoAlarme,
   type AlarmeHistorico,
   type FiltrosAlarmes,
   type FiltrosAlertas,
@@ -206,12 +207,19 @@ export default function AlarmesPage() {
   }
 
   async function alterarStatus(alarme: AlarmeHistorico, status: StatusAlarme) {
+    // Cancelar o prompt desiste da ação; deixar em branco segue sem observação.
+    const observacao = window.prompt(
+      `${LABEL_STATUS[status]}: o que foi feito? (opcional, vai para o relatório de incidentes)`,
+      '',
+    );
+    if (observacao === null) return;
+
     setAlarmeAtualizando(alarme.id);
     setErro(null);
     try {
       await api<AlarmeHistorico>(`/alarmes/${alarme.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status }),
+        body: JSON.stringify(observacao.trim() ? { status, observacao: observacao.trim() } : { status }),
       });
       await carregarHistorico(filtros);
     } catch (erroCapturado) {
@@ -433,6 +441,30 @@ export default function AlarmesPage() {
   );
 }
 
+function descreverAcao(rotulo: string, acao: AcaoAlarme | null | undefined): string | null {
+  if (!acao) return null;
+  const quando = new Date(acao.em).toLocaleString('pt-BR');
+  return `${rotulo} ${acao.por ? `por ${acao.por.nome} ` : ''}em ${quando}`;
+}
+
+/** Quem tratou o alarme e quando (as "ações correlacionadas" do relatório de incidentes). */
+function AcoesDoAlarme({ alarme }: { alarme: AlarmeHistorico }) {
+  const linhas = [
+    descreverAcao('Reconhecido', alarme.reconhecimento),
+    descreverAcao('Resolvido', alarme.resolucao),
+  ].filter((linha): linha is string => linha !== null);
+  if (linhas.length === 0 && !alarme.observacao) return null;
+
+  return (
+    <span className="flex flex-col font-mono text-[10px] leading-tight text-muted-foreground">
+      {linhas.map((linha) => (
+        <span key={linha}>{linha}</span>
+      ))}
+      {alarme.observacao && <span className="italic">“{alarme.observacao}”</span>}
+    </span>
+  );
+}
+
 function AlarmesTabela({
   resultado,
   totalPaginas,
@@ -516,9 +548,12 @@ function AlarmesTabela({
                   <span className={cn('size-1.5 rounded-full', COR_SEVERIDADE[alarme.severidade])} />
                   {LABEL_SEVERIDADE[alarme.severidade].toLowerCase()}
                 </span>
-                <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-[10px] font-semibold">
-                  <span className={cn('size-1.5 rounded-full', COR_STATUS[alarme.status])} />
-                  {LABEL_STATUS[alarme.status].toLowerCase()}
+                <span className="flex flex-col gap-0.5">
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap font-mono text-[10px] font-semibold">
+                    <span className={cn('size-1.5 rounded-full', COR_STATUS[alarme.status])} />
+                    {LABEL_STATUS[alarme.status].toLowerCase()}
+                  </span>
+                  <AcoesDoAlarme alarme={alarme} />
                 </span>
                 {onAlterarStatus && (
                   <span className="col-span-2 flex flex-wrap gap-1.5 sm:col-span-1">

@@ -195,7 +195,9 @@ describe('Escopo por licitação (funcional)', () => {
         .set('Cookie', tecsus)
         .expect(200);
 
-      expect(resposta.text.split('\r\n')[0]).toBe('﻿Data/hora;Usuário;Ação;Entidade;ID da entidade;Licitação;Detalhes');
+      expect(resposta.text.split('\r\n')[0]).toBe(
+        '﻿ID do registro;Data/hora;ID do usuário;Usuário;Ação;Entidade;ID da entidade;IP de origem (mascarado);Licitação;Detalhes',
+      );
       expect(await prisma.logAuditoria.count({ where: { acao: 'auditoria.exportar' } })).toBeGreaterThan(0);
     });
   });
