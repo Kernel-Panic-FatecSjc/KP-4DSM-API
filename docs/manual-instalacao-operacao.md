@@ -419,18 +419,27 @@ imprime os valores para o GitHub.
    segredos `SERVIDOR_HOST`, `SERVIDOR_USUARIO`, `SERVIDOR_CHAVE_SSH`,
    `SERVIDOR_KNOWN_HOSTS` e as variáveis `URL_SAUDE`, `SERVIDOR_BASE`,
    `SERVIDOR_SERVICOS`, `SERVIDOR_SAUDE_LOCAL` (e `SERVIDOR_PORTA` se o SSH não
-   for a 22), com os valores que o script imprimiu. Em `producao`, restrinja as
-   branches de deploy a `release` e `hotfix/*`.
+   for a 22), com os valores que o script imprimiu. Branches de deploy:
+   `pre-release` aceita `main` (a promoção roda na main, disparada pela suíte);
+   `producao` aceita `release`, `hotfix/*` e `main` (o rollback manual roda na
+   main).
+   **Configurado em 2026-11-17** (faltam os segredos e variáveis do servidor).
 2. **Environment** `aprovacao-hotfix`, sem segredos, com **revisores
-   obrigatórios**: é o gate humano do hotfix.
-3. **Branches** `pre-release` e `release`: criar uma vez a partir do commit que
-   está (ou estará) em produção. Rulesets:
-   - `pre-release`: bloquear push forçado e exclusão; só o GitHub Actions
-     atualiza (bypass para o app GitHub Actions; ninguém mais faz push).
-   - `release`: exigir PR com **1 aprovação**, exigir o status `pre-release`,
-     permitir só **merge commit**, bloquear push forçado e exclusão.
+   obrigatórios** e sem autoaprovação: é o gate humano do hotfix. **Configurado**
+   (PaulaEmy, VitorSerpa, heloisa-cardillo, HenryTito, miguelnonaka, Templasan).
+3. **Branches** `pre-release` e `release`: criadas uma vez a partir de um commit
+   da main (ancestral, para a primeira promoção ser fast-forward). Rulesets
+   (**configuradas**):
+   - `pre-release - só avança`: bloqueia push forçado e exclusão. Ruleset de
+     repositório não aceita o GitHub Actions como bypass, então não dá para
+     impedir push humano; não faça push nela, só o pipeline promove.
+   - `release - gate manual`: PR com **1 aprovação** (aprovação antiga cai com
+     push novo), status `pre-release` obrigatório, só **merge commit**, sem push
+     forçado e sem exclusão.
 4. Settings → Actions → General: marcar **Allow GitHub Actions to create and
    approve pull requests** (o PR pre-release → release é aberto pelo workflow).
+   Precisa estar liberado antes na **organização** (Settings da org → Actions →
+   General), senão o repositório recusa.
 5. Por último, a variável de repositório `CD_HABILITADO=true`. Antes dela, todo
    deploy falha dizendo o que falta.
 
