@@ -42,7 +42,12 @@ jobs:
   escolher:
     name: Escolher o candidato
     # Suíte vermelha não promove nada (a main-vermelha.yaml cuida do aviso).
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Com o CD desligado (sem VM), a promoção automática fica parada em vez de
+    # avançar a branch e falhar no deploy toda noite. O disparo manual roda e
+    # explica no deploy o que falta.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && vars.CD_HABILITADO == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
