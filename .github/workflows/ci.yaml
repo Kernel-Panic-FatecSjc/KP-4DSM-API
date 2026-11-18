@@ -292,17 +292,32 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Exceção: a Big Migration fora da janela da sprint consolida migrations
+      # antigas numa só (política de banco, Processo de Mudança de Schema, 1).
+      # O label incidente-de-planejamento libera só este passo; migrations do
+      # zero, diff do schema e testes continuam obrigatórios. O label é lido na
+      # hora (não do evento), para o Re-run valer depois de pôr o label.
       - name: Migrations existentes não podem ser alteradas
         if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           alteradas=$(git diff --name-only --diff-filter=MDR \
             "${{ github.event.pull_request.base.sha }}" HEAD -- prisma/migrations || true)
+          if [ -n "$alteradas" ] && gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name' \
+              | grep -qx 'incidente-de-planejamento'; then
+            echo "::warning::Migrations existentes alteradas com o label incidente-de-planejamento (Big Migration fora da janela). Confira no PR o registro no Confluence com 2 assinaturas e o Relatório de Incidente de Banco:"
+            echo "$alteradas"
+            exit 0
+          fi
           if [ -n "$alteradas" ]; then
             echo "::error::Migrations já existentes na ${{ github.base_ref }} foram alteradas:"
             echo "$alteradas"
             echo "Próximo passo: desfaça a edição (git checkout origin/${{ github.base_ref }} -- <arquivo>)"
             echo "e crie uma migration NOVA com: npx prisma migrate dev --name <descricao>"
             echo "Migration mergeada já rodou em algum banco; editá-la deixa os ambientes divergentes."
+            echo "Consolidação planejada (Big Migration fora da janela): ponha o label incidente-de-planejamento e rode de novo."
             exit 1
           fi
           echo "Nenhuma migration existente foi alterada."

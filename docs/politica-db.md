@@ -175,7 +175,7 @@ A validação de uma migration não se limita à execução bem-sucedida do SQL:
 | 7. Operações geoespaciais | `relatorio-incidentes.spec.ts` (filtro por raio com PostGIS) | **parcial**: demais consultas espaciais sem teste (tarefa) |
 | 8. Divergência de schema | `prisma migrate diff --exit-code` | coberto |
 | 9. Resultados no Code Review | checks no PR; o `CI ok` lista o job que falhou e o tempo de cada um | coberto |
-| Imutabilidade de migration mergeada | `git diff --diff-filter=MDR` em `prisma/migrations` (só PR) | coberto |
+| Imutabilidade de migration mergeada | `git diff --diff-filter=MDR` em `prisma/migrations` (só PR); liberado só com o label `incidente-de-planejamento` | coberto |
 | Seed | `npm run db:seed` | coberto |
 | Restauração (6.2) | suíte noturna | coberto com dados de seed |
 
@@ -255,6 +255,7 @@ Alterações no banco de dados apresentam alto risco de quebra de integração. 
 
 * **Hotfix de produção:** segue o fluxo de hotfix, com o registro de aprovação no Confluence (7.2).
 * **Fase Contract planejada:** a remoção de um expand/contract já combinada na Sprint Planning.
+* **Incidente de planejamento (Big Migration fora da janela):** a Big Migration que entra depois da semana 1, inclusive a que consolida migrations antigas numa só, é tratada como incidente. O PR leva o label `incidente-de-planejamento` e a justificativa, tem o registro no Confluence com 2 assinaturas (7.2) e gera o Relatório de Incidente de Banco (7.2), dizendo por que a mudança não coube na janela. Consolidar migrations só é permitido enquanto nenhuma delas rodou na pré-release ou na produção; depois disso, nunca. O label libera só o check de imutabilidade da CI: migrations do zero, diff do schema e testes continuam obrigatórios, e o PR mostra que o schema produzido é idêntico ao anterior. Depois do merge, cada dev recria o banco local (`npx prisma migrate reset` e `npm run db:seed`), porque o histórico local de migrations deixa de bater.
 
 Fora disso, PR de schema no fim da Sprint precisa da justificativa no PR e da assinatura de 2 desenvolvedores, a mesma regra de mudança crítica (7.2).
 
