@@ -350,98 +350,128 @@ broker em produção ainda são **[a validar]**.
 - Scripts e dependências: `kernelpanic-backend/package.json` e
   `frontend/frontend/package.json`.
 
-## 7. Implantação no servidor (pré-release e produção)
+## 7. Implantação no servidor Windows (pré-release e produção)
 
-O deploy é automático (SCRUM-29). O que cabe à prefeitura, uma vez, é preparar o
-servidor e preencher as variáveis de cada ambiente. Depois disso, cada versão
-chega sozinha à pré-release e vai para a produção quando alguém aprova o PR.
+O servidor é **Windows Server 2025**: a prefeitura não usa Linux. São dois
+ambientes iguais:
+
+| Ambiente | Onde | Quem instala as versões |
+| --- | --- | --- |
+| Pré-release | VM nossa, Windows Server 2025, cópia da produção | o pipeline, sozinho, pelo runner do GitHub na VM |
+| Produção | servidor da prefeitura, Windows Server 2025 | o pipeline (se a prefeitura registrar um runner) ou a TI, com o mesmo script (seção 7.6) |
 
 ```
 PR aprovado → main → suíte noturna verde (02:00) → branch pre-release
-  → deploy na pré-release → PR automático pre-release → release
-  → aprovação humana + merge → deploy na produção → tag versao/AAAA-MM-DD
+  → runner da VM instala na pré-release → PR automático pre-release → release
+  → aprovação humana + merge → produção → tag versao/AAAA-MM-DD + pacote anexado
 ```
 
-Pré-release e produção recebem o **mesmo pacote** (`pacote-<sha>.tar.gz`). Só
-muda a configuração: o `.env` do servidor e o Environment do GitHub.
+A pré-release existe para que nada chegue quebrado na produção: o mesmo pacote
+(`pacote-<sha>.tar.gz`) e o mesmo instalador (`infra\servidor\deploy.ps1`, que vai
+dentro do pacote) passam primeiro por ela. Se a instalação, as migrations ou a
+`/saude` falharem lá, o status `pre-release` fica vermelho e o PR para a release
+não pode ser mesclado.
+
+**Como o deploy chega no servidor:** o **runner** do GitHub é um programa oficial
+instalado no servidor como serviço do Windows. Ele só faz conexões **de saída**
+(HTTPS para o GitHub), pega o trabalho de deploy e roda o `deploy.ps1` ali mesmo.
+Não é preciso abrir porta para a internet nem configurar SSH.
 
 ### 7.1 Servidor
 
-- Linux com systemd (recomendado: Ubuntu Server 24.04 LTS ou Debian 12).
-- Node.js na versão do `.nvmrc`, PostgreSQL 16 + PostGIS 3.4, Mosquitto 2 com
-  dynamic-security (`broker/`), Caddy 2, `curl` e `psql`.
-- Portas abertas para fora: 443 e 80 (Caddy) e a do MQTT para as estações. SSH
-  (22 ou outra) só para o GitHub Actions e para os mantenedores. PostgreSQL e as
-  portas internas (3000 a 3003) ficam só em `127.0.0.1`.
-- O GitHub Actions precisa alcançar o SSH do servidor. Se o servidor não puder
-  ficar exposto, use um runner auto-hospedado na rede da prefeitura **[a validar]**.
-- Pré-release e produção podem ficar no mesmo servidor (portas, pastas, banco e
-  domínio diferentes) ou em servidores separados. Recomendado: separados, ou ao
-  menos bancos separados; a pré-release roda as migrations antes da produção.
+- Windows Server 2025, com a versão do Node.js do `.nvmrc` (instalador oficial,
+  em `C:\Program Files\nodejs`), PostgreSQL 16 + PostGIS 3.4 (instalador do
+  PostgreSQL e Stack Builder), Mosquitto 2 para Windows e o Caddy 2
+  (`caddy.exe` em `C:\caddy`).
+- Saída HTTPS liberada para `github.com`, `api.github.com`,
+  `*.actions.githubusercontent.com` e o registro do npm (`registry.npmjs.org`).
+- Entrada: 443 e 80 (Caddy) e a porta MQTT das estações. PostgreSQL e as portas
+  internas (3000 a 3003) só em `localhost`.
 
 ### 7.2 Banco e broker
 
-1. Criar o usuário e o banco de cada ambiente (ex.: `datapanic` e
-   `datapanic_pre`) e habilitar o PostGIS (`CREATE EXTENSION postgis;`, como
-   superusuário, se o usuário da aplicação não puder).
-2. Configurar o Mosquitto com dynamic-security (ver `broker/iniciar.sh`), com
-   senhas novas para o admin e para a ingestão. Nunca reutilize as senhas `-dev`.
+1. Criar o usuário e o banco do ambiente e habilitar o PostGIS
+   (`CREATE EXTENSION postgis;`, como superusuário se o usuário da aplicação não
+   puder).
+2. Configurar o Mosquitto com dynamic-security (ver `broker/`), com senhas novas
+   para o admin e para a ingestão (nunca as `-dev`), e liberar a porta MQTT no
+   firewall.
 
-### 7.3 Preparar cada ambiente
+### 7.3 Preparar o ambiente
 
-Da raiz de uma cópia do repositório no servidor:
+Num PowerShell **como Administrador**, numa cópia do repositório no servidor:
 
-```bash
-# produção
-sudo PREFIXO=datapanic BASE=/opt/datapanic bash infra/servidor/preparar-servidor.sh
-# pré-release (no mesmo servidor, se for o caso)
-sudo PREFIXO=datapanic-pre BASE=/opt/datapanic-pre bash infra/servidor/preparar-servidor.sh
+```powershell
+powershell -ExecutionPolicy Bypass -File .\infra\servidor\preparar-servidor.ps1 -Ambiente pre-release
+# na prefeitura: -Ambiente producao
 ```
 
-Na primeira execução o script cria o usuário de deploy e as pastas e copia
-`infra/servidor/env.servidor.example` para `$BASE/shared/.env`. Preencha todos
-os campos `TROQUE` (domínio, banco, `JWT_SECRET`, senhas MQTT, administrador) e
-rode de novo. Na segunda execução ele confere o banco, gera as units systemd
-(`<prefixo>-api`, `-ingestao`, `-tratamento`, `-front`), o site do Caddy (front
-em `/`, API em `/api`, ingestão HTTP em `/ingestao`) e a permissão de restart, e
-imprime os valores para o GitHub.
+A primeira execução cria `C:\datapanic` e copia
+`infra\servidor\env.servidor.example` para `C:\datapanic\shared\.env`. Preencha
+todos os campos `TROQUE` (domínio, banco, `JWT_SECRET`, senhas MQTT,
+administrador) e rode de novo. A segunda execução:
 
-| Arquivo no servidor | Conteúdo |
+- instala os serviços do Windows `datapanic-api`, `-ingestao`, `-tratamento` e
+  `-front` (WinSW, conferido por SHA-256), na conta LocalService, com reinício
+  automático e início no boot;
+- dá à conta do runner (`NT AUTHORITY\NETWORK SERVICE`) permissão de instalar em
+  `C:\datapanic` e de reiniciar **só** esses quatro serviços;
+- configura o Caddy como serviço (front em `/`, API e websocket em `/api`,
+  ingestão HTTP em `/ingestao`) e libera 80/443 no firewall;
+- imprime as variáveis para o GitHub.
+
+Depois, **registre o runner** (Settings → Actions → Runners → New self-hosted
+runner → Windows, que mostra o token). Em `C:\actions-runner`, como
+Administrador:
+
+```powershell
+.\config.cmd --url https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API --token <TOKEN> `
+  --name datapanic-pre-release --labels datapanic-pre-release `
+  --runasservice --windowslogonaccount "NT AUTHORITY\NETWORK SERVICE" --unattended
+```
+
+O rótulo precisa ser `datapanic-<ambiente>` (`datapanic-pre-release` ou
+`datapanic-producao`): é por ele que o deploy encontra o servidor certo.
+
+| Em `C:\datapanic` | Conteúdo |
 | --- | --- |
-| `$BASE/shared/.env` | configuração do ambiente (só no servidor, `chmod 600`) |
-| `$BASE/releases/<sha>/` | as 5 versões mais recentes, para rollback |
-| `$BASE/current` | link para a versão no ar |
-| `$BASE/deploys.log` | quando, o quê, resultado, quem e o run de cada deploy/rollback |
+| `shared\.env` | configuração do ambiente (só administradores e o runner leem) |
+| `releases\<sha>\` | as 5 versões mais recentes, para rollback |
+| `current` | junction para a versão no ar (os serviços rodam daqui) |
+| `bin\deploy.ps1` | o instalador, para rollback mesmo com a versão atual quebrada |
+| `logs\` | logs dos serviços |
+| `deploys.log` | quando, ação, versão, resultado, quem e o run de cada deploy/rollback |
+
+Depois do primeiro deploy, uma vez, crie o primeiro administrador do sistema com o
+comando que o script imprime no final.
 
 ### 7.4 GitHub (admin do repositório)
 
-1. **Environments** `pre-release` e `producao` (Settings → Environments), com os
-   segredos `SERVIDOR_HOST`, `SERVIDOR_USUARIO`, `SERVIDOR_CHAVE_SSH`,
-   `SERVIDOR_KNOWN_HOSTS` e as variáveis `URL_SAUDE`, `SERVIDOR_BASE`,
-   `SERVIDOR_SERVICOS`, `SERVIDOR_SAUDE_LOCAL` (e `SERVIDOR_PORTA` se o SSH não
-   for a 22), com os valores que o script imprimiu. Branches de deploy:
-   `pre-release` aceita `main` (a promoção roda na main, disparada pela suíte);
-   `producao` aceita `release`, `hotfix/*` e `main` (o rollback manual roda na
-   main).
-   **Configurado em 2026-11-17** (faltam os segredos e variáveis do servidor).
-2. **Environment** `aprovacao-hotfix`, sem segredos, com **revisores
-   obrigatórios** e sem autoaprovação: é o gate humano do hotfix. **Configurado**
-   (PaulaEmy, VitorSerpa, heloisa-cardillo, HenryTito, miguelnonaka, Templasan).
-3. **Branches** `pre-release` e `release`: criadas uma vez a partir de um commit
-   da main (ancestral, para a primeira promoção ser fast-forward). Rulesets
-   (**configuradas**):
-   - `pre-release - só avança`: bloqueia push forçado e exclusão. Ruleset de
-     repositório não aceita o GitHub Actions como bypass, então não dá para
-     impedir push humano; não faça push nela, só o pipeline promove.
-   - `release - gate manual`: PR com **1 aprovação** (aprovação antiga cai com
-     push novo), status `pre-release` obrigatório, só **merge commit**, sem push
-     forçado e sem exclusão.
-4. Settings → Actions → General: marcar **Allow GitHub Actions to create and
-   approve pull requests** (o PR pre-release → release é aberto pelo workflow).
-   Precisa estar liberado antes na **organização** (Settings da org → Actions →
-   General), senão o repositório recusa.
-5. Por último, a variável de repositório `CD_HABILITADO=true`. Antes dela, todo
-   deploy falha dizendo o que falta.
+1. **Environments** (configurados em 2026-11-17): `pre-release` (deploy a partir da
+   `main`, onde a promoção roda) e `producao` (`release`, `hotfix/*` e `main`, onde
+   roda o rollback manual). Variáveis, com os valores impressos pelo script:
+   `URL_SAUDE` (obrigatória), `SERVIDOR_BASE`, `SERVIDOR_SERVICOS`,
+   `SERVIDOR_SAUDE_LOCAL`. Não há segredos: o runner já está dentro do servidor.
+2. **Environment** `aprovacao-hotfix` (configurado): revisores obrigatórios, sem
+   autoaprovação (PaulaEmy, VitorSerpa, heloisa-cardillo, HenryTito, miguelnonaka,
+   Templasan). É o gate humano do hotfix.
+3. **Branches** `pre-release` e `release` (configuradas), criadas a partir de um
+   commit da main:
+   - `pre-release - só avança`: sem push forçado e sem exclusão. Ruleset de
+     repositório não aceita o GitHub Actions como exceção, então não dá para
+     impedir push humano: não faça push nela, só o pipeline promove.
+   - `release - gate manual`: PR com **1 aprovação** (cai com push novo), status
+     `pre-release` obrigatório, só **merge commit**, sem push forçado e sem exclusão.
+4. **Allow GitHub Actions to create and approve pull requests**, primeiro na
+   organização e depois no repositório (Settings → Actions → General). Sem isso, o
+   PR `pre-release → release` não é aberto.
+5. **Repositório público e runner próprio:** em Settings → Actions → General,
+   "Fork pull request workflows from outside collaborators" = **Require approval
+   for all outside collaborators**. Nunca aprove execução de PR de fork que mexa em
+   `.github/workflows`: ele poderia rodar no runner do servidor.
+6. Variáveis de repositório: `CD_HABILITADO=true` quando o runner da pré-release
+   estiver online, e `PRODUCAO_AUTOMATICA=true` só se a prefeitura registrar um
+   runner na produção.
 
 ### 7.5 Operação
 
@@ -449,10 +479,29 @@ imprime os valores para o GitHub.
 | --- | --- |
 | Publicar em produção | Revisar o PR `pre-release → release`, testar a pré-release, aprovar e fazer merge com **Create a merge commit** |
 | Rodar a promoção de novo (ex.: servidor corrigido) | Actions → Deploy na pré-release → Run workflow |
-| Repetir o deploy de produção | Actions → Release → Run workflow (branch `release`) |
-| Produção com comportamento errado | Actions → Rollback (ambiente, versão opcional, motivo). Abre uma issue de incidente |
+| Repetir o deploy de produção (modo automático) | Actions → Release → Run workflow (branch `release`) |
+| Comportamento errado depois do deploy | Actions → Rollback (modo automático), ou `C:\datapanic\bin\deploy.ps1 -Rollback` no servidor |
 | Urgência que não espera a noite | Fluxo de hotfix (`hotfix.yaml`), com aprovação no Environment `aprovacao-hotfix` |
-| Primeiro administrador | Comando impresso no fim do `preparar-servidor.sh` |
+| Ver o que foi instalado e quando | `C:\datapanic\deploys.log` |
 
 O rollback volta o **código**, não o banco. Por isso as migrations seguem
 expand/contract: a versão anterior precisa funcionar com o schema novo.
+
+### 7.6 Produção sem runner (instalação pela TI)
+
+Se a prefeitura não registrar um runner, a produção é instalada à mão, com o
+**mesmo** script e o **mesmo** pacote que passaram na pré-release:
+
+1. O merge aprovado do PR `pre-release → release` publica o GitHub Release
+   `versao/AAAA-MM-DD` com três anexos: `pacote-<sha>.tar.gz`, o `.sha256` e o
+   `deploy.ps1`.
+2. No servidor, como Administrador, com os três arquivos na mesma pasta:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\deploy.ps1 -Sha <sha> -Pacote .\pacote-<sha>.tar.gz
+   ```
+
+   O script confere o SHA-256, instala, roda as migrations, troca a versão e
+   confere a `/saude`. Se ela falhar, volta sozinho para a versão anterior.
+3. Rollback: `C:\datapanic\bin\deploy.ps1 -Rollback` (a anterior) ou
+   `-Rollback -Sha <sha>` (uma específica).

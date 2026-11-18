@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Prepara um ambiente do DATA PANIC (pré-release ou produção) num Windows
   Server 2025.
@@ -102,7 +102,7 @@ function Instalar-Servico([string]$id, [string]$nome, [string]$exec, [string]$ar
   $exe = Join-Path $pasta "$id.exe"
   $xml = Join-Path $pasta "$id.xml"
   Copy-Item $winsw $exe -Force
-  $modelo = Get-Content (Join-Path $Aqui 'servico.xml.modelo') -Raw
+  $modelo = Get-Content (Join-Path $Aqui 'servico.xml.modelo') -Raw -Encoding UTF8
   $modelo.Replace('@ID@', $id).Replace('@NOME@', $nome).Replace('@PREFIXO@', $Prefixo).Replace('@BASE@', $Base).
     Replace('@EXEC@', $exec).Replace('@ARGS@', $argumentos).Replace('@DIR@', $dir).
     Replace('@LOGS@', (Join-Path $Base 'logs')).Replace('@CONTA@', $conta) | Set-Content $xml -Encoding UTF8
@@ -151,7 +151,7 @@ $sites = Join-Path $CaddyDir 'sites'
 $logsCaddy = Join-Path $CaddyDir 'logs'
 New-Item -ItemType Directory -Path $sites, $logsCaddy -Force | Out-Null
 $site = Join-Path $sites "$Prefixo.caddy"
-$conteudo = (Get-Content (Join-Path $Aqui 'Caddyfile.modelo') -Raw).Replace('@DOMINIO@', $cfg['DOMINIO']).Replace('@PORT@', $cfg['PORT']).
+$conteudo = (Get-Content (Join-Path $Aqui 'Caddyfile.modelo') -Raw -Encoding UTF8).Replace('@DOMINIO@', $cfg['DOMINIO']).Replace('@PORT@', $cfg['PORT']).
   Replace('@INGESTAO_PORTA@', $cfg['INGESTAO_PORTA']).Replace('@FRONT_PORTA@', $cfg['FRONT_PORTA']).
   Replace('@LOG@', ((Join-Path $logsCaddy "$Prefixo.log") -replace '\\', '/'))
 # UTF-8 sem BOM: o Set-Content do PowerShell 5.1 grava BOM.

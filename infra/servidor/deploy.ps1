@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Instala uma versão do DATA PANIC no servidor Windows, ou volta para uma
   versão já instalada.
