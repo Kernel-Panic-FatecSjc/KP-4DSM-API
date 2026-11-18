@@ -191,12 +191,16 @@ export default function EstacoesPage() {
   }, [carregarEstacoes, recarga]);
 
   useEffect(() => {
+    // Sem busca nova não volta à página 1: senão, ao abrir a tela, a troca de
+    // página feita antes do atraso é desfeita.
+    const termo = busca.trim();
+    if (termo === buscaAplicada) return;
     const espera = setTimeout(() => {
-      setBuscaAplicada(busca.trim());
+      setBuscaAplicada(termo);
       setPaginaAtual(1);
     }, ATRASO_BUSCA_MS);
     return () => clearTimeout(espera);
-  }, [busca]);
+  }, [busca, buscaAplicada]);
 
   // Os sensores de uma estação são da licitação dela. A Tecsus diz qual; o
   // admin da licitação recebe os da própria sem informar.

@@ -129,12 +129,16 @@ export default function SensoresPage() {
   }, [tratarErro]);
 
   useEffect(() => {
+    // Sem busca nova não volta à página 1: senão, ao abrir a tela, a troca de
+    // página feita antes do atraso é desfeita.
+    const termo = searchTerm.trim();
+    if (termo === buscaAplicada) return;
     const espera = setTimeout(() => {
-      setBuscaAplicada(searchTerm.trim());
+      setBuscaAplicada(termo);
       setCurrentPage(1);
     }, ATRASO_BUSCA_MS);
     return () => clearTimeout(espera);
-  }, [searchTerm]);
+  }, [searchTerm, buscaAplicada]);
 
   const sensores = useMemo(() => lista?.itens ?? [], [lista]);
 
