@@ -1,4 +1,4 @@
-# Gerado por infra/servidor/preparar-servidor.sh a partir de Caddyfile.modelo.
+# Gerado por infra/servidor/preparar-servidor.ps1 a partir de Caddyfile.modelo.
 # Uma origem só por ambiente: o front em /, a API em /api (o front é construído
 # com NEXT_PUBLIC_API_URL=/api). O Caddy emite e renova o certificado HTTPS
 # sozinho se @DOMINIO@ resolver para este servidor e as portas 80/443 estiverem
@@ -23,7 +23,7 @@
 	}
 
 	log {
-		output file /var/log/caddy/@PREFIXO@.log {
+		output file @LOG@ {
 			roll_size 50MiB
 			roll_keep 10
 		}

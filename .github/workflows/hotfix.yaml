@@ -81,8 +81,12 @@ jobs:
           SHA: ${{ needs.validar.outputs.sha }}
         run: echo "Hotfix \`${SHA:0:7}\` aprovado para produção." >> "$GITHUB_STEP_SUMMARY"
 
+  # Automático só com runner no servidor da prefeitura. No modo manual, o
+  # pacote é o artefato pacote-<sha> deste run; a TI instala com o deploy.ps1
+  # (manual de instalação, seção 7.6).
   deploy:
     needs: [validar, aprovacao]
+    if: vars.PRODUCAO_AUTOMATICA == 'true'
     permissions:
       actions: read
       contents: read
@@ -96,7 +100,7 @@ jobs:
 
   registrar:
     name: Registro, PR de volta e pós-hotfix
-    needs: [validar, deploy]
+    needs: [validar, aprovacao, deploy]
     if: always() && needs.validar.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -112,8 +116,12 @@ jobs:
           LINK: ${{ inputs.link_confluence }}
           MOTIVO: ${{ inputs.motivo }}
           DEPLOY: ${{ needs.deploy.result }}
+          APROVACAO: ${{ needs.aprovacao.result }}
           URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          if [ "$DEPLOY" = skipped ] && [ "$APROVACAO" = success ]; then
+            DEPLOY="manual: baixar o artefato pacote-${SHA} deste run e instalar com o deploy.ps1 (manual, seção 7.6)"
+          fi
           quando=$(date -u +%FT%TZ)
           registro="| | |
           |---|---|

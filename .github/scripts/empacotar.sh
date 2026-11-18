@@ -3,6 +3,9 @@
 # "Build once, deploy many": o mesmo arquivo vai para todos os ambientes, só a
 # configuração (Environment do GitHub / .env da VM) muda. Nada de segredo aqui.
 #
+# O instalador (infra/servidor/deploy.ps1) vai junto: a versão do script de
+# instalação acompanha a versão do sistema.
+#
 # Uso (da raiz, com os builds já feitos):
 #   bash .github/scripts/empacotar.sh <sha> [pasta de saída]
 # Saída: pacote-<sha>.tar.gz e pacote-<sha>.tar.gz.sha256
@@ -39,7 +42,7 @@ EOF
 # mesmas versões. Cache do Next.js e mapas de fonte do front ficam de fora.
 (cd "$RAIZ" && tar -czf "$SAIDA/$NOME" \
   --exclude="$WEB/.next/cache" \
-  VERSAO .nvmrc \
+  VERSAO .nvmrc infra/servidor \
   "$API/dist" "$API/dist-servicos" "$API/prisma" "$API/prisma7.config.ts" \
   "$API/package.json" "$API/package-lock.json" \
   "$WEB/.next" "$WEB/public" "$WEB/package.json" "$WEB/package-lock.json" "$WEB/next.config.ts")

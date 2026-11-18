@@ -1,7 +1,7 @@
 name: Rollback
 
 # Volta o CÓDIGO de um ambiente para uma versão já instalada no servidor (as 5
-# mais recentes ficam em $BASE/releases). Não desfaz migrations: por isso elas
+# mais recentes ficam em C:\datapanic\releases), pelo runner do servidor. Não desfaz migrations: por isso elas
 # seguem expand/contract (política de banco, seção 4).
 #
 # O deploy já faz rollback sozinho quando a /saude falha. Este é o manual: o
@@ -44,8 +44,14 @@ jobs:
         env:
           ENTRADA: ${{ inputs.sha }}
           MOTIVO: ${{ inputs.motivo }}
+          AMBIENTE: ${{ inputs.ambiente }}
+          PRODUCAO_AUTOMATICA: ${{ vars.PRODUCAO_AUTOMATICA }}
         run: |
           [ "${#MOTIVO}" -ge 10 ] || { echo "::error::Descreva o motivo em uma frase."; exit 1; }
+          if [ "$AMBIENTE" = producao ] && [ "$PRODUCAO_AUTOMATICA" != true ]; then
+            echo "::error::Produção em modo manual: o rollback é feito no servidor, como Administrador: C:\\datapanic\\bin\\deploy.ps1 -Rollback (manual, seção 7.6)."
+            exit 1
+          fi
           if [ -n "$ENTRADA" ]; then
             sha=$(git rev-parse --verify --quiet "$ENTRADA^{commit}") \
               || { echo "::error::\"$ENTRADA\" não é um commit deste repositório."; exit 1; }
