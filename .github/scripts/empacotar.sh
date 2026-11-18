@@ -7,11 +7,11 @@
 #   bash .github/scripts/empacotar.sh <sha> [pasta de saída]
 # Saída: pacote-<sha>.tar.gz e pacote-<sha>.tar.gz.sha256
 #
-# shortcut: o front sai com o NEXT_PUBLIC_API_URL do build embutido (o Next.js
-# grava variáveis NEXT_PUBLIC_* no bundle). Enquanto pré-release e produção
-# tiverem URLs de API diferentes, o pacote do front não é idêntico entre elas.
-# Resolver com URL relativa (proxy reverso na mesma origem) ou configuração lida
-# em tempo de execução, antes da Fase 4.
+# URL da API: o CI constrói o front com NEXT_PUBLIC_API_URL=/api (relativa).
+# O proxy do servidor (infra/servidor/Caddyfile) atende /api na mesma origem do
+# site, então o pacote não carrega domínio nenhum e é idêntico entre pré-release
+# e produção. Quem definir a variável do repositório NEXT_PUBLIC_API_URL com uma
+# URL absoluta perde essa propriedade.
 
 set -euo pipefail
 

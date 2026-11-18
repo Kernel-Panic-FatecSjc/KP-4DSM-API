@@ -1,0 +1,31 @@
+# Gerado por infra/servidor/preparar-servidor.sh a partir de Caddyfile.modelo.
+# Uma origem só por ambiente: o front em /, a API em /api (o front é construído
+# com NEXT_PUBLIC_API_URL=/api). O Caddy emite e renova o certificado HTTPS
+# sozinho se @DOMINIO@ resolver para este servidor e as portas 80/443 estiverem
+# abertas; rede interna sem DNS público: troque por "tls internal" ou pelo
+# certificado da prefeitura (tls <cert> <chave>).
+@DOMINIO@ {
+	encode zstd gzip
+
+	# API, inclusive o websocket de alarmes (/api/socket.io/*). O prefixo sai
+	# antes de chegar no Nest.
+	handle_path /api/* {
+		reverse_proxy 127.0.0.1:@PORT@
+	}
+
+	# Rota HTTP da ingestão (estações sem MQTT). Exige x-chave-estacao.
+	handle_path /ingestao/* {
+		reverse_proxy 127.0.0.1:@INGESTAO_PORTA@
+	}
+
+	handle {
+		reverse_proxy 127.0.0.1:@FRONT_PORTA@
+	}
+
+	log {
+		output file /var/log/caddy/@PREFIXO@.log {
+			roll_size 50MiB
+			roll_keep 10
+		}
+	}
+}

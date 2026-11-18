@@ -367,12 +367,14 @@ jobs:
           npm run build
           npm run build:servicos
 
-      # A URL pública da API entra no bundle do Next.js (limite registrado em
-      # .github/scripts/empacotar.sh). Variável do repositório, não segredo.
+      # A URL da API entra no bundle do Next.js. O padrão "/api" é relativo: o
+      # navegador chama a API na mesma origem do site e o proxy do servidor
+      # (infra/servidor/Caddyfile) encaminha para a porta da API. Assim o MESMO
+      # pacote serve a pré-release e a produção, cada uma com o seu domínio.
       - name: Build do front
         working-directory: ./frontend/frontend
         env:
-          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || '/api' }}
         run: |
           npm ci
           npm run build
