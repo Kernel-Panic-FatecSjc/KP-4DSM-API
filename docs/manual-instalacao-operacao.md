@@ -235,7 +235,10 @@ no build do frontend; configure-a antes de `npm run build`.
 
 ## 4. Configuração para implantação
 
-**[a validar]**
+> O caminho padrão para pré-release e produção é o da **seção 7**: servidor
+> próprio preparado por `infra/servidor/preparar-servidor.sh` e deploy feito pelo
+> pipeline de CD. Esta seção fica como referência para quem montar a
+> infraestrutura de outro jeito.
 
 1. Provisionar PostgreSQL 16 com PostGIS 3.4 e Mosquitto 2.0.21 com plugin
    dynamic-security, armazenamento persistente e rede privada entre os serviços.
@@ -346,3 +349,101 @@ broker em produção ainda são **[a validar]**.
 - Formato de telemetria: [mqtt-topico-payload.md](./mqtt-topico-payload.md).
 - Scripts e dependências: `kernelpanic-backend/package.json` e
   `frontend/frontend/package.json`.
+
+## 7. Implantação no servidor (pré-release e produção)
+
+O deploy é automático (SCRUM-29). O que cabe à prefeitura, uma vez, é preparar o
+servidor e preencher as variáveis de cada ambiente. Depois disso, cada versão
+chega sozinha à pré-release e vai para a produção quando alguém aprova o PR.
+
+```
+PR aprovado → main → suíte noturna verde (02:00) → branch pre-release
+  → deploy na pré-release → PR automático pre-release → release
+  → aprovação humana + merge → deploy na produção → tag versao/AAAA-MM-DD
+```
+
+Pré-release e produção recebem o **mesmo pacote** (`pacote-<sha>.tar.gz`). Só
+muda a configuração: o `.env` do servidor e o Environment do GitHub.
+
+### 7.1 Servidor
+
+- Linux com systemd (recomendado: Ubuntu Server 24.04 LTS ou Debian 12).
+- Node.js na versão do `.nvmrc`, PostgreSQL 16 + PostGIS 3.4, Mosquitto 2 com
+  dynamic-security (`broker/`), Caddy 2, `curl` e `psql`.
+- Portas abertas para fora: 443 e 80 (Caddy) e a do MQTT para as estações. SSH
+  (22 ou outra) só para o GitHub Actions e para os mantenedores. PostgreSQL e as
+  portas internas (3000 a 3003) ficam só em `127.0.0.1`.
+- O GitHub Actions precisa alcançar o SSH do servidor. Se o servidor não puder
+  ficar exposto, use um runner auto-hospedado na rede da prefeitura **[a validar]**.
+- Pré-release e produção podem ficar no mesmo servidor (portas, pastas, banco e
+  domínio diferentes) ou em servidores separados. Recomendado: separados, ou ao
+  menos bancos separados; a pré-release roda as migrations antes da produção.
+
+### 7.2 Banco e broker
+
+1. Criar o usuário e o banco de cada ambiente (ex.: `datapanic` e
+   `datapanic_pre`) e habilitar o PostGIS (`CREATE EXTENSION postgis;`, como
+   superusuário, se o usuário da aplicação não puder).
+2. Configurar o Mosquitto com dynamic-security (ver `broker/iniciar.sh`), com
+   senhas novas para o admin e para a ingestão. Nunca reutilize as senhas `-dev`.
+
+### 7.3 Preparar cada ambiente
+
+Da raiz de uma cópia do repositório no servidor:
+
+```bash
+# produção
+sudo PREFIXO=datapanic BASE=/opt/datapanic bash infra/servidor/preparar-servidor.sh
+# pré-release (no mesmo servidor, se for o caso)
+sudo PREFIXO=datapanic-pre BASE=/opt/datapanic-pre bash infra/servidor/preparar-servidor.sh
+```
+
+Na primeira execução o script cria o usuário de deploy e as pastas e copia
+`infra/servidor/env.servidor.example` para `$BASE/shared/.env`. Preencha todos
+os campos `TROQUE` (domínio, banco, `JWT_SECRET`, senhas MQTT, administrador) e
+rode de novo. Na segunda execução ele confere o banco, gera as units systemd
+(`<prefixo>-api`, `-ingestao`, `-tratamento`, `-front`), o site do Caddy (front
+em `/`, API em `/api`, ingestão HTTP em `/ingestao`) e a permissão de restart, e
+imprime os valores para o GitHub.
+
+| Arquivo no servidor | Conteúdo |
+| --- | --- |
+| `$BASE/shared/.env` | configuração do ambiente (só no servidor, `chmod 600`) |
+| `$BASE/releases/<sha>/` | as 5 versões mais recentes, para rollback |
+| `$BASE/current` | link para a versão no ar |
+| `$BASE/deploys.log` | quando, o quê, resultado, quem e o run de cada deploy/rollback |
+
+### 7.4 GitHub (admin do repositório)
+
+1. **Environments** `pre-release` e `producao` (Settings → Environments), com os
+   segredos `SERVIDOR_HOST`, `SERVIDOR_USUARIO`, `SERVIDOR_CHAVE_SSH`,
+   `SERVIDOR_KNOWN_HOSTS` e as variáveis `URL_SAUDE`, `SERVIDOR_BASE`,
+   `SERVIDOR_SERVICOS`, `SERVIDOR_SAUDE_LOCAL` (e `SERVIDOR_PORTA` se o SSH não
+   for a 22), com os valores que o script imprimiu. Em `producao`, restrinja as
+   branches de deploy a `release` e `hotfix/*`.
+2. **Environment** `aprovacao-hotfix`, sem segredos, com **revisores
+   obrigatórios**: é o gate humano do hotfix.
+3. **Branches** `pre-release` e `release`: criar uma vez a partir do commit que
+   está (ou estará) em produção. Rulesets:
+   - `pre-release`: bloquear push forçado e exclusão; só o GitHub Actions
+     atualiza (bypass para o app GitHub Actions; ninguém mais faz push).
+   - `release`: exigir PR com **1 aprovação**, exigir o status `pre-release`,
+     permitir só **merge commit**, bloquear push forçado e exclusão.
+4. Settings → Actions → General: marcar **Allow GitHub Actions to create and
+   approve pull requests** (o PR pre-release → release é aberto pelo workflow).
+5. Por último, a variável de repositório `CD_HABILITADO=true`. Antes dela, todo
+   deploy falha dizendo o que falta.
+
+### 7.5 Operação
+
+| Situação | O que fazer |
+| --- | --- |
+| Publicar em produção | Revisar o PR `pre-release → release`, testar a pré-release, aprovar e fazer merge com **Create a merge commit** |
+| Rodar a promoção de novo (ex.: servidor corrigido) | Actions → Deploy na pré-release → Run workflow |
+| Repetir o deploy de produção | Actions → Release → Run workflow (branch `release`) |
+| Produção com comportamento errado | Actions → Rollback (ambiente, versão opcional, motivo). Abre uma issue de incidente |
+| Urgência que não espera a noite | Fluxo de hotfix (`hotfix.yaml`), com aprovação no Environment `aprovacao-hotfix` |
+| Primeiro administrador | Comando impresso no fim do `preparar-servidor.sh` |
+
+O rollback volta o **código**, não o banco. Por isso as migrations seguem
+expand/contract: a versão anterior precisa funcionar com o schema novo.

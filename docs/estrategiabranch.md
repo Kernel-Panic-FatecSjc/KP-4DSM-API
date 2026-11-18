@@ -44,9 +44,9 @@ A filosofia é simples: a branch `main` representa o código mais atual e já va
 
 6. **Publicação em Produção**
 
-   - Ao final da sprint, uma **release** é gerada a partir da `main`, com **tag de versão** e **changelog**.
-   - O release candidate passa por testes de regressão e smoke test. Se falhar, o problema retorna ao fluxo de desenvolvimento.
-   - Aprovado o release candidate, é feito o deploy em produção, seguido de um **health check**.
+   - A main não vai direto para a produção. Toda noite a **suíte noturna** testa o HEAD da main; verde, ele vira candidato (`candidato/AAAA-MM-DD`) e o workflow **Deploy na pré-release** avança a branch `pre-release` até esse SHA (só fast-forward) e instala o pacote no ambiente de pré-release. Merge feito durante o dia espera a noite seguinte.
+   - Com a pré-release saudável, o workflow abre (ou atualiza) o PR `pre-release → release`, com os commits, as migrations e um checklist.
+   - **Gate manual:** o merge desse PR exige aprovação humana e o status `pre-release` verde. O merge (sempre **merge commit**) dispara a **Release**: deploy em produção do mesmo pacote, health check e, se tudo passou, a tag `versao/AAAA-MM-DD` com o changelog.
 
 7. **Rollback e Hotfixes**
 
@@ -75,6 +75,9 @@ Tudo entra na `main` por PR, sem exceção: não existe push direto, nem de docu
 | Staging opcional, por label do revisor | `.github/workflows/publicar-staging.yaml` | nenhum (não bloqueia o merge) |
 | Sem push direto e sem push forçado na `main` | Rulesets da `main` | nenhum |
 | Tarefa da branch vai para Concluído no Jira quando o PR é mesclado (menos `revert`) | `.github/workflows/concluir-tarefa.yaml` | nenhum (roda depois do merge) |
+| Só candidato da suíte noturna chega à `pre-release` | `.github/workflows/deploy-pre-release.yaml` + `verificar-candidato.yaml` | nenhum (roda depois da noturna) |
+| Produção só pelo PR `pre-release → release` aprovado, com a pré-release verde | Ruleset da `release` + `.github/workflows/release.yaml` | status `pre-release` |
+| Rollback manual e hotfix com aprovação | `.github/workflows/rollback.yaml` e `hotfix.yaml` | nenhum |
 
 **Staging por label.** O revisor coloca o label `staging` no PR; o workflow tira o label dos outros PRs abertos e publica na branch `staging` o PR integrado com a `main` atual. O label posto pelo autor é removido com um aviso. Enquanto o label estiver, cada push novo no PR republica. Não há aceite nem status: staging serve só para testar durante a revisão.
 
