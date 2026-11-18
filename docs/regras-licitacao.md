@@ -19,7 +19,7 @@ Este documento é a base para revisar a **US12** com o PO (ver [Proposta de text
 
 **Consistência** (trigger adiado para o commit, além da checagem no serviço): parâmetro, tipo de parâmetro e alerta ativo são da mesma licitação da estação.
 
-A migration `20261024120000_modelo_por_licitacao` leva o que já existir para uma licitação `LEGADO` (estações, tipos, alertas, medidas e leituras com erro), converte `ADMINISTRADOR` em `ADMIN_TECSUS` e `MONITOR` em `USUARIO_LICITACAO` da `LEGADO`, e descarta contratos e órgãos (eram dados de teste).
+A migration `20261024120000_modelo_por_licitacao` (consolidada na Big Migration do SCRUM-148; o original está no histórico do git) levava o que já existir para uma licitação `LEGADO` (estações, tipos, alertas, medidas e leituras com erro), converte `ADMINISTRADOR` em `ADMIN_TECSUS` e `MONITOR` em `USUARIO_LICITACAO` da `LEGADO`, e descarta contratos e órgãos (eram dados de teste).
 
 ## Perfis
 
