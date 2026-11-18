@@ -26,6 +26,9 @@ permissions:
 jobs:
   revisao:
     name: Revisão exigida
+    # O PR pre-release → release é de promoção, aberto pelo workflow: o gate
+    # dele é a ruleset da release (aprovação + status pre-release).
+    if: github.event.pull_request.base.ref != 'release'
     # Roda em toda edição, até só de descrição: com cancel-in-progress, a
     # edição cancela o run do push e, se este fosse pulado, o commit novo
     # ficaria sem o status revisao/aprovada. Rodar de novo custa segundos.
