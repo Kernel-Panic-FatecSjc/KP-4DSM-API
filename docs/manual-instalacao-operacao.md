@@ -464,11 +464,11 @@ comando que o script imprime no final.
      `pre-release` obrigatório, só **merge commit**, sem push forçado e sem exclusão.
 4. **Allow GitHub Actions to create and approve pull requests**, primeiro na
    organização e depois no repositório (Settings → Actions → General). Sem isso, o
-   PR `pre-release → release` não é aberto.
+   PR `pre-release → release` não é aberto. **Configurado** nos dois.
 5. **Repositório público e runner próprio:** em Settings → Actions → General,
    "Fork pull request workflows from outside collaborators" = **Require approval
    for all outside collaborators**. Nunca aprove execução de PR de fork que mexa em
-   `.github/workflows`: ele poderia rodar no runner do servidor.
+   `.github/workflows`: ele poderia rodar no runner do servidor. **Configurado.**
 6. Variáveis de repositório: `CD_HABILITADO=true` quando o runner da pré-release
    estiver online, e `PRODUCAO_AUTOMATICA=true` só se a prefeitura registrar um
    runner na produção.
