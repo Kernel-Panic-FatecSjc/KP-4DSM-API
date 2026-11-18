@@ -3,15 +3,18 @@
 # "Build once, deploy many": o mesmo arquivo vai para todos os ambientes, só a
 # configuração (Environment do GitHub / .env da VM) muda. Nada de segredo aqui.
 #
+# O instalador (infra/servidor/deploy.ps1) vai junto: a versão do script de
+# instalação acompanha a versão do sistema.
+#
 # Uso (da raiz, com os builds já feitos):
 #   bash .github/scripts/empacotar.sh <sha> [pasta de saída]
 # Saída: pacote-<sha>.tar.gz e pacote-<sha>.tar.gz.sha256
 #
-# shortcut: o front sai com o NEXT_PUBLIC_API_URL do build embutido (o Next.js
-# grava variáveis NEXT_PUBLIC_* no bundle). Enquanto pré-release e produção
-# tiverem URLs de API diferentes, o pacote do front não é idêntico entre elas.
-# Resolver com URL relativa (proxy reverso na mesma origem) ou configuração lida
-# em tempo de execução, antes da Fase 4.
+# URL da API: o CI constrói o front com NEXT_PUBLIC_API_URL=/api (relativa).
+# O proxy do servidor (infra/servidor/Caddyfile) atende /api na mesma origem do
+# site, então o pacote não carrega domínio nenhum e é idêntico entre pré-release
+# e produção. Quem definir a variável do repositório NEXT_PUBLIC_API_URL com uma
+# URL absoluta perde essa propriedade.
 
 set -euo pipefail
 
@@ -39,7 +42,7 @@ EOF
 # mesmas versões. Cache do Next.js e mapas de fonte do front ficam de fora.
 (cd "$RAIZ" && tar -czf "$SAIDA/$NOME" \
   --exclude="$WEB/.next/cache" \
-  VERSAO .nvmrc \
+  VERSAO .nvmrc infra/servidor \
   "$API/dist" "$API/dist-servicos" "$API/prisma" "$API/prisma7.config.ts" \
   "$API/package.json" "$API/package-lock.json" \
   "$WEB/.next" "$WEB/public" "$WEB/package.json" "$WEB/package-lock.json" "$WEB/next.config.ts")

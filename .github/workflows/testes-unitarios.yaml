@@ -9,7 +9,7 @@ name: Testes unitários na branch
 
 on:
   push:
-    branches-ignore: [main, staging]
+    branches-ignore: [main, staging, pre-release, release]
 
 permissions:
   contents: read

@@ -1,0 +1,22 @@
+<!-- Gerado por infra/servidor/preparar-servidor.ps1 a partir de servico.xml.modelo (WinSW 2.12). -->
+<service>
+  <id>@ID@</id>
+  <name>DATA PANIC @NOME@ (@PREFIXO@)</name>
+  <description>DATA PANIC: @NOME@. Versão no ar em @BASE@\current.</description>
+  <executable>@EXEC@</executable>
+  <arguments>@ARGS@</arguments>
+  <workingdirectory>@DIR@</workingdirectory>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <onfailure action="restart" delay="3 sec"/>
+  <onfailure action="restart" delay="10 sec"/>
+  <resetfailure>1 hour</resetfailure>
+  <!-- A ingestão grava o lote em memória ao encerrar (prazo de 8 s). -->
+  <stoptimeout>15 sec</stoptimeout>
+  <logpath>@LOGS@</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+  @CONTA@
+</service>

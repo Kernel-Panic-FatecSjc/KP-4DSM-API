@@ -1,14 +1,25 @@
-name: Deploy na VM
+name: Deploy no servidor
 
-# RASCUNHO, NÃO VALIDADO: depende da VM (Roadmap DevOps, Fase 4).
-# Reutilizável: deploy-pre-release.yaml, release.yaml e hotfix.yaml chamam
-# este workflow para instalar o MESMO pacote-<sha> em cada ambiente; muda só a
-# configuração, que vem do Environment (segredos SSH) e do .env da VM.
-# Travado por vars.CD_HABILITADO == 'true': enquanto a VM não existir, o job
-# falha com a explicação em vez de tentar conectar.
+# Reutilizável: deploy-pre-release.yaml, release.yaml, hotfix.yaml e
+# rollback.yaml chamam este workflow para instalar o MESMO pacote-<sha> num
+# ambiente, ou voltar uma versão.
 #
-# Environment (configurado pelo admin): VM_HOST, VM_USUARIO, VM_CHAVE_SSH
-# (segredos) e URL_SAUDE (variável, ex.: https://api.exemplo/saude).
+# O servidor é Windows Server 2025 (a prefeitura não usa Linux; a pré-release é
+# uma VM nossa, igual à produção). A instalação roda NO PRÓPRIO SERVIDOR, pelo
+# runner do GitHub registrado nele com o rótulo datapanic-<ambiente>: o runner
+# só faz conexões de saída (HTTPS), então não é preciso abrir porta nem SSH.
+# Quem instala é o infra/servidor/deploy.ps1, que vai dentro do pacote.
+#
+# Configuração do ambiente: só o Environment do GitHub e o .env do servidor
+# (manual de instalação, seção 7). Variáveis do Environment:
+#   URL_SAUDE             pública, ex.: https://pre.datapanic.exemplo/api/saude
+#   SERVIDOR_BASE         padrão C:\datapanic
+#   SERVIDOR_SERVICOS     padrão "datapanic-api datapanic-ingestao datapanic-tratamento datapanic-front"
+#   SERVIDOR_SAUDE_LOCAL  padrão: /saude da API, da ingestão e do tratamento em localhost
+#
+# Travas: vars.CD_HABILITADO == 'true' liga o CD; produção automática só com
+# vars.PRODUCAO_AUTOMATICA == 'true' (runner no servidor da prefeitura). Sem
+# ela, a produção é instalada à mão a partir do GitHub Release (release.yaml).
 
 on:
   workflow_call:
@@ -17,91 +28,187 @@ on:
         type: string
         required: true
       ambiente:
-        description: pre-release ou producao (nome do Environment)
+        description: pre-release ou producao (nome do Environment e sufixo do rótulo do runner)
         type: string
         required: true
+      acao:
+        description: deploy (instala o pacote) ou rollback (volta para uma versão já instalada)
+        type: string
+        default: deploy
       run_id:
-        description: Run que publicou o artefato pacote-<sha> (vazio = a suíte noturna desse SHA; "atual" = o run que chamou, caso do hotfix)
+        description: Run que publicou o pacote-<sha> (vazio = o mais recente com esse nome; "atual" = o run que chamou, caso do hotfix)
         type: string
         default: ''
 
 jobs:
-  deploy:
-    name: Deploy em ${{ inputs.ambiente }}
+  # Roda no GitHub (Linux): se algo impede o deploy, falha aqui com a
+  # explicação, em vez de deixar um job parado na fila esperando um runner.
+  verificar:
+    name: Verificar o pedido
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: ${{ inputs.ambiente }}
+    timeout-minutes: 3
     permissions:
       actions: read
-      statuses: write
-    concurrency:
-      group: deploy-${{ inputs.ambiente }}
-      cancel-in-progress: false
-
+    outputs:
+      run_id: ${{ steps.pacote.outputs.run_id }}
     steps:
       - name: CD habilitado?
-        if: vars.CD_HABILITADO != 'true'
+        env:
+          CD_HABILITADO: ${{ vars.CD_HABILITADO }}
+          PRODUCAO_AUTOMATICA: ${{ vars.PRODUCAO_AUTOMATICA }}
+          AMBIENTE: ${{ inputs.ambiente }}
+          ACAO: ${{ inputs.acao }}
+          SHA: ${{ inputs.sha }}
         run: |
-          echo "::error::CD ainda é rascunho: depende da VM. Quando ela existir, o admin cria os Environments e define a variável CD_HABILITADO=true (wiki, Roadmap DevOps, Ações manuais)."
-          exit 1
+          if [ "$CD_HABILITADO" != "true" ]; then
+            echo "::error::CD desligado. Quando o runner do ambiente \"$AMBIENTE\" estiver registrado e o Environment preenchido, o admin define a variável de repositório CD_HABILITADO=true (manual de instalação, seção 7)."
+            exit 1
+          fi
+          if [ "$AMBIENTE" = producao ] && [ "$PRODUCAO_AUTOMATICA" != "true" ]; then
+            echo "::error::Produção em modo manual (sem runner no servidor da prefeitura). Instalação: GitHub Release da versão, com o deploy.ps1 (manual, seção 7.6). Rollback: C:\\datapanic\\bin\\deploy.ps1 -Rollback no servidor."
+            exit 1
+          fi
+          if [ -n "$SHA" ] || [ "$ACAO" = deploy ]; then
+            printf '%s' "$SHA" | grep -qE '^[0-9a-f]{40}$' \
+              || { echo "::error::\"$SHA\" não é um SHA completo de 40 caracteres."; exit 1; }
+          fi
 
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.sha }}
-
-      # Hotfix: o pacote saiu do ci.yaml chamado neste mesmo run.
-      - name: Baixar pacote-${{ inputs.sha }} deste run
-        if: inputs.run_id == 'atual'
-        uses: actions/download-artifact@v4
-        with:
-          name: pacote-${{ inputs.sha }}
-          path: pacote
-
-      - name: Baixar pacote-${{ inputs.sha }} de outro run
-        if: inputs.run_id != 'atual'
+      # O pacote é publicado pelo CI no push da main e pela suíte noturna. Busca
+      # pelo nome do artefato, e não pelo run: a suíte que pulou (HEAD já verde)
+      # não gera pacote.
+      - id: pacote
+        if: inputs.acao == 'deploy' && inputs.run_id != 'atual'
         env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ inputs.sha }}
           RUN_ID: ${{ inputs.run_id }}
         run: |
           if [ -z "$RUN_ID" ]; then
-            RUN_ID=$(gh run list --workflow suite-noturna.yaml --commit "$SHA" --status success \
-              --json databaseId --jq '.[0].databaseId')
+            RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=pacote-$SHA&per_page=20" \
+              --jq '[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | last | .workflow_run.id // empty')
           fi
-          [ -n "$RUN_ID" ] || { echo "::error::Nenhum run com pacote-$SHA. Rode a suíte noturna nesse commit."; exit 1; }
-          gh run download "$RUN_ID" -n "pacote-$SHA" -D pacote
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::Nenhum artefato pacote-$SHA válido (o CI publica no push da main; artefato expira em 90 dias). Rode Actions > Suíte noturna > Run workflow com \"forcar\" para gerar de novo."
+            exit 1
+          fi
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Conferir o SHA-256
-        run: cd pacote && sha256sum -c "pacote-${{ inputs.sha }}.tar.gz.sha256"
+  instalar:
+    name: ${{ inputs.acao == 'rollback' && 'Rollback' || 'Deploy' }} em ${{ inputs.ambiente }}
+    needs: verificar
+    runs-on: [self-hosted, Windows, 'datapanic-${{ inputs.ambiente }}']
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.ambiente }}
+      url: ${{ vars.URL_SAUDE }}
+    permissions:
+      actions: read
+    # Um deploy por ambiente; nunca cancelado no meio (migration pela metade).
+    concurrency:
+      group: deploy-${{ inputs.ambiente }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: powershell
+    env:
+      SHA: ${{ inputs.sha }}
+      SERVIDOR_BASE: ${{ vars.SERVIDOR_BASE || 'C:\datapanic' }}
+      SERVIDOR_SERVICOS: ${{ vars.SERVIDOR_SERVICOS || 'datapanic-api datapanic-ingestao datapanic-tratamento datapanic-front' }}
+      SERVIDOR_SAUDE_LOCAL: ${{ vars.SERVIDOR_SAUDE_LOCAL || 'http://localhost:3001/saude http://localhost:3002/saude http://localhost:3003/saude' }}
+      URL_SAUDE: ${{ vars.URL_SAUDE }}
+      DEPLOY_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
-      - name: Instalar na VM
+    steps:
+      - name: Environment configurado?
         env:
-          SHA: ${{ inputs.sha }}
-          VM_HOST: ${{ secrets.VM_HOST }}
-          VM_USUARIO: ${{ secrets.VM_USUARIO }}
-          VM_CHAVE_SSH: ${{ secrets.VM_CHAVE_SSH }}
+          AMBIENTE: ${{ inputs.ambiente }}
         run: |
-          install -m 600 /dev/null ~/.ssh_vm && printf '%s\n' "$VM_CHAVE_SSH" > ~/.ssh_vm
-          ssh_() { ssh -i ~/.ssh_vm -o StrictHostKeyChecking=accept-new "$VM_USUARIO@$VM_HOST" "$@"; }
-          scp -i ~/.ssh_vm -o StrictHostKeyChecking=accept-new \
-            "pacote/pacote-$SHA.tar.gz" .github/scripts/deploy-vm.sh "$VM_USUARIO@$VM_HOST:/tmp/"
-          ssh_ "bash /tmp/deploy-vm.sh $SHA /tmp/pacote-$SHA.tar.gz"
+          if (-not $env:URL_SAUDE) {
+            Write-Host "::error::Falta a variável URL_SAUDE no Environment $env:AMBIENTE (manual de instalação, seção 7.4)."
+            exit 1
+          }
+
+      # Hotfix: o pacote saiu do ci.yaml chamado neste mesmo run.
+      - name: Baixar pacote-${{ inputs.sha }} deste run
+        if: inputs.acao == 'deploy' && inputs.run_id == 'atual'
+        uses: actions/download-artifact@v4
+        with:
+          name: pacote-${{ inputs.sha }}
+          path: ${{ runner.temp }}/pacote
+
+      - name: Baixar pacote-${{ inputs.sha }}
+        if: inputs.acao == 'deploy' && inputs.run_id != 'atual'
+        uses: actions/download-artifact@v4
+        with:
+          name: pacote-${{ inputs.sha }}
+          path: ${{ runner.temp }}/pacote
+          run-id: ${{ needs.verificar.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Instalar
+        if: inputs.acao == 'deploy'
+        run: |
+          $pasta = Join-Path $env:RUNNER_TEMP 'pacote'
+          $pacote = Join-Path $pasta "pacote-$env:SHA.tar.gz"
+          # O instalador vem do próprio pacote: a versão do script acompanha a
+          # versão do sistema.
+          tar -xzf $pacote -C $pasta infra/servidor/deploy.ps1
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::O pacote não tem infra/servidor/deploy.ps1."; exit 1 }
+          & (Join-Path $pasta 'infra\servidor\deploy.ps1') -Sha $env:SHA -Pacote $pacote `
+            -Base $env:SERVIDOR_BASE -Servicos $env:SERVIDOR_SERVICOS -Saude $env:SERVIDOR_SAUDE_LOCAL `
+            -DeployPor $env:GITHUB_ACTOR -DeployRun $env:DEPLOY_RUN
+          exit $LASTEXITCODE
+
+      - name: Voltar a versão
+        if: inputs.acao == 'rollback'
+        run: |
+          # A cópia em bin\ não depende da versão que está quebrada.
+          $script = Join-Path $env:SERVIDOR_BASE 'bin\deploy.ps1'
+          if (-not (Test-Path $script)) { Write-Host "::error::Falta ${script}: o ambiente nunca recebeu um deploy."; exit 1 }
+          & $script -Rollback -Sha $env:SHA -Base $env:SERVIDOR_BASE -Servicos $env:SERVIDOR_SERVICOS `
+            -Saude $env:SERVIDOR_SAUDE_LOCAL -DeployPor $env:GITHUB_ACTOR -DeployRun $env:DEPLOY_RUN
+          exit $LASTEXITCODE
 
       - name: Smoke na /saude pública
-        env:
-          URL_SAUDE: ${{ vars.URL_SAUDE }}
-        run: curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "$URL_SAUDE"
+        run: |
+          for ($i = 0; $i -lt 10; $i++) {
+            try {
+              $r = Invoke-WebRequest -Uri $env:URL_SAUDE -UseBasicParsing -TimeoutSec 10
+              if ($r.StatusCode -eq 200) { Write-Host $r.Content; exit 0 }
+            } catch { }
+            Start-Sleep -Seconds 3
+          }
+          Write-Host "::error::$env:URL_SAUDE não respondeu. O sistema está saudável por dentro (o deploy.ps1 conferiu), então olhe o Caddy, o DNS e o firewall."
+          exit 1
 
-      - name: Status deploy no commit
+      - name: Limpar
         if: always()
-        env:
+        run: Remove-Item (Join-Path $env:RUNNER_TEMP 'pacote') -Recurse -Force -ErrorAction SilentlyContinue
+
+  # De volta no GitHub: o runner do servidor não precisa de permissão de
+  # escrita no repositório.
+  status:
+    name: Status no commit
+    needs: [verificar, instalar]
+    if: always() && needs.verificar.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      statuses: write
+    steps:
+      - env:
           GH_TOKEN: ${{ github.token }}
           SHA: ${{ inputs.sha }}
           AMBIENTE: ${{ inputs.ambiente }}
-          RESULTADO: ${{ job.status }}
+          ACAO: ${{ inputs.acao }}
+          RESULTADO: ${{ needs.instalar.result }}
           URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          [ "$RESULTADO" = success ] && estado=success || estado=failure
-          gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state="$estado" -f context="$AMBIENTE" \
-            -f target_url="$URL_RUN" -f description="Deploy em $AMBIENTE: $RESULTADO" > /dev/null
-          echo "Deploy de \`${SHA:0:7}\` em **$AMBIENTE**: $RESULTADO, por @$GITHUB_ACTOR em $(date -u +%FT%TZ)." >> "$GITHUB_STEP_SUMMARY"
+          # O status "pre-release" verde é o que libera o PR para a release.
+          if [ "$ACAO" = deploy ]; then
+            [ "$RESULTADO" = success ] && estado=success || estado=failure
+            gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state="$estado" -f context="$AMBIENTE" \
+              -f target_url="$URL_RUN" -f description="Deploy em $AMBIENTE: $RESULTADO" > /dev/null
+          fi
+          echo "**$ACAO** de \`${SHA:0:7}\` em **$AMBIENTE**: $RESULTADO, por @$GITHUB_ACTOR em $(date -u +%FT%TZ)." >> "$GITHUB_STEP_SUMMARY"
+          [ "$RESULTADO" = success ]

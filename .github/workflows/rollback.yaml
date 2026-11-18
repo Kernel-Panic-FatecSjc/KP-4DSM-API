@@ -1,0 +1,107 @@
+name: Rollback
+
+# Volta o CÓDIGO de um ambiente para uma versão já instalada no servidor (as 5
+# mais recentes ficam em C:\datapanic\releases), pelo runner do servidor. Não desfaz migrations: por isso elas
+# seguem expand/contract (política de banco, seção 4).
+#
+# O deploy já faz rollback sozinho quando a /saude falha. Este é o manual: o
+# deploy passou na saúde, mas o comportamento está errado em produção.
+# Depois do rollback: issue de incidente e correção pelo fluxo normal (ou Hotfix).
+
+on:
+  workflow_dispatch:
+    inputs:
+      ambiente:
+        description: Ambiente
+        type: choice
+        options: [producao, pre-release]
+        required: true
+      sha:
+        description: Versão para onde voltar (vazio = a instalada antes da atual)
+        type: string
+        default: ''
+      motivo:
+        description: O que está errado (uma frase)
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  validar:
+    name: Validar o pedido
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.v.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: v
+        env:
+          ENTRADA: ${{ inputs.sha }}
+          MOTIVO: ${{ inputs.motivo }}
+          AMBIENTE: ${{ inputs.ambiente }}
+          PRODUCAO_AUTOMATICA: ${{ vars.PRODUCAO_AUTOMATICA }}
+        run: |
+          [ "${#MOTIVO}" -ge 10 ] || { echo "::error::Descreva o motivo em uma frase."; exit 1; }
+          if [ "$AMBIENTE" = producao ] && [ "$PRODUCAO_AUTOMATICA" != true ]; then
+            echo "::error::Produção em modo manual: o rollback é feito no servidor, como Administrador: C:\\datapanic\\bin\\deploy.ps1 -Rollback (manual, seção 7.6)."
+            exit 1
+          fi
+          if [ -n "$ENTRADA" ]; then
+            sha=$(git rev-parse --verify --quiet "$ENTRADA^{commit}") \
+              || { echo "::error::\"$ENTRADA\" não é um commit deste repositório."; exit 1; }
+          else
+            sha=""
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  rollback:
+    needs: validar
+    permissions:
+      actions: read
+      contents: read
+      statuses: write
+    uses: ./.github/workflows/deploy-vm.yaml
+    with:
+      # Vazio vira "a anterior" no servidor; o checkout do deploy-vm usa o HEAD.
+      sha: ${{ needs.validar.outputs.sha }}
+      ambiente: ${{ inputs.ambiente }}
+      acao: rollback
+    secrets: inherit
+
+  registrar:
+    name: Issue de incidente
+    needs: [validar, rollback]
+    if: always() && needs.validar.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          AMBIENTE: ${{ inputs.ambiente }}
+          SHA: ${{ needs.validar.outputs.sha }}
+          MOTIVO: ${{ inputs.motivo }}
+          RESULTADO: ${{ needs.rollback.result }}
+          URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create incidente --color D93F0B --description "Registro de incidente / pós-hotfix" 2>/dev/null || true
+          gh issue create --label incidente --title "Rollback em $AMBIENTE: $MOTIVO" --body "| | |
+          |---|---|
+          | Quem | @$GITHUB_ACTOR |
+          | Quando | $(date -u +%FT%TZ) |
+          | Ambiente | $AMBIENTE |
+          | Voltou para | \`${SHA:-versão anterior}\` |
+          | Resultado | $RESULTADO ([run]($URL_RUN)) |
+
+          ### A preencher
+          - [ ] Linha do tempo: quando quebrou, quando detectamos, quando agimos
+          - [ ] Causa raiz e por que o CI, a suíte noturna e a pré-release não pegaram
+          - [ ] Correção (PR normal ou Hotfix) e tarefa no Jira"

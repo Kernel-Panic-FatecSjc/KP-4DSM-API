@@ -1,47 +1,152 @@
 name: Release
 
-# RASCUNHO, NÃO VALIDADO: depende da VM (Roadmap DevOps, Fase 5).
-# Só manual. Leva para a produção o MESMO pacote que passou na pré-release:
-# exige o status "pre-release" verde no SHA. O Environment "producao" tem
-# revisores obrigatórios (configuração do admin): o job espera a aprovação
-# humana antes de conectar na VM.
+# Produção (SCRUM-29). Disparada pelo merge do PR pre-release → release, que é
+# o gate manual: a ruleset da release exige aprovação humana e o status
+# "pre-release" verde, e só aceita merge commit. O deploy usa o SHA que veio da
+# pre-release (o segundo pai do merge), porque é ele que tem pacote e que passou
+# na pré-release; o merge commit em si nunca foi testado.
+#
+# Depois do deploy: tag versao/AAAA-MM-DD e GitHub Release com o changelog
+# (commits desde a versão anterior).
+#
+# Manual (Actions > Release > Run workflow, branch release): repete o deploy de
+# um SHA que JÁ entrou na release, ex. depois de corrigir o servidor. Não serve
+# para pular o gate: SHA fora da release é recusado.
 
 on:
+  push:
+    branches: [release]
   workflow_dispatch:
     inputs:
       sha:
-        description: SHA que já passou na pré-release
+        description: SHA já mesclado na release (vazio = o último que entrou)
         type: string
-        required: true
+        default: ''
 
 permissions: {}
 
 jobs:
-  pre-release-ok:
-    name: Passou na pré-release
+  validar:
+    name: Passou pelo gate e pela pré-release
+    # Criar a branch release (uma vez, pelo admin) não é deploy.
+    if: github.event_name != 'push' || !github.event.created
     runs-on: ubuntu-latest
     timeout-minutes: 3
     permissions:
+      contents: read
       statuses: read
+    outputs:
+      sha: ${{ steps.v.outputs.sha }}
     steps:
-      - env:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: v
+        env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ inputs.sha }}
+          ENTRADA: ${{ inputs.sha }}
         run: |
-          estado=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/status" \
-            --jq '.statuses[] | select(.context == "pre-release") | .state' | head -n 1) || estado=""
-          if [ "$estado" != "success" ]; then
-            echo "::error::${SHA:0:7} não passou na pré-release (status: ${estado:-nenhum}). Rode Actions > Deploy na pré-release com este SHA primeiro. Urgência em produção: use o Hotfix."
+          if [ "$GITHUB_REF_NAME" != release ]; then
+            echo "::error::Rode a partir da branch release (\"Use workflow from\"). Urgência em produção: use o Hotfix."
             exit 1
           fi
+          if [ -n "$ENTRADA" ]; then
+            sha=$(git rev-parse --verify --quiet "$ENTRADA^{commit}") \
+              || { echo "::error::\"$ENTRADA\" não é um commit deste repositório."; exit 1; }
+            git merge-base --is-ancestor "$sha" HEAD \
+              || { echo "::error::${sha:0:7} não está na release. Para chegar lá, ele passa pela pré-release e pelo PR aprovado."; exit 1; }
+          else
+            # Merge commit: o segundo pai é o topo da pre-release.
+            sha=$(git rev-parse --verify --quiet HEAD^2) || {
+              echo "::error::O último commit da release não é um merge commit. O PR pre-release → release precisa ser mesclado com \"Create a merge commit\" (squash e rebase criam um commit que não tem pacote). Configure a ruleset da release para aceitar só merge commit."
+              exit 1
+            }
+          fi
+          estado=$(gh api "repos/$GITHUB_REPOSITORY/commits/$sha/status" \
+            --jq '.statuses[] | select(.context == "pre-release") | .state' | head -n 1) || estado=""
+          if [ "$estado" != "success" ]; then
+            echo "::error::${sha:0:7} não passou na pré-release (status: ${estado:-nenhum}). Ele chega na pré-release pela suíte noturna (Deploy na pré-release). Urgência em produção: use o Hotfix."
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Release de \`${sha:0:7}\`." >> "$GITHUB_STEP_SUMMARY"
 
+  # Automático só se a prefeitura registrou um runner no servidor dela
+  # (vars.PRODUCAO_AUTOMATICA). Sem isso, o job "publicar" entrega o pacote
+  # aprovado no GitHub Release e a TI instala com o mesmo deploy.ps1 ensaiado na
+  # pré-release (manual de instalação, seção 7.6).
   deploy:
-    needs: pre-release-ok
+    needs: validar
+    if: vars.PRODUCAO_AUTOMATICA == 'true'
     permissions:
       actions: read
+      contents: read
       statuses: write
     uses: ./.github/workflows/deploy-vm.yaml
     with:
-      sha: ${{ inputs.sha }}
+      sha: ${{ needs.validar.outputs.sha }}
       ambiente: producao
     secrets: inherit
+
+  publicar:
+    name: Versão, changelog e pacote
+    needs: [validar, deploy]
+    # Deploy automático com falha: não publica versão (o rollback já voltou).
+    if: always() && needs.validar.result == 'success' && (needs.deploy.result == 'success' || needs.deploy.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.validar.outputs.sha }}
+          MODO: ${{ needs.deploy.result == 'success' && 'automatico' || 'manual' }}
+        run: |
+          if existente=$(git tag --points-at "$SHA" -l 'versao/*' | head -n 1) && [ -n "$existente" ]; then
+            echo "\`${SHA:0:7}\` já é a \`$existente\`: redeploy, sem versão nova." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # O pacote aprovado (o mesmo da pré-release) vai anexado à versão: é
+          # dele que a TI instala no modo manual, e fica como registro.
+          run_id=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=pacote-$SHA&per_page=20" \
+            --jq '[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | last | .workflow_run.id // empty')
+          [ -n "$run_id" ] || { echo "::error::Artefato pacote-$SHA expirou ou não existe. Rode a suíte noturna com \"forcar\" nesse SHA."; exit 1; }
+          gh run download "$run_id" -n "pacote-$SHA" -D anexos
+          (cd anexos && sha256sum -c "pacote-$SHA.tar.gz.sha256")
+          tar -xzf "anexos/pacote-$SHA.tar.gz" -C anexos infra/servidor/deploy.ps1
+          mv anexos/infra/servidor/deploy.ps1 anexos/deploy.ps1
+
+          anterior=$(git tag -l 'versao/*' --sort=-creatordate | head -n 1)
+          dia=$(TZ=America/Sao_Paulo date +%F)
+          tag="versao/$dia"; n=2
+          while git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; do
+            tag="versao/$dia.$n"; n=$((n + 1))
+          done
+          git tag "$tag" "$SHA"
+          git push origin "refs/tags/$tag"
+
+          if [ "$MODO" = manual ]; then
+            cabecalho="**Instalação manual na produção** (manual de instalação, seção 7.6). No servidor, como Administrador, com os três arquivos abaixo na mesma pasta:
+
+          \`\`\`powershell
+          powershell -ExecutionPolicy Bypass -File .\\deploy.ps1 -Sha $SHA -Pacote .\\pacote-$SHA.tar.gz
+          \`\`\`
+          Se a /saude falhar, o script volta sozinho para a versão anterior."
+          else
+            cabecalho="Instalada automaticamente na produção."
+          fi
+          notas=$(gh api "repos/$GITHUB_REPOSITORY/releases/generate-notes" -f tag_name="$tag" -f target_commitish="$SHA" \
+            ${anterior:+-f previous_tag_name="$anterior"} --jq .body)
+          gh release create "$tag" --title "$tag" --target "$SHA" --latest \
+            --notes "$cabecalho
+
+          $notas" \
+            "anexos/pacote-$SHA.tar.gz" "anexos/pacote-$SHA.tar.gz.sha256" anexos/deploy.ps1
+          echo "Versão \`$tag\` publicada ($MODO; changelog desde ${anterior:-o início})." >> "$GITHUB_STEP_SUMMARY"

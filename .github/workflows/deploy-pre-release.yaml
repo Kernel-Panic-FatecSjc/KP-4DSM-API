@@ -1,37 +1,210 @@
 name: Deploy na pré-release
 
-# RASCUNHO, NÃO VALIDADO: depende da VM (Roadmap DevOps, Fase 4).
-# Só manual. Recebe o SHA de um candidato (tag candidato/AAAA-MM-DD), confere
-# que ele passou na suíte noturna e instala o pacote dele na pré-release, clone
-# da produção. É o ensaio das migrations: o migrate deploy roda aqui antes de
-# rodar na produção. Verde grava o status "pre-release" no commit, que a
-# release.yaml exige.
+# Promoção automática main → pre-release → PR para a release (SCRUM-29).
+#
+#   PR aprovado → merge na main → suíte noturna verde (status "suite-noturna" e
+#   tag candidato/AAAA-MM-DD) → ESTE workflow:
+#     1. confere o candidato (verificar-candidato.yaml);
+#     2. avança a branch pre-release até o SHA testado (só fast-forward);
+#     3. instala o pacote-<sha> no ambiente pre-release (deploy-vm.yaml), que
+#        grava o status "pre-release" no commit;
+#     4. abre (ou atualiza) o PR pre-release → release. O merge desse PR é o
+#        gate manual: a ruleset da release exige aprovação e o status
+#        "pre-release" verde. O merge dispara a release.yaml (produção).
+#
+# Nunca promove o HEAD da main: só o SHA que a suíte noturna testou. Um merge
+# feito durante o dia espera a noite seguinte.
+#
+# Manual (Actions > Deploy na pré-release > Run workflow): reprocessa um
+# candidato, ex. depois de corrigir a configuração do servidor. O SHA precisa
+# ter a suíte noturna verde do mesmo jeito.
 
 on:
+  workflow_run:
+    workflows: [Suíte noturna]
+    types: [completed]
+    branches: [main]
   workflow_dispatch:
     inputs:
       sha:
-        description: SHA do candidato (git rev-list -n 1 candidato/AAAA-MM-DD)
+        description: SHA do candidato (vazio = o candidato mais recente; ou git rev-list -n 1 candidato/AAAA-MM-DD)
         type: string
-        required: true
+        default: ''
 
 permissions: {}
 
+# Uma promoção por vez; a seguinte espera (nunca cancela um deploy no meio).
+concurrency:
+  group: promover-pre-release
+  cancel-in-progress: false
+
 jobs:
+  escolher:
+    name: Escolher o candidato
+    # Suíte vermelha não promove nada (a main-vermelha.yaml cuida do aviso).
+    # Com o CD desligado (sem VM), a promoção automática fica parada em vez de
+    # avançar a branch e falhar no deploy toda noite. O disparo manual roda e
+    # explica no deploy o que falta.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && vars.CD_HABILITADO == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.e.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - id: e
+        env:
+          ENTRADA: ${{ inputs.sha }}
+          SHA_SUITE: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          if [ -n "$SHA_SUITE" ]; then
+            sha=$SHA_SUITE
+          elif [ -n "$ENTRADA" ]; then
+            sha=$(git rev-parse --verify --quiet "$ENTRADA^{commit}") \
+              || { echo "::error::\"$ENTRADA\" não é um commit deste repositório."; exit 1; }
+          else
+            tag=$(git tag -l 'candidato/*' --sort=-creatordate | head -n 1)
+            [ -n "$tag" ] || { echo "::error::Ainda não há tag candidato/*. Rode Actions > Suíte noturna > Run workflow (branch main)."; exit 1; }
+            sha=$(git rev-list -n 1 "$tag")
+            echo "Candidato mais recente: $tag"
+          fi
+          git merge-base --is-ancestor "$sha" origin/main \
+            || { echo "::error::${sha:0:7} não está na main. Só commit da main vai para a pré-release (urgência: Hotfix)."; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Candidato: \`${sha:0:7}\`" >> "$GITHUB_STEP_SUMMARY"
+
   candidato:
+    needs: escolher
     permissions:
       statuses: read
     uses: ./.github/workflows/verificar-candidato.yaml
     with:
-      sha: ${{ inputs.sha }}
+      sha: ${{ needs.escolher.outputs.sha }}
+
+  promover:
+    name: Avançar a branch pre-release
+    needs: [escolher, candidato]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      statuses: read
+    outputs:
+      deploy: ${{ steps.p.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: p
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.escolher.outputs.sha }}
+        run: |
+          atual=$(git rev-parse --verify --quiet origin/pre-release || true)
+          if [ "$atual" = "$SHA" ]; then
+            estado=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/status" \
+              --jq '.statuses[] | select(.context == "pre-release") | .state' | head -n 1) || estado=""
+            if [ "$estado" = success ]; then
+              echo "deploy=false" >> "$GITHUB_OUTPUT"
+              echo "A pre-release já está em \`${SHA:0:7}\` e saudável: nada a promover." | tee -a "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "A pre-release já aponta para \`${SHA:0:7}\`, mas o deploy não ficou verde: instalando de novo." | tee -a "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$atual" ] && ! git merge-base --is-ancestor "$atual" "$SHA"; then
+            echo "::error::A pre-release (${atual:0:7}) não é ancestral de ${SHA:0:7}: alguém fez commit direto nela ou o candidato é mais antigo. A pre-release só recebe fast-forward da main; confira a ruleset da branch e rode de novo com um candidato mais novo."
+            exit 1
+          else
+            # Push sem --force: se não for fast-forward, o Git recusa.
+            git push origin "$SHA:refs/heads/pre-release"
+            echo "pre-release: \`${atual:0:7}\` → \`${SHA:0:7}\`" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "deploy=true" >> "$GITHUB_OUTPUT"
 
   deploy:
-    needs: candidato
+    needs: [escolher, promover]
+    if: needs.promover.outputs.deploy == 'true'
     permissions:
       actions: read
+      contents: read
       statuses: write
     uses: ./.github/workflows/deploy-vm.yaml
     with:
-      sha: ${{ inputs.sha }}
+      sha: ${{ needs.escolher.outputs.sha }}
       ambiente: pre-release
     secrets: inherit
+
+  pr-release:
+    name: PR pre-release → release
+    needs: [escolher, promover, deploy]
+    # Também roda quando o deploy foi pulado (pre-release já saudável), para
+    # garantir que o PR existe.
+    if: always() && needs.promover.result == 'success' && (needs.deploy.result == 'success' || needs.deploy.result == 'skipped')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.escolher.outputs.sha }}
+          URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if ! git rev-parse --verify --quiet origin/release > /dev/null; then
+            echo "::error::A branch release não existe. O admin cria uma vez, apontando para o que está em produção (ou para o primeiro commit da main) e configura a ruleset: manual de instalação, seção 7.4."
+            exit 1
+          fi
+          if git merge-base --is-ancestor "$SHA" origin/release; then
+            echo "\`${SHA:0:7}\` já está na release: nada a abrir." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          tag=$(git tag --points-at "$SHA" -l 'candidato/*' | tail -n 1)
+          base=$(git merge-base origin/release "$SHA")
+          commits=$(git log --no-merges --format='- %s (`%h`)' "$base..$SHA" | head -n 60)
+          migrations=$(git diff --name-only "$base" "$SHA" -- kernelpanic-backend/prisma/migrations | grep -oE 'migrations/[^/]+' | sort -u | sed 's/^/- `/; s/$/`/' || true)
+          corpo=$(cat <<EOF
+          Promoção automática da pré-release para a produção.
+
+          | | |
+          |---|---|
+          | Commit | \`${SHA:0:7}\` |
+          | Candidato | \`${tag:-sem tag}\` (suíte noturna verde) |
+          | Pré-release | instalada e saudável ([run]($URL_RUN)) |
+
+          ### O que entra
+          $commits
+
+          ### Migrations
+          ${migrations:-Nenhuma.}
+
+          ### Antes de aprovar (gate manual)
+          - [ ] Conferi a pré-release funcionando (login, dashboard, alerta).
+          - [ ] Não há evento climático ativo: publicar agora não arrisca a operação.
+          - [ ] Se há migration: o registro de double check (2 devs) está no Confluence.
+
+          Aprovar e fazer **merge com "Create a merge commit"** dispara a Release (produção). Não use squash nem rebase: eles criam um commit novo, que não tem pacote nem passou na pré-release.
+          EOF
+          )
+          titulo="release: promover ${tag:-${SHA:0:7}} para produção"
+
+          pr=$(gh pr list --base release --head pre-release --state open --json number --jq '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr edit "$pr" --title "$titulo" --body "$corpo"
+            gh pr comment "$pr" --body "A pré-release avançou para \`${SHA:0:7}\` (${tag:-sem tag}). Aprovações anteriores deixam de valer para o commit novo."
+            echo "PR #$pr atualizado." >> "$GITHUB_STEP_SUMMARY"
+          else
+            url=$(gh pr create --base release --head pre-release --title "$titulo" --body "$corpo")
+            echo "PR aberto: $url" >> "$GITHUB_STEP_SUMMARY"
+          fi
