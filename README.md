@@ -438,6 +438,7 @@ KP-4DSM-API
 <a id="documentos"></a>
 ## Documentação da equipe
 
+- [Manual de instalação e operação do DATA PANIC](docs/manual-instalacao-operacao.md)
 - [DoR (Definition of Ready)](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Definition-Of-Ready)
 - [DoD (Definition of Done)](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Definition-Of-Done)
 - [Padrão de Commit](https://github.com/Kernel-Panic-FatecSjc/KP-4DSM-API/wiki/Padr%C3%A3o-de-Commit)
