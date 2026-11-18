@@ -25,6 +25,9 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+O procedimento de instalação, configuração e operação da plataforma está no
+[Manual de instalação e operação do DATA PANIC](../docs/manual-instalacao-operacao.md).
+
 ## Project setup
 
 ```bash
