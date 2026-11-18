@@ -14,6 +14,8 @@ Restart=always
 RestartSec=3
 # A ingestão grava o lote em memória ao receber SIGTERM (prazo de 8 s).
 TimeoutStopSec=15
+# Muitos usuários simultâneos = muitos sockets abertos (websocket de alarmes).
+LimitNOFILE=200000
 NoNewPrivileges=true
 ProtectSystem=full
 PrivateTmp=true
