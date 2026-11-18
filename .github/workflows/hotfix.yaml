@@ -1,13 +1,16 @@
 name: Hotfix
 
-# RASCUNHO, NÃO VALIDADO: depende da VM (Roadmap DevOps, Fase 5).
+# Depende do servidor: travado por vars.CD_HABILITADO (deploy-vm.yaml).
 # Atalho para urgência em produção. Rode em "Use workflow from" escolhendo a
 # branch hotfix/SCRUM-{ID}-... O atalho pula SÓ a pré-release:
 #   - o CI inteiro continua obrigatório (o mesmo ci.yaml, que também empacota);
 #   - o registro no Confluence é obrigatório (link_confluence). Assinaturas:
 #     hotfix sem banco = 1 dev; hotfix que mexe no banco = 2 devs (double check,
 #     política de banco 7.2);
-#   - a produção continua com aprovação humana (Environment "producao").
+#   - a produção continua com aprovação humana: o job "Aprovação" usa o
+#     Environment "aprovacao-hotfix", que tem revisores obrigatórios. No fluxo
+#     normal o gate é o PR pre-release → release; o hotfix não tem esse PR, por
+#     isso o gate dele fica aqui.
 # Depois do deploy: grava quem, quando, commit, link e motivo no resumo, abre
 # (ou comenta) o PR de volta para a main e uma issue de pós-hotfix (registro de
 # incidente).
@@ -65,10 +68,24 @@ jobs:
       actions: read
     uses: ./.github/workflows/ci.yaml
 
-  deploy:
+  aprovacao:
+    name: Aprovação do hotfix
     needs: [validar, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Revisores obrigatórios configurados no Environment (manual, seção 7.4).
+    environment: aprovacao-hotfix
+    permissions: {}
+    steps:
+      - env:
+          SHA: ${{ needs.validar.outputs.sha }}
+        run: echo "Hotfix \`${SHA:0:7}\` aprovado para produção." >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    needs: [validar, aprovacao]
     permissions:
       actions: read
+      contents: read
       statuses: write
     uses: ./.github/workflows/deploy-vm.yaml
     with:

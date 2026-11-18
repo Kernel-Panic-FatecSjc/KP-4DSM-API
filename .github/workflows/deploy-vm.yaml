@@ -1,14 +1,23 @@
 name: Deploy na VM
 
-# RASCUNHO, NÃO VALIDADO: depende da VM (Roadmap DevOps, Fase 4).
-# Reutilizável: deploy-pre-release.yaml, release.yaml e hotfix.yaml chamam
-# este workflow para instalar o MESMO pacote-<sha> em cada ambiente; muda só a
-# configuração, que vem do Environment (segredos SSH) e do .env da VM.
-# Travado por vars.CD_HABILITADO == 'true': enquanto a VM não existir, o job
-# falha com a explicação em vez de tentar conectar.
+# Reutilizável: deploy-pre-release.yaml, release.yaml, hotfix.yaml e
+# rollback.yaml chamam este workflow para instalar o MESMO pacote-<sha> em cada
+# ambiente. Só muda a configuração, e ela vem inteira do Environment do GitHub
+# (pre-release ou producao) e do .env do servidor: nada de endereço, porta ou
+# caminho fixo aqui. O manual de instalação (docs/manual-instalacao-operacao.md,
+# seção 7) lista o que a prefeitura preenche.
 #
-# Environment (configurado pelo admin): VM_HOST, VM_USUARIO, VM_CHAVE_SSH
-# (segredos) e URL_SAUDE (variável, ex.: https://api.exemplo/saude).
+# Travado por vars.CD_HABILITADO == 'true': enquanto o servidor não existir, o
+# job falha com a explicação em vez de tentar conectar.
+#
+# Environment (Settings > Environments > <ambiente>):
+#   segredos   SERVIDOR_HOST, SERVIDOR_USUARIO, SERVIDOR_CHAVE_SSH,
+#              SERVIDOR_KNOWN_HOSTS (saída de `ssh-keyscan -p <porta> <host>`)
+#   variáveis  URL_SAUDE (pública, ex.: https://alertas.exemplo.gov.br/api/saude)
+#              SERVIDOR_PORTA (padrão 22)
+#              SERVIDOR_BASE (padrão /opt/datapanic)
+#              SERVIDOR_SERVICOS (padrão "datapanic-api datapanic-ingestao datapanic-tratamento datapanic-front")
+#              SERVIDOR_SAUDE_LOCAL (padrão: /saude da API, da ingestão e do tratamento em localhost)
 
 on:
   workflow_call:
@@ -20,88 +29,172 @@ on:
         description: pre-release ou producao (nome do Environment)
         type: string
         required: true
+      acao:
+        description: deploy (instala o pacote) ou rollback (volta para uma versão já instalada)
+        type: string
+        default: deploy
       run_id:
-        description: Run que publicou o artefato pacote-<sha> (vazio = a suíte noturna desse SHA; "atual" = o run que chamou, caso do hotfix)
+        description: Run que publicou o pacote-<sha> (vazio = o mais recente com esse nome; "atual" = o run que chamou, caso do hotfix)
         type: string
         default: ''
 
 jobs:
   deploy:
-    name: Deploy em ${{ inputs.ambiente }}
+    name: ${{ inputs.acao == 'rollback' && 'Rollback' || 'Deploy' }} em ${{ inputs.ambiente }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: ${{ inputs.ambiente }}
+    environment:
+      name: ${{ inputs.ambiente }}
+      url: ${{ vars.URL_SAUDE }}
     permissions:
       actions: read
+      contents: read
       statuses: write
+    # Um deploy por ambiente; nunca cancelado no meio (migration pela metade).
     concurrency:
       group: deploy-${{ inputs.ambiente }}
       cancel-in-progress: false
+    env:
+      SHA: ${{ inputs.sha }}
+      SERVIDOR_PORTA: ${{ vars.SERVIDOR_PORTA || '22' }}
+      SERVIDOR_BASE: ${{ vars.SERVIDOR_BASE || '/opt/datapanic' }}
+      SERVIDOR_SERVICOS: ${{ vars.SERVIDOR_SERVICOS || 'datapanic-api datapanic-ingestao datapanic-tratamento datapanic-front' }}
+      SERVIDOR_SAUDE_LOCAL: ${{ vars.SERVIDOR_SAUDE_LOCAL || 'http://localhost:3001/saude http://localhost:3002/saude http://localhost:3003/saude' }}
 
     steps:
-      - name: CD habilitado?
-        if: vars.CD_HABILITADO != 'true'
+      - name: CD habilitado e ambiente configurado?
+        env:
+          CD_HABILITADO: ${{ vars.CD_HABILITADO }}
+          URL_SAUDE: ${{ vars.URL_SAUDE }}
+          TEM_HOST: ${{ secrets.SERVIDOR_HOST != '' }}
+          TEM_USUARIO: ${{ secrets.SERVIDOR_USUARIO != '' }}
+          TEM_CHAVE: ${{ secrets.SERVIDOR_CHAVE_SSH != '' }}
+          TEM_KNOWN_HOSTS: ${{ secrets.SERVIDOR_KNOWN_HOSTS != '' }}
+          AMBIENTE: ${{ inputs.ambiente }}
+          ACAO: ${{ inputs.acao }}
         run: |
-          echo "::error::CD ainda é rascunho: depende da VM. Quando ela existir, o admin cria os Environments e define a variável CD_HABILITADO=true (wiki, Roadmap DevOps, Ações manuais)."
-          exit 1
+          if [ "$CD_HABILITADO" != "true" ]; then
+            echo "::error::CD desligado. Quando o servidor existir e o Environment \"$AMBIENTE\" estiver preenchido, o admin define a variável de repositório CD_HABILITADO=true (manual de instalação, seção 7)."
+            exit 1
+          fi
+          falta=""
+          [ "$TEM_HOST" = true ] || falta="$falta SERVIDOR_HOST"
+          [ "$TEM_USUARIO" = true ] || falta="$falta SERVIDOR_USUARIO"
+          [ "$TEM_CHAVE" = true ] || falta="$falta SERVIDOR_CHAVE_SSH"
+          [ "$TEM_KNOWN_HOSTS" = true ] || falta="$falta SERVIDOR_KNOWN_HOSTS"
+          [ -n "$URL_SAUDE" ] || falta="$falta URL_SAUDE(variável)"
+          if [ -n "$falta" ]; then
+            echo "::error::Environment \"$AMBIENTE\" incompleto. Falta:$falta. Settings > Environments > $AMBIENTE (manual de instalação, seção 7)."
+            exit 1
+          fi
+          # Rollback sem SHA = "a versão instalada antes da atual" (decide o servidor).
+          if [ -n "$SHA" ] || [ "$ACAO" = deploy ]; then
+            printf '%s' "$SHA" | grep -qE '^[0-9a-f]{40}$' \
+              || { echo "::error::\"$SHA\" não é um SHA completo de 40 caracteres."; exit 1; }
+          fi
 
+      # O script de deploy vem do commit que vai ser instalado (ou, no
+      # rollback sem SHA, do commit que disparou o workflow).
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.sha }}
+          ref: ${{ inputs.sha || github.sha }}
 
       # Hotfix: o pacote saiu do ci.yaml chamado neste mesmo run.
       - name: Baixar pacote-${{ inputs.sha }} deste run
-        if: inputs.run_id == 'atual'
+        if: inputs.acao == 'deploy' && inputs.run_id == 'atual'
         uses: actions/download-artifact@v4
         with:
           name: pacote-${{ inputs.sha }}
           path: pacote
 
+      # O pacote é publicado pelo CI no push da main e pela suíte noturna. Busca
+      # pelo nome do artefato, e não pelo run: a suíte que pulou (HEAD já verde)
+      # não gera pacote, e o push da main gera.
       - name: Baixar pacote-${{ inputs.sha }} de outro run
-        if: inputs.run_id != 'atual'
+        if: inputs.acao == 'deploy' && inputs.run_id != 'atual'
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ inputs.sha }}
           RUN_ID: ${{ inputs.run_id }}
         run: |
           if [ -z "$RUN_ID" ]; then
-            RUN_ID=$(gh run list --workflow suite-noturna.yaml --commit "$SHA" --status success \
-              --json databaseId --jq '.[0].databaseId')
+            RUN_ID=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=pacote-$SHA&per_page=20" \
+              --jq '[.artifacts[] | select(.expired | not)] | sort_by(.created_at) | last | .workflow_run.id // empty')
           fi
-          [ -n "$RUN_ID" ] || { echo "::error::Nenhum run com pacote-$SHA. Rode a suíte noturna nesse commit."; exit 1; }
+          if [ -z "$RUN_ID" ]; then
+            echo "::error::Nenhum artefato pacote-$SHA válido (o CI publica no push da main; artefato expira em 90 dias). Rode Actions > Suíte noturna > Run workflow com \"forcar\" para gerar de novo."
+            exit 1
+          fi
           gh run download "$RUN_ID" -n "pacote-$SHA" -D pacote
 
       - name: Conferir o SHA-256
-        run: cd pacote && sha256sum -c "pacote-${{ inputs.sha }}.tar.gz.sha256"
+        if: inputs.acao == 'deploy'
+        run: cd pacote && sha256sum -c "pacote-$SHA.tar.gz.sha256"
 
-      - name: Instalar na VM
+      - name: Preparar SSH
         env:
-          SHA: ${{ inputs.sha }}
-          VM_HOST: ${{ secrets.VM_HOST }}
-          VM_USUARIO: ${{ secrets.VM_USUARIO }}
-          VM_CHAVE_SSH: ${{ secrets.VM_CHAVE_SSH }}
+          SERVIDOR_HOST: ${{ secrets.SERVIDOR_HOST }}
+          SERVIDOR_USUARIO: ${{ secrets.SERVIDOR_USUARIO }}
+          SERVIDOR_CHAVE_SSH: ${{ secrets.SERVIDOR_CHAVE_SSH }}
+          SERVIDOR_KNOWN_HOSTS: ${{ secrets.SERVIDOR_KNOWN_HOSTS }}
         run: |
-          install -m 600 /dev/null ~/.ssh_vm && printf '%s\n' "$VM_CHAVE_SSH" > ~/.ssh_vm
-          ssh_() { ssh -i ~/.ssh_vm -o StrictHostKeyChecking=accept-new "$VM_USUARIO@$VM_HOST" "$@"; }
-          scp -i ~/.ssh_vm -o StrictHostKeyChecking=accept-new \
-            "pacote/pacote-$SHA.tar.gz" .github/scripts/deploy-vm.sh "$VM_USUARIO@$VM_HOST:/tmp/"
-          ssh_ "bash /tmp/deploy-vm.sh $SHA /tmp/pacote-$SHA.tar.gz"
+          # known_hosts fixo: sem ele, um servidor trocado (ou interceptado)
+          # receberia a chave e o pacote sem aviso.
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/servidor
+          printf '%s\n' "$SERVIDOR_CHAVE_SSH" > ~/.ssh/servidor
+          printf '%s\n' "$SERVIDOR_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<EOF
+          Host servidor
+            HostName $SERVIDOR_HOST
+            User $SERVIDOR_USUARIO
+            Port $SERVIDOR_PORTA
+            IdentityFile ~/.ssh/servidor
+            StrictHostKeyChecking yes
+            ServerAliveInterval 15
+          EOF
+
+      - name: ${{ inputs.acao == 'rollback' && 'Voltar a versão no servidor' || 'Instalar no servidor' }}
+        env:
+          ACAO: ${{ inputs.acao }}
+        run: |
+          # As variáveis vão na linha de comando, com aspas simples: o script
+          # roda no servidor e não herda o ambiente do runner.
+          q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+          remoto="BASE=$(q "$SERVIDOR_BASE") SERVICOS=$(q "$SERVIDOR_SERVICOS") SAUDE=$(q "$SERVIDOR_SAUDE_LOCAL") DEPLOY_POR=$(q "$GITHUB_ACTOR") DEPLOY_RUN=$(q "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID")"
+          scp .github/scripts/deploy-vm.sh servidor:/tmp/deploy-vm.sh
+          if [ "$ACAO" = rollback ]; then
+            ssh servidor "$remoto bash /tmp/deploy-vm.sh --rollback ${SHA}"
+          else
+            scp "pacote/pacote-$SHA.tar.gz" servidor:/tmp/
+            ssh servidor "$remoto bash /tmp/deploy-vm.sh $SHA /tmp/pacote-$SHA.tar.gz"
+          fi
 
       - name: Smoke na /saude pública
         env:
           URL_SAUDE: ${{ vars.URL_SAUDE }}
-        run: curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "$URL_SAUDE"
+        run: |
+          curl -fsS --retry 10 --retry-delay 3 --retry-all-errors "$URL_SAUDE" \
+            || { echo "::error::$URL_SAUDE não respondeu. O servidor está saudável por dentro (o script conferiu), então olhe o proxy (Caddy), o DNS e o firewall."; exit 1; }
+          echo
 
-      - name: Status deploy no commit
-        if: always()
+      - name: Status no commit
+        if: always() && inputs.acao == 'deploy'
         env:
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ inputs.sha }}
           AMBIENTE: ${{ inputs.ambiente }}
           RESULTADO: ${{ job.status }}
           URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # O status "pre-release" verde é o que libera o PR para a release.
           [ "$RESULTADO" = success ] && estado=success || estado=failure
           gh api "repos/$GITHUB_REPOSITORY/statuses/$SHA" -f state="$estado" -f context="$AMBIENTE" \
             -f target_url="$URL_RUN" -f description="Deploy em $AMBIENTE: $RESULTADO" > /dev/null
-          echo "Deploy de \`${SHA:0:7}\` em **$AMBIENTE**: $RESULTADO, por @$GITHUB_ACTOR em $(date -u +%FT%TZ)." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resumo
+        if: always()
+        env:
+          AMBIENTE: ${{ inputs.ambiente }}
+          ACAO: ${{ inputs.acao }}
+          RESULTADO: ${{ job.status }}
+        run: |
+          echo "**$ACAO** de \`${SHA:0:7}\` em **$AMBIENTE**: $RESULTADO, por @$GITHUB_ACTOR em $(date -u +%FT%TZ)." >> "$GITHUB_STEP_SUMMARY"
