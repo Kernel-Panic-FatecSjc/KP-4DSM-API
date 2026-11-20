@@ -152,6 +152,7 @@ $logsCaddy = Join-Path $CaddyDir 'logs'
 New-Item -ItemType Directory -Path $sites, $logsCaddy -Force | Out-Null
 $site = Join-Path $sites "$Prefixo.caddy"
 $conteudo = (Get-Content (Join-Path $Aqui 'Caddyfile.modelo') -Raw -Encoding UTF8).Replace('@DOMINIO@', $cfg['DOMINIO']).Replace('@PORT@', $cfg['PORT']).
+  Replace('@BASE@', ($Base -replace '\\', '/')).
   Replace('@INGESTAO_PORTA@', $cfg['INGESTAO_PORTA']).Replace('@FRONT_PORTA@', $cfg['FRONT_PORTA']).
   Replace('@LOG@', ((Join-Path $logsCaddy "$Prefixo.log") -replace '\\', '/'))
 # UTF-8 sem BOM: o Set-Content do PowerShell 5.1 grava BOM.
