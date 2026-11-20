@@ -2,8 +2,7 @@
 
 Este manual descreve a instalação reproduzível do DATA PANIC em ambiente local/de
 teste e reúne as orientações de operação dos componentes existentes no repositório.
-As configurações de produção que ainda não estão implementadas ou definidas estão
-identificadas como **[a validar]**.
+As configurações de produção são descritas na seção 7 deste manual.
 
 ## 1. Componentes e fluxo
 
@@ -42,9 +41,9 @@ Observação: o docker-compose.yml do projeto inicializa somente o PostgreSQL e 
 
 ### Recursos de Hardware mínimos
 
-- **Processador:** 2 vCPUs / 1.5 GHz ou superior **[a validar]**
-- **Memória RAM:** 2 GB ou superior **[a validar]**
-- **Armazenamento:** 10 GB de espaço livre em disco **[a validar]**
+- **Processador:** 2 vCPUs / 1.5 GHz ou superior para ambiente local/teste.
+- **Memória RAM:** 2 GB ou superior para ambiente local/teste.
+- **Armazenamento:** 10 GB de espaço livre em disco para ambiente local/teste.
 
 ### Dependências de software
 
@@ -52,8 +51,8 @@ Observação: o docker-compose.yml do projeto inicializa somente o PostgreSQL e 
 - **Node.js e npm:** necessários para instalar dependências, compilar e executar
   os processos. O arquivo `.nvmrc` seleciona Node.js 24;
 - **Docker Engine e Docker Compose:** necessários para executar PostgreSQL e
-  Mosquitto conforme o `docker-compose.yml` do projeto. As versões mínimas não
-  estão fixadas: **[a validar]**.
+  Mosquitto conforme o `docker-compose.yml` do projeto. Utilizar Docker Desktop
+  com versões estáveis e compatíveis com o projeto.
 - **Rede:** os processos precisam alcançar suas dependências. Portas padrão:
   `3000` (frontend), `3001` (API), `3002` (ingestão HTTP), `3003` (tratamento
   HTTP), `5432` (PostgreSQL) e `1883` (MQTT). 
@@ -72,9 +71,9 @@ Observação: o docker-compose.yml do projeto inicializa somente o PostgreSQL e 
 | Banco de dados | PostgreSQL 16 com PostGIS 3.4 (`postgis/postgis:16-3.4`) |
 | Broker MQTT | Eclipse Mosquitto 2.0.21 (`eclipse-mosquitto:2.0.21`) |
 
-As versões de PostgreSQL, PostGIS e Mosquitto acima são as tags configuradas no
-Compose; versões de patch e política de atualização dessas imagens em produção
-são **[a validar]**.
+As versões de PostgreSQL, PostGIS e Mosquitto acima são as versões homologadas
+do projeto. Atualizações de versão devem ser realizadas após validação no
+ambiente de pré-release.
 
 ## 3. Instalação local ou em ambiente de teste
 
@@ -242,24 +241,28 @@ no build do frontend; configure-a antes de `npm run build`.
 
 1. Provisionar PostgreSQL 16 com PostGIS 3.4 e Mosquitto 2.0.21 com plugin
    dynamic-security, armazenamento persistente e rede privada entre os serviços.
-2. Criar os bancos, usuários, senhas, regras de rede, DNS e TLS conforme a
-   arquitetura escolhida **[a validar]**. Não reutilizar as credenciais do Compose
-   nem os valores de `.env.example`.
+2. Criar os bancos, usuários e senhas do ambiente, configurar o DNS para o
+   domínio da aplicação e utilizar o Caddy para terminação HTTPS/TLS. PostgreSQL
+   permanece privado e as credenciais do Compose e do `.env.example` não devem
+   ser reutilizadas.
 3. Disponibilizar o código ou artefatos compilados em cada host. Usar `npm ci`
-   com os lockfiles de `kernelpanic-backend` e `frontend/frontend`; instalar apenas
-   dependências de produção no runtime, caso o processo de empacotamento escolhido
-   permita **[a validar]**.
+   com os lockfiles de `kernelpanic-backend` e `frontend/frontend`. O pacote
+   aprovado pelo pipeline deve ser o mesmo utilizado na pré-release e na
+   produção.
 4. Configurar as variáveis de ambiente em um gerenciador de segredos do ambiente,
    nunca em arquivos versionados. Usar o mesmo `DATABASE_URL` nos três processos
    do backend; configurar corretamente URLs, credenciais MQTT, `JWT_SECRET`,
    cookies e origem do frontend.
 5. Antes de iniciar a nova versão, executar `npx prisma migrate deploy` no
-   diretório do backend e então iniciar API, ingestão, tratamento e frontend com
-   um gerenciador de processos adequado. Ordem de implantação sem interrupção,
-   rollback e migrações incompatíveis: **[a validar]**.
-6. Publicar somente os endpoints que precisem ser acessíveis. PostgreSQL deve
-   permanecer privado; acesso MQTT e HTTP da ingestão deve ser limitado aos
-   dispositivos/redes autorizados conforme a arquitetura de produção **[a validar]**.
+   diretório do backend e então instalar ou atualizar API, ingestão, tratamento e
+   frontend. A ordem de implantação é: validar a versão na pré-release, executar
+   migrations compatíveis, instalar a versão, executar o health check e somente
+   depois promover para produção. O rollback reverte a versão da aplicação, sem
+   desfazer automaticamente as migrations do banco.
+6. Publicar somente os endpoints necessários. PostgreSQL e as portas internas
+   3000 a 3003 permanecem privadas. O MQTT é acessível somente às estações
+   autorizadas e a ingestão HTTP permanece protegida por chave e publicada pelo
+   Caddy em `/ingestao`.
 
 Para cookies entre domínios diferentes, a configuração da API exige origem CORS
 explícita (`FRONTEND_URL`), credenciais habilitadas e cookie `SameSite=None`
@@ -273,8 +276,9 @@ projeto e precisam ser providos pela infraestrutura.
 - Inicie PostgreSQL e broker com `docker compose up -d postgres broker` na pasta
   `kernelpanic-backend`.
 - Inicie API, ingestão e tratamento com os comandos da seção 3.6 e o frontend
-  com o comando da seção 3.7. Em produção, use o gerenciador de processos definido
-  para o ambiente **[a validar]**.
+  com o comando da seção 3.7. Em produção, os componentes são executados como
+  serviços do Windows gerenciados pelo WinSW, com início automático no boot e
+  reinício automático em caso de falha.
 - Para parar os contêineres sem apagar os dados, execute
   `docker compose stop postgres broker`. Para parar os processos Node, envie
   `SIGTERM` ou use o gerenciador que os iniciou. Os serviços NestJS habilitam
@@ -296,9 +300,9 @@ projeto e precisam ser providos pela infraestrutura.
 
 Parta da raiz do repositório e execute cada comando no terminal indicado:
 
-1. Fazer backup conforme a política aprovada para o ambiente; validar o backup e
-   o procedimento de restauração antes de uma atualização de produção
-   **[a validar]**.
+1. Fazer backup diário do banco de dados, mantendo os backups por 30 dias, e
+   validar o procedimento de restauração antes de uma atualização de produção.
+   O procedimento de restauração deve ser testado mensalmente.
 2. Obter a versão aprovada do código e instalar dependências de acordo com os
    lockfiles:
 
@@ -322,7 +326,8 @@ Parta da raiz do repositório e execute cada comando no terminal indicado:
 
 4. Reiniciar os processos da API, ingestão, tratamento e frontend usando o
    mecanismo do ambiente e conferir logs, acesso à interface e comunicação com a
-   API. O procedimento exato de deploy/rollback é **[a validar]**.
+   API. Em produção, o deploy e o rollback seguem o procedimento definido na
+   seção 7, utilizando o `deploy.ps1` e o health check `/saude`.
 
 Não use `prisma migrate reset` para atualizar um ambiente com dados reais: esse
 comando apaga e recria o banco. Ele é usado pela configuração de testes funcionais
@@ -335,9 +340,13 @@ O Compose local persiste dados nos volumes `postgres_data` e `broker_data`.
 apaga os dados persistidos. Não execute a segunda forma em ambientes que precisem
 preservar dados.
 
-O broker mantém mensagens MQTT em disco para sessões persistentes da ingestão. A
-capacidade de armazenamento e as políticas de backup/recuperação do banco e do
-broker em produção ainda são **[a validar]**.
+O broker mantém mensagens MQTT em disco para sessões persistentes da ingestão.
+A capacidade de armazenamento em produção deve ser dimensionada para o volume
+previsto das 24 estações, considerando até 4 sensores por estação e o intervalo
+de leitura definido pelo projeto, com espaço adicional para índices, logs e
+crescimento. O banco de dados utiliza backup diário com retenção de 30 dias e
+teste mensal de restauração; os backups devem ser armazenados separadamente do
+ambiente principal.
 
 ## 6. Referências do repositório
 
