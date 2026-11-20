@@ -25,7 +25,15 @@ import { HistoricoClimaticoRespostaDto } from './dto/historico-climatico-respost
 import { IncidentesQueryDto } from './dto/incidentes-query.dto';
 import { RelatorioIncidentesDto } from './dto/incidentes-resposta.dto';
 import { IncidentesService } from './incidentes.service';
+import {
+  CABECALHO_CSV_HISTORICO,
+  documentoPdfHistorico,
+  linhasCsvHistorico,
+  nomeArquivoHistorico,
+  totalLinhasPeriodo,
+} from './historico-climatico-exportacao';
 import { CABECALHO_CSV_INCIDENTES, linhaCsvIncidente, montarLaudoIncidentes } from './laudo-incidentes';
+import { licitacaoDoEscopo } from '../autenticacao/escopo-licitacao';
 import { enviarCsv } from '../exportacao/csv';
 import { enviarPdf } from '../exportacao/pdf';
 import { RelatoriosService } from './relatorios.service';
@@ -193,16 +201,7 @@ export class RelatoriosController {
     @Query() query: HistoricoClimaticoQueryDto,
     @UsuarioAutenticado() usuario: UsuarioLogado,
   ): Promise<HistoricoClimaticoRespostaDto> {
-    const estacaoIds = [
-      ...new Set([
-        ...(query.estacaoIds ?? []),
-        ...(query.estacaoIdsComColchetes ?? []),
-      ]),
-    ];
-    const consulta = {
-      ...query,
-      estacaoIds: estacaoIds.length ? estacaoIds : undefined,
-    };
+    const consulta = consultaHistorico(query);
     const resposta = await this.relatoriosService.historicoClimatico(
       consulta,
       usuario,
@@ -220,6 +219,94 @@ export class RelatoriosController {
     });
     return resposta;
   }
+
+  @Get('historico-climatico/csv')
+  @ApiOperation({
+    summary: 'Exportar o relatório de histórico climático em CSV',
+    description:
+      'Mesmos filtros de GET /relatorios/historico-climatico. Uma linha por período (hora ou dia, em ISO 8601 UTC) de cada parâmetro de cada estação, com as colunas da tabela da tela, seguidas dos totalizadores, cujo período é o intervalo ISO 8601 "início/fim". A exportação é registrada na trilha de auditoria.',
+  })
+  @ApiProduces('text/csv')
+  @ApiOkResponse({
+    description: 'Arquivo CSV (separador ";", UTF-8 com BOM).',
+    content: { 'text/csv': { schema: { type: 'string', example: CABECALHO_CSV_HISTORICO.join(';') } } },
+  })
+  @ApiBadRequestResponse({ description: 'Mesmas validações do relatório.' })
+  async exportarHistoricoClimaticoCsv(
+    @Query() query: HistoricoClimaticoQueryDto,
+    @UsuarioAutenticado() usuario: UsuarioLogado,
+    @Res() resposta: Response,
+  ): Promise<void> {
+    const consulta = consultaHistorico(query);
+    const relatorio = await this.relatoriosService.historicoClimatico(consulta, usuario);
+    await this.registrarExportacaoHistorico('csv', relatorio, consulta, usuario);
+
+    async function* lotes() {
+      yield linhasCsvHistorico(relatorio);
+    }
+    await enviarCsv(resposta, nomeArquivoHistorico(relatorio, 'csv'), CABECALHO_CSV_HISTORICO, lotes());
+  }
+
+  @Get('historico-climatico/pdf')
+  @ApiOperation({
+    summary: 'Exportar o relatório de histórico climático em PDF',
+    description:
+      'Mesmos filtros de GET /relatorios/historico-climatico. O PDF segue o layout base dos relatórios e traz os filtros usados, um gráfico por parâmetro, os totalizadores e a tabela por período (omitida, com aviso, acima de 2.000 linhas; o CSV traz todas). A exportação é registrada na trilha de auditoria.',
+  })
+  @ApiProduces('application/pdf')
+  @ApiOkResponse({
+    description: 'Arquivo PDF do relatório.',
+    content: { 'application/pdf': { schema: { type: 'string', format: 'binary' } } },
+  })
+  @ApiBadRequestResponse({ description: 'Mesmas validações do relatório.' })
+  async exportarHistoricoClimaticoPdf(
+    @Query() query: HistoricoClimaticoQueryDto,
+    @UsuarioAutenticado() usuario: UsuarioLogado,
+    @Res() resposta: Response,
+  ): Promise<void> {
+    const consulta = consultaHistorico(query);
+    const relatorio = await this.relatoriosService.historicoClimatico(consulta, usuario);
+    const { emitidoPor, orgao } = await this.incidentesService.emissor(usuario, licitacaoDoEscopo(usuario));
+    const emitidoEm = new Date();
+    const documento = documentoPdfHistorico(
+      relatorio,
+      { estacaoIds: consulta.estacaoIds ?? [] },
+      {
+        emitidoEm,
+        emitidoPor,
+        instituicao: orgao ? `${orgao.orgaoNome} · ${orgao.orgaoMunicipio}/${orgao.orgaoUf}` : 'Tecsus · todas as licitações',
+      },
+    );
+    await this.registrarExportacaoHistorico('pdf', relatorio, consulta, usuario);
+    await enviarPdf(resposta, nomeArquivoHistorico(relatorio, 'pdf'), documento);
+  }
+
+  private async registrarExportacaoHistorico(
+    formato: 'csv' | 'pdf',
+    relatorio: HistoricoClimaticoRespostaDto,
+    consulta: HistoricoClimaticoQueryDto,
+    usuario: UsuarioLogado,
+  ): Promise<void> {
+    await this.auditoriaService.registrar({
+      acao: 'relatorios.historico-climatico.exportar',
+      entidade: 'RelatorioHistoricoClimatico',
+      ...autoria(usuario),
+      detalhes: {
+        formato,
+        de: relatorio.de,
+        ate: relatorio.ate,
+        granularidade: relatorio.granularidade,
+        estacaoIds: consulta.estacaoIds ?? [],
+        linhas: totalLinhasPeriodo(relatorio),
+      },
+    });
+  }
+}
+
+/** Junta estacaoIds e estacaoIds[] (os dois formatos aceitos), sem repetir. */
+function consultaHistorico(query: HistoricoClimaticoQueryDto): HistoricoClimaticoQueryDto {
+  const estacaoIds = [...new Set([...(query.estacaoIds ?? []), ...(query.estacaoIdsComColchetes ?? [])])];
+  return { ...query, estacaoIds: estacaoIds.length ? estacaoIds : undefined };
 }
 
 /** Filtros informados, sem os vazios (o JSON da trilha não guarda undefined). */

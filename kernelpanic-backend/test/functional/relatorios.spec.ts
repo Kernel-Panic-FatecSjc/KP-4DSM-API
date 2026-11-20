@@ -169,4 +169,52 @@ describe('Relatórios de histórico climático (funcional)', () => {
     });
     expect(auditoria).toBeTruthy();
   }, 30_000);
+
+  it('CSV e PDF batem com a consulta da tela para os mesmos filtros e são auditados', async () => {
+    const filtros = { de: '2025-01-01', ate: '2025-01-31', granularidade: 'dia', estacaoIds: estacaoId };
+    const { body: tela } = await request(app.getHttpServer())
+      .get('/relatorios/historico-climatico')
+      .query(filtros)
+      .set('Cookie', cookie)
+      .expect(200);
+
+    const csv = await request(app.getHttpServer())
+      .get('/relatorios/historico-climatico/csv')
+      .query(filtros)
+      .set('Cookie', cookie)
+      .expect(200);
+    const [cabecalho, ...linhas] = csv.text.replace(/^\uFEFF/, '').trimEnd().split('\r\n').map((linha) => linha.split(';'));
+    expect(cabecalho).toEqual(['Período', 'Estação', 'Parâmetro', 'Unidade', 'Agregação', 'Consolidado', 'Soma', 'Média', 'Mínimo', 'Máximo', 'Leituras']);
+
+    // Cada período e cada totalizador da tela vira uma linha, com os mesmos números.
+    const esperadas = tela.estacoes.flatMap(
+      (estacao: { nome: string; parametros: { nome: string; periodos: { periodo: string; valor: number; leituras: number }[]; totalPeriodo: { valor: number; leituras: number } }[] }) =>
+        estacao.parametros.flatMap((parametro) => [
+          ...parametro.periodos.map((item) => [item.periodo, estacao.nome, parametro.nome, String(item.valor), String(item.leituras)]),
+          [`${tela.de}/${tela.ate}`, estacao.nome, parametro.nome, String(parametro.totalPeriodo.valor), String(parametro.totalPeriodo.leituras)],
+        ]),
+    );
+    const obtidas = linhas.map((linha) => [linha[0], linha[1], linha[2], linha[5], linha[10]]);
+    expect(obtidas).toHaveLength(31 * 2 + 2);
+    expect(obtidas).toEqual(expect.arrayContaining(esperadas));
+
+    const pdf = await request(app.getHttpServer())
+      .get('/relatorios/historico-climatico/pdf')
+      .query(filtros)
+      .set('Cookie', cookie)
+      .buffer(true)
+      .parse((res, callback) => {
+        const partes: Buffer[] = [];
+        res.on('data', (parte: Buffer) => partes.push(parte));
+        res.on('end', () => callback(null, Buffer.concat(partes)));
+      })
+      .expect(200);
+    expect(pdf.headers['content-type']).toBe('application/pdf');
+    expect((pdf.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+
+    const exportacoes = await prisma.logAuditoria.findMany({
+      where: { acao: 'relatorios.historico-climatico.exportar', usuarioId: { not: null } },
+    });
+    expect(exportacoes.map((registro) => (registro.detalhes as { formato: string }).formato).sort()).toEqual(['csv', 'pdf']);
+  }, 30_000);
 });
