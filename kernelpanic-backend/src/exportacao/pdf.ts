@@ -192,7 +192,8 @@ function layoutTabela() {
 
 export interface SerieGrafico {
   nome: string;
-  pontos: { rotulo: string; valor: number }[];
+  /** Valor nulo é período sem leitura: fica sem ponto e a linha liga os vizinhos. */
+  pontos: { rotulo: string; valor: number | null }[];
 }
 
 /**
@@ -204,7 +205,7 @@ export function graficoLinhasSvg(series: SerieGrafico[], largura = 515, altura =
   const areaL = largura - margem.esquerda - margem.direita;
   const areaA = altura - margem.topo - margem.base;
   const rotulos = series[0]?.pontos.map((ponto) => ponto.rotulo) ?? [];
-  const valores = series.flatMap((serie) => serie.pontos.map((ponto) => ponto.valor));
+  const valores = series.flatMap((serie) => serie.pontos.flatMap((ponto) => (ponto.valor === null ? [] : [ponto.valor])));
   const minimo = valores.length ? Math.min(0, ...valores) : 0;
   const maximo = valores.length ? Math.max(...valores) : 1;
   const faixa = maximo - minimo || 1;
@@ -229,8 +230,10 @@ export function graficoLinhasSvg(series: SerieGrafico[], largura = 515, altura =
     .join('');
   const linhas = series.map((serie, indice) => {
     const cor = CORES_PDF.serie[indice % CORES_PDF.serie.length];
-    const pontos = serie.pontos.map((ponto, i) => `${x(i).toFixed(1)},${y(ponto.valor).toFixed(1)}`).join(' ');
-    return `<polyline points="${pontos}" fill="none" stroke="${cor}" stroke-width="1.5"/>`;
+    const pontos = serie.pontos.flatMap((ponto, i) => (ponto.valor === null ? [] : [{ x: x(i).toFixed(1), y: y(ponto.valor).toFixed(1) }]));
+    // Um ponto só não forma linha: vira um marcador.
+    if (pontos.length === 1) return `<circle cx="${pontos[0].x}" cy="${pontos[0].y}" r="2" fill="${cor}"/>`;
+    return `<polyline points="${pontos.map((ponto) => `${ponto.x},${ponto.y}`).join(' ')}" fill="none" stroke="${cor}" stroke-width="1.5"/>`;
   });
   const legenda = series.map((serie, indice) => {
     const cor = CORES_PDF.serie[indice % CORES_PDF.serie.length];

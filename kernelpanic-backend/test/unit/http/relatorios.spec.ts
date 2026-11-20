@@ -118,6 +118,76 @@ describe('GET /relatorios/historico-climatico', () => {
     expect($queryRaw).not.toHaveBeenCalled();
   });
 
+  it('exporta em CSV com as colunas da tela e os totalizadores, e audita', async () => {
+    const resposta = await request(app.getHttpServer())
+      .get('/relatorios/historico-climatico/csv')
+      .query({ de: '2026-01-01', ate: '2026-01-01', granularidade: 'dia', estacaoIds: ESTACAO_ID })
+      .set('Cookie', cookie)
+      .expect(200);
+
+    expect(resposta.headers['content-type']).toBe('text/csv; charset=utf-8');
+    expect(resposta.headers['content-disposition']).toContain('historico-climatico_2026-01-01_2026-01-01.csv');
+    const linhas = resposta.text.replace(/^\uFEFF/, '').trimEnd().split('\r\n');
+    expect(linhas).toEqual([
+      'Período;Estação;Parâmetro;Unidade;Agregação;Consolidado;Soma;Média;Mínimo;Máximo;Leituras',
+      '2026-01-01T00:00:00.000Z;Estação Centro;Pluviômetro;mm;Soma;5;5;2.5;1;4;2',
+      '2026-01-01T00:00:00.000Z/2026-01-01T23:59:59.999Z;Estação Centro;Pluviômetro;mm;Soma;5;5;2.5;1;4;2',
+    ]);
+    expect(logAuditoria.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        acao: 'relatorios.historico-climatico.exportar',
+        entidade: 'RelatorioHistoricoClimatico',
+        usuarioId: USUARIO.id,
+        detalhes: expect.objectContaining({ formato: 'csv', granularidade: 'dia', estacaoIds: [ESTACAO_ID], linhas: 1 }),
+      }),
+    });
+  });
+
+  it('exporta em PDF com o layout base e audita', async () => {
+    const resposta = await request(app.getHttpServer())
+      .get('/relatorios/historico-climatico/pdf')
+      .query({ de: '2026-01-01', ate: '2026-01-01', granularidade: 'dia' })
+      .set('Cookie', cookie)
+      .buffer(true)
+      .parse((res, callback) => {
+        const partes: Buffer[] = [];
+        res.on('data', (parte: Buffer) => partes.push(parte));
+        res.on('end', () => callback(null, Buffer.concat(partes)));
+      })
+      .expect(200);
+
+    expect(resposta.headers['content-type']).toBe('application/pdf');
+    expect(resposta.headers['content-disposition']).toContain('historico-climatico_2026-01-01_2026-01-01.pdf');
+    expect((resposta.body as Buffer).subarray(0, 5).toString()).toBe('%PDF-');
+    expect(logAuditoria.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        acao: 'relatorios.historico-climatico.exportar',
+        detalhes: expect.objectContaining({ formato: 'pdf', estacaoIds: [] }),
+      }),
+    });
+  });
+
+  it('exportação valida os filtros e exige autenticação, sem auditar', async () => {
+    for (const formato of ['csv', 'pdf']) {
+      await request(app.getHttpServer())
+        .get(`/relatorios/historico-climatico/${formato}?de=2026-01-02&ate=2026-01-01&granularidade=dia`)
+        .set('Cookie', cookie)
+        .expect(400);
+      await request(app.getHttpServer())
+        .get(`/relatorios/historico-climatico/${formato}?de=2026-01-01&ate=2026-01-02&granularidade=semana`)
+        .set('Cookie', cookie)
+        .expect(400);
+      await request(app.getHttpServer())
+        .get(`/relatorios/historico-climatico/${formato}?de=2026-01-01&ate=2026-01-02&granularidade=dia`)
+        .expect(401);
+    }
+    expect($queryRaw).not.toHaveBeenCalled();
+    // O 401 entra no log de acesso; exportação nenhuma é registrada.
+    expect(logAuditoria.create).not.toHaveBeenCalledWith({
+      data: expect.objectContaining({ acao: 'relatorios.historico-climatico.exportar' }),
+    });
+  });
+
   it('documenta os filtros e a resposta no Swagger', async () => {
     const resposta = await request(app.getHttpServer())
       .get('/docs-json')

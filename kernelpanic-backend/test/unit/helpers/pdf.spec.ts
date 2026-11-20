@@ -99,6 +99,22 @@ describe('PDF dos relatórios', () => {
     expect(svg).not.toContain('<A&B>');
   });
 
+  it('período sem valor fica sem ponto: a linha liga os vizinhos e não desce a zero', () => {
+    const svg = graficoLinhasSvg([
+      { nome: 'Centro', pontos: [{ rotulo: '01/10', valor: 10 }, { rotulo: '02/10', valor: null }, { rotulo: '03/10', valor: 20 }] },
+      { nome: 'Norte', pontos: [{ rotulo: '01/10', valor: null }, { rotulo: '02/10', valor: 15 }, { rotulo: '03/10', valor: null }] },
+    ]);
+
+    const [linha] = svg.match(/<polyline points="([^"]+)"/)!.slice(1);
+    expect(linha.split(' ')).toHaveLength(2);
+    // Série com um ponto só vira marcador.
+    expect(svg.match(/<polyline/g)).toHaveLength(1);
+    expect(svg.match(/<circle/g)).toHaveLength(1);
+    expect(svg).not.toContain('NaN');
+    // O eixo começa no menor valor ou em 0, nunca abaixo por causa do nulo.
+    expect(svg).not.toContain('>-');
+  });
+
   it('não quebra o gráfico sem pontos ou com um ponto só', () => {
     expect(graficoLinhasSvg([])).not.toContain('NaN');
     expect(graficoLinhasSvg([{ nome: 'X', pontos: [{ rotulo: '01/10', valor: 3 }] }])).not.toContain('NaN');
