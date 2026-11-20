@@ -1,0 +1,16 @@
+:root { --fundo: #f6f7f9; --texto: #1c2024; --suave: #5b636b; --cartao: #fff; --borda: #dde1e6; }
+@media (prefers-color-scheme: dark) {
+  :root { --fundo: #14171a; --texto: #eceff2; --suave: #9aa3ab; --cartao: #1e2226; --borda: #333a40; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: var(--fundo); color: var(--texto); }
+header, main { max-width: 40rem; margin: 0 auto; padding: 1rem; }
+h1 { margin: 0; font-size: 1.5rem; }
+#atualizado, #vazio { color: var(--suave); }
+ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem; }
+li { background: var(--cartao); border: 1px solid var(--borda); border-left: .4rem solid var(--cor); border-radius: .5rem; padding: .75rem 1rem; }
+li strong { display: block; color: var(--cor); }
+li span { color: var(--suave); font-size: .9rem; }
+.ATENCAO { --cor: #a16207; }
+.ALERTA { --cor: #c2410c; }
+.EMERGENCIA { --cor: #b91c1c; }

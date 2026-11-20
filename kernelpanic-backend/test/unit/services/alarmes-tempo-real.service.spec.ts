@@ -10,6 +10,7 @@ describe('AlarmesTempoRealService', () => {
   const gatewayMock = { emitirNovosAlarmes: jest.fn() };
   const configMock = { get: jest.fn() };
   const prismaMock = { estacao: { findMany: jest.fn() } };
+  const alertaPublicoMock = { publicar: jest.fn() };
   let service: AlarmesTempoRealService;
 
   beforeEach(() => {
@@ -18,7 +19,7 @@ describe('AlarmesTempoRealService', () => {
     jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     alarmesMock.buscarRecentes.mockResolvedValue([]);
     prismaMock.estacao.findMany.mockResolvedValue([{ id: 'estacao-1', latitude: -23.2, longitude: -45.9 }]);
-    service = new AlarmesTempoRealService(alarmesMock as never, gatewayMock as never, configMock as never, prismaMock as never);
+    service = new AlarmesTempoRealService(alarmesMock as never, gatewayMock as never, configMock as never, prismaMock as never, alertaPublicoMock as never);
   });
 
   afterEach(() => {
@@ -37,10 +38,19 @@ describe('AlarmesTempoRealService', () => {
       ]);
     });
 
+    it('republica o alerta público quando há alarme novo', async () => {
+      alarmesMock.buscarRecentes.mockResolvedValue([alarme('a1')]);
+
+      await service.processar();
+
+      expect(alertaPublicoMock.publicar).toHaveBeenCalledTimes(1);
+    });
+
     it('não emite nada quando não há alarmes recentes', async () => {
       await service.processar();
 
       expect(gatewayMock.emitirNovosAlarmes).not.toHaveBeenCalled();
+      expect(alertaPublicoMock.publicar).not.toHaveBeenCalled();
     });
 
     it('não reemite o alarme que já foi enviado', async () => {
