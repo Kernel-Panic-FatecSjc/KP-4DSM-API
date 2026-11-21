@@ -255,7 +255,13 @@ A solução é uma aplicação web full-stack, com back-end desenvolvido em Nest
 
 **Tasks vinculadas**
 
-_Adicionar os IDs e títulos das tasks correspondentes no Jira._
+- **SCRUM-30** — Especificar o hardware da estação e montar o protótipo em bancada
+- **SCRUM-31** — Criar o projeto do firmware do ESP32 com configuração de rede e relógio
+- **SCRUM-32** — Implementar a leitura periódica dos sensores (analógica e digital)
+- **SCRUM-33** — Montar e enviar o payload padronizado para a API de ingestão
+- **SCRUM-34** — Implementar buffer local e retentativa de envio no datalogger
+- **SCRUM-35** — Testar a coleta ponta a ponta com falhas de rede simuladas
+- **SCRUM-36** — Documentar firmware, montagem e procedimento de instalação da estação
 
 </details>
 
@@ -264,7 +270,14 @@ _Adicionar os IDs e títulos das tasks correspondentes no Jira._
 
 **Tasks vinculadas**
 
-_Adicionar os IDs e títulos das tasks correspondentes no Jira._
+- **SCRUM-45** — Configurar OpenAPI 3.0 / Swagger na API
+- **SCRUM-46** — Documentar rotas, schemas e exemplos no Swagger
+- **SCRUM-47** — Gerar e validar o contrato OpenAPI no CI
+- **SCRUM-48** — Criar rota pública de dados meteorológicos consolidados (JSON e CSV)
+- **SCRUM-49** — Criar rotas públicas de estações e alertas em JSON e CSV
+- **SCRUM-50** — Adequar os formatos ao e-PING e publicar o dicionário de dados
+- **SCRUM-51** — Testes funcionais das rotas de dados abertos
+- **SCRUM-114** — Auditoria sem autoauditoria e exportação CSV em streaming no backend
 
 </details>
 
@@ -273,7 +286,12 @@ _Adicionar os IDs e títulos das tasks correspondentes no Jira._
 
 **Tasks vinculadas**
 
-_Adicionar os IDs e títulos das tasks correspondentes no Jira._
+- **SCRUM-52** — Definir a solução de geração de PDF dos relatórios e o layout base
+- **SCRUM-53** — Definir no banco como cada grandeza é agregada (soma ou média)
+- **SCRUM-54** — Criar endpoint do relatório de histórico climático
+- **SCRUM-55** — Criar tela do relatório de histórico climático
+- **SCRUM-56** — Exportar o relatório de histórico climático em CSV e PDF
+- **SCRUM-57** — Testes dos cálculos do relatório de histórico climático
 
 </details>
 
@@ -282,7 +300,13 @@ _Adicionar os IDs e títulos das tasks correspondentes no Jira._
 
 **Tasks vinculadas**
 
-_Adicionar os IDs e títulos das tasks correspondentes no Jira._
+- **SCRUM-58** — Registrar quem e quando reconheceu ou resolveu cada alarme
+- **SCRUM-59** — Agrupar alarmes em ocorrências com início, fim e duração
+- **SCRUM-60** — Criar endpoint do relatório de incidentes
+- **SCRUM-61** — Criar tela do relatório de incidentes
+- **SCRUM-62** — Emitir o laudo consolidado de incidentes em PDF e exportar CSV
+- **SCRUM-63** — Testes do relatório de incidentes
+- **SCRUM-149** — Garantir a expansão do disparo em massa
 
 </details>
 
@@ -291,7 +315,65 @@ _Adicionar os IDs e títulos das tasks correspondentes no Jira._
 
 **Tasks vinculadas**
 
-_Adicionar os IDs e títulos das tasks correspondentes no Jira._
+- **SCRUM-64** — Criar endpoint de estatísticas comparativas entre estações
+- **SCRUM-65** — Permitir comparar períodos climáticos diferentes
+- **SCRUM-66** — Identificar discrepâncias locais entre estações
+- **SCRUM-67** — Criar tela de análise comparativa
+- **SCRUM-68** — Exportar o relatório estatístico com sumário executivo (PDF e CSV)
+- **SCRUM-69** — Validar a exatidão dos cálculos estatísticos
+- **SCRUM-99** — aplicar Guards de autenticação e perfil nas rotas de escrita de Usuários, Sensores e Leituras Brutas
+- **SCRUM-100** — Implementar vínculo de usuários com licitações e controle de acesso por escopo
+
+</details>
+
+<details>
+<summary><strong>US14 — Estruturar a entrega contínua e a implantação operacional da plataforma</strong></summary>
+
+**Tasks vinculadas**
+
+- **SCRUM-127** — Revisar o pipeline existente e suas validações obrigatórias
+- **SCRUM-128** — Preparar e validar o ambiente de staging
+- **SCRUM-129** — Implementar e validar a implantação automatizada e os health checks
+- **SCRUM-130** — Documentar e registrar evidências da implantação
+- **SCRUM-147** — Revisar os testes unitarios e corrigir os que não sigam o padrão
+- **SCRUM-148** — Correção das migrations e adoção da padronização esperada pelo projeto
+
+</details>
+
+<details>
+<summary><strong>US15 — Documentar a instalação e operação da API</strong></summary>
+
+**Tasks vinculadas**
+
+- **SCRUM-132** — Consolidar os pré-requisitos e componentes técnicos do DATA PANIC
+- **SCRUM-133** — Documentar o procedimento de instalação e configuração do DATA PANIC
+- **SCRUM-134** — Documentar a execução, manutenção e atualização do DATA PANIC
+- **SCRUM-135** — Validar e finalizar o manual de instalação e operação
+- **SCRUM-136** — Atualizar as informações do README
+
+</details>
+
+<details>
+<summary><strong>US16 — Refinar e corrigir o processamento de telemetria</strong></summary>
+
+**Tasks vinculadas**
+
+- **SCRUM-139** — Revisar o fluxo atual de recepção de telemetria
+- **SCRUM-140** — Corrigir a validação e o processamento das mensagens
+- **SCRUM-141** — Corrigir a persistência dos dados de telemetria
+- **SCRUM-142** — Validar o fluxo completo de telemetria
+
+</details>
+
+<details>
+<summary><strong>US17 — Refinar e corrigir a trilha de auditoria</strong></summary>
+
+**Tasks vinculadas**
+
+- **SCRUM-143** — Revisar a geração dos registros de auditoria
+- **SCRUM-144** — Corrigir o registro das informações de auditoria
+- **SCRUM-145** — Revisar a consulta e rastreabilidade dos registros
+- **SCRUM-146** — Validar a trilha de auditoria
 
 </details>
 
