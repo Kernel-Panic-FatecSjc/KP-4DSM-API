@@ -31,7 +31,9 @@ const config: Config = {
   ],
   coverageDirectory: './coverage',
   testEnvironment: 'node',
-  setupFiles: ['reflect-metadata'],
+  // Mesmos padrões de teste (JWT_SECRET, limites, MQTT desligado) da suíte
+  // funcional: as specs de test/unit/http sobem o app com o Prisma mockado.
+  setupFiles: ['reflect-metadata', '<rootDir>/test/bootstrap.ts'],
 };
 
 export default config;

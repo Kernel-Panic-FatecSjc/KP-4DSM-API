@@ -1,0 +1,78 @@
+name: Revisão exigida
+
+# Grava no commit do PR o status "revisao/aprovada", que a ruleset da main
+# exige. Não dá para fazer isso só com a ruleset porque a regra de aprovações
+# dela não tem exceção por tipo de PR.
+#
+#   docs (só documentação) -> passa sozinho
+#   demais tipos           -> 1 aprovação de quem não é o autor, no commit atual
+#
+# Aprovação de commit antigo não conta. O tipo vem do título do PR.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+  pull_request_review:
+    types: [submitted, dismissed]
+
+concurrency:
+  group: revisao-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  statuses: write
+  pull-requests: read
+
+jobs:
+  revisao:
+    name: Revisão exigida
+    # O PR pre-release → release é de promoção, aberto pelo workflow: o gate
+    # dele é a ruleset da release (aprovação + status pre-release).
+    if: github.event.pull_request.base.ref != 'release'
+    # Roda em toda edição, até só de descrição: com cancel-in-progress, a
+    # edição cancela o run do push e, se este fosse pulado, o commit novo
+    # ficaria sem o status revisao/aprovada. Rodar de novo custa segundos.
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Gravar o status do commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          AUTOR: ${{ github.event.pull_request.user.login }}
+          TITULO: ${{ github.event.pull_request.title }}
+          URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          status() {
+            gh api "repos/$REPO/statuses/$SHA" -f state="$1" -f context="revisao/aprovada" \
+              -f target_url="$URL_RUN" -f description="$2" > /dev/null
+            echo "$1: $2"
+          }
+
+          tipo=$(printf '%s' "$TITULO" | grep -oE '^[a-z]+' || true)
+
+          if [ "$tipo" = "docs" ]; then
+            fora=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename' \
+              | grep -vE '^docs/|\.md$' || true)
+            if [ -n "$fora" ]; then
+              status failure "docs só pode mudar documentação: $(printf '%s' "$fora" | head -n 1)"
+            else
+              status success "Dispensado: PR de documentação"
+            fi
+            exit 0
+          fi
+
+          # Última revisão de cada pessoa, no commit atual, que não seja a do autor.
+          aprovacoes=$(gh api "repos/$REPO/pulls/$PR/reviews" --paginate \
+            --jq '.[] | select(.state != "COMMENTED") | [.user.login, .state, .commit_id] | @tsv' \
+            | awk -F'\t' -v sha="$SHA" -v autor="$AUTOR" '{ultimo[$1]=$2 FS $3} END {for (u in ultimo) {split(ultimo[u], r, FS); if (u != autor && r[1] == "APPROVED" && r[2] == sha) n++} print n+0}')
+
+          if [ "$aprovacoes" -ge 1 ]; then
+            status success "Aprovado por quem não é o autor"
+          else
+            # A descrição do status é o que o dev vê no PR (máx. 140 caracteres).
+            status pending "Falta 1 aprovação de outra pessoa neste commit: peça review (push novo exige nova aprovação)"
+          fi

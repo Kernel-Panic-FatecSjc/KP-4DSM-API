@@ -1,10 +1,10 @@
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
-import { ALARME_COM_RELACOES } from '../fixtures';
+import { ALARME_COM_RELACOES, LICITACAO_FIXTURE } from '../fixtures';
 import { criarAppDeTeste } from '../helpers';
 
-const MONITOR = { id: 'monitor-1', email: 'monitor@teste.com', tipo: 'MONITOR', ativo: true };
+const MONITOR = { id: 'monitor-1', email: 'monitor@teste.com', tipo: 'USUARIO_LICITACAO', licitacaoId: LICITACAO_FIXTURE, licitacao: { status: 'VIGENTE' }, ativo: true };
 
 describe('Tratamento de alarmes (funcional)', () => {
   let app: INestApplication;
@@ -25,12 +25,26 @@ describe('Tratamento de alarmes (funcional)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     usuario.findUnique.mockResolvedValue(MONITOR);
-    alarme.findUnique.mockResolvedValue({ status: 'ABERTO' });
+    alarme.findUnique.mockResolvedValue({ status: 'ABERTO', alerta: { licitacaoId: LICITACAO_FIXTURE } });
     alarme.update.mockImplementation(({ data }) => ({ ...ALARME_COM_RELACOES, ...data }));
   });
 
   afterAll(async () => {
     await app.close();
+  });
+
+  it('nega mudar o status de alarme de outra licitação', async () => {
+    alarme.findUnique.mockResolvedValue({ status: 'ABERTO', alerta: { licitacaoId: 'outra-licitacao' } });
+
+    await remendar({ status: 'RECONHECIDO' }).expect(403);
+    expect(alarme.update).not.toHaveBeenCalled();
+  });
+
+  it('nega a escrita quando a licitação do usuário não está vigente', async () => {
+    usuario.findUnique.mockResolvedValue({ ...MONITOR, licitacao: { status: 'ENCERRADA' } });
+
+    await remendar({ status: 'RECONHECIDO' }).expect(403);
+    expect(alarme.update).not.toHaveBeenCalled();
   });
 
   const remendar = (payload: object, comCookie = cookie) =>
@@ -48,6 +62,49 @@ describe('Tratamento de alarmes (funcional)', () => {
       valorMedido: 42,
       severidade: 'EMERGENCIA',
     });
+  });
+
+  it('grava quem reconheceu e quando, e devolve as ações no histórico', async () => {
+    const reconhecidoEm = new Date('2026-11-08T12:00:00.000Z');
+    alarme.update.mockImplementation(({ data }) => ({
+      ...ALARME_COM_RELACOES,
+      ...data,
+      reconhecidoEm,
+      reconhecidoPor: { id: MONITOR.id, nome: 'Monitor' },
+    }));
+
+    const resposta = await remendar({ status: 'RECONHECIDO', observacao: 'Equipe enviada ao local' }).expect(200);
+
+    expect(alarme.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'RECONHECIDO',
+          reconhecidoPorId: MONITOR.id,
+          reconhecidoEm: expect.any(Date),
+          observacao: 'Equipe enviada ao local',
+        }),
+      }),
+    );
+    expect(resposta.body).toMatchObject({
+      reconhecimento: { em: reconhecidoEm.toISOString(), por: { id: MONITOR.id, nome: 'Monitor' } },
+      resolucao: null,
+      observacao: 'Equipe enviada ao local',
+    });
+  });
+
+  it('grava a resolução sem mexer no reconhecimento já registrado', async () => {
+    alarme.findUnique.mockResolvedValue({ status: 'RECONHECIDO', alerta: { licitacaoId: LICITACAO_FIXTURE } });
+
+    await remendar({ status: 'RESOLVIDO' }).expect(200);
+
+    const { data } = alarme.update.mock.calls[0][0];
+    expect(data).toMatchObject({ status: 'RESOLVIDO', resolvidoPorId: MONITOR.id, resolvidoEm: expect.any(Date) });
+    expect(data).not.toHaveProperty('reconhecidoPorId');
+  });
+
+  it('rejeita observação acima de 1000 caracteres', async () => {
+    await remendar({ status: 'RECONHECIDO', observacao: 'x'.repeat(1001) }).expect(400);
+    expect(alarme.update).not.toHaveBeenCalled();
   });
 
   it('registra a transição na trilha de auditoria', async () => {
@@ -73,7 +130,7 @@ describe('Tratamento de alarmes (funcional)', () => {
   });
 
   it('responde 409 ao tentar reabrir um alarme já resolvido', async () => {
-    alarme.findUnique.mockResolvedValue({ status: 'RESOLVIDO' });
+    alarme.findUnique.mockResolvedValue({ status: 'RESOLVIDO', alerta: { licitacaoId: LICITACAO_FIXTURE } });
 
     await remendar({ status: 'ABERTO' }).expect(409);
     expect(alarme.update).not.toHaveBeenCalled();

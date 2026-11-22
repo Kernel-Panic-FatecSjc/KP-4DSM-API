@@ -1,0 +1,56 @@
+name: Verificar candidato
+
+# Portão da pré-release e da produção: o SHA só segue se passou na suíte
+# noturna (status "suite-noturna" verde, gravado por suite-noturna.yaml). O
+# deploy usa este SHA testado, nunca o HEAD da main, que pode ter recebido
+# commits não testados depois da noite.
+#   Em outro workflow:  uses: ./.github/workflows/verificar-candidato.yaml
+#                       with: { sha: <sha> }
+#   À mão: Actions > Verificar candidato > Run workflow.
+
+on:
+  workflow_call:
+    inputs:
+      sha:
+        description: Commit a promover
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Commit a promover
+        type: string
+        required: true
+
+permissions:
+  statuses: read
+
+jobs:
+  verificar:
+    name: Verificar candidato
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: SHA passou na suíte noturna
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          if ! printf '%s' "$SHA" | grep -qE '^[0-9a-f]{7,40}$'; then
+            echo "::error::\"$SHA\" não é um SHA de commit. Use o SHA de uma tag candidato/AAAA-MM-DD: git rev-list -n 1 candidato/AAAA-MM-DD"
+            exit 1
+          fi
+          estado=$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/status" \
+            --jq '.statuses[] | select(.context == "suite-noturna") | .state' | head -n 1) || estado=""
+          if [ "$estado" != "success" ]; then
+            echo "::error::O commit ${SHA:0:7} não passou na suíte noturna (status: ${estado:-nenhum})."
+            cat <<'AJUDA'
+          Próximo passo:
+            - Use o SHA de um candidato: git tag -l 'candidato/*' --sort=-creatordate | head
+            - Ou rode a suíte agora: Actions > Suíte noturna > Run workflow (branch main).
+            - Hotfix não passa por aqui: use o fluxo de hotfix (wiki, Roadmap DevOps).
+          AJUDA
+            exit 1
+          fi
+          echo "Candidato ${SHA:0:7}: passou na suíte noturna." | tee -a "$GITHUB_STEP_SUMMARY"

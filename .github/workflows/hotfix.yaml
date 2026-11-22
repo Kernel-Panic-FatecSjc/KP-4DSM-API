@@ -1,0 +1,162 @@
+name: Hotfix
+
+# Depende do servidor: travado por vars.CD_HABILITADO (deploy-vm.yaml).
+# Atalho para urgência em produção. Rode em "Use workflow from" escolhendo a
+# branch hotfix/SCRUM-{ID}-... O atalho pula SÓ a pré-release:
+#   - o CI inteiro continua obrigatório (o mesmo ci.yaml, que também empacota);
+#   - o registro no Confluence é obrigatório (link_confluence). Assinaturas:
+#     hotfix sem banco = 1 dev; hotfix que mexe no banco = 2 devs (double check,
+#     política de banco 7.2);
+#   - a produção continua com aprovação humana: o job "Aprovação" usa o
+#     Environment "aprovacao-hotfix", que tem revisores obrigatórios. No fluxo
+#     normal o gate é o PR pre-release → release; o hotfix não tem esse PR, por
+#     isso o gate dele fica aqui.
+# Depois do deploy: grava quem, quando, commit, link e motivo no resumo, abre
+# (ou comenta) o PR de volta para a main e uma issue de pós-hotfix (registro de
+# incidente).
+
+on:
+  workflow_dispatch:
+    inputs:
+      link_confluence:
+        description: Link do registro de aprovação no Confluence
+        type: string
+        required: true
+      motivo:
+        description: O que está quebrado em produção (uma frase)
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  validar:
+    name: Validar o pedido de hotfix
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.v.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: v
+        env:
+          LINK: ${{ inputs.link_confluence }}
+          MOTIVO: ${{ inputs.motivo }}
+        run: |
+          falhas=0
+          erro() { echo "::error::$1"; falhas=$((falhas + 1)); }
+          printf '%s' "$GITHUB_REF_NAME" | grep -qE '^hotfix/SCRUM-[0-9]+-[a-z0-9-]+$' \
+            || erro "Rode a partir da branch hotfix/SCRUM-{ID}-descricao (em \"Use workflow from\"), não de $GITHUB_REF_NAME."
+          printf '%s' "$LINK" | grep -qE '^https://[A-Za-z0-9.-]+\.atlassian\.net/wiki/' \
+            || erro "link_confluence precisa ser o link do registro no Confluence (https://<time>.atlassian.net/wiki/...)."
+          [ "${#MOTIVO}" -ge 10 ] || erro "Descreva o motivo em uma frase (o que está quebrado em produção)."
+          if git diff --name-only origin/main...HEAD | grep -q '^kernelpanic-backend/prisma/migrations/'; then
+            echo "::warning::Este hotfix altera migrations: o registro no Confluence precisa da assinatura de 2 devs (double check)."
+          fi
+          [ "$falhas" -eq 0 ] || exit 1
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+  ci:
+    name: CI (obrigatório também no hotfix)
+    needs: validar
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/ci.yaml
+
+  aprovacao:
+    name: Aprovação do hotfix
+    needs: [validar, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Revisores obrigatórios configurados no Environment (manual, seção 7.4).
+    environment: aprovacao-hotfix
+    permissions: {}
+    steps:
+      - env:
+          SHA: ${{ needs.validar.outputs.sha }}
+        run: echo "Hotfix \`${SHA:0:7}\` aprovado para produção." >> "$GITHUB_STEP_SUMMARY"
+
+  # Automático só com runner no servidor da prefeitura. No modo manual, o
+  # pacote é o artefato pacote-<sha> deste run; a TI instala com o deploy.ps1
+  # (manual de instalação, seção 7.6).
+  deploy:
+    needs: [validar, aprovacao]
+    if: vars.PRODUCAO_AUTOMATICA == 'true'
+    permissions:
+      actions: read
+      contents: read
+      statuses: write
+    uses: ./.github/workflows/deploy-vm.yaml
+    with:
+      sha: ${{ needs.validar.outputs.sha }}
+      ambiente: producao
+      run_id: atual
+    secrets: inherit
+
+  registrar:
+    name: Registro, PR de volta e pós-hotfix
+    needs: [validar, aprovacao, deploy]
+    if: always() && needs.validar.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SHA: ${{ needs.validar.outputs.sha }}
+          LINK: ${{ inputs.link_confluence }}
+          MOTIVO: ${{ inputs.motivo }}
+          DEPLOY: ${{ needs.deploy.result }}
+          APROVACAO: ${{ needs.aprovacao.result }}
+          URL_RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ "$DEPLOY" = skipped ] && [ "$APROVACAO" = success ]; then
+            DEPLOY="manual: baixar o artefato pacote-${SHA} deste run e instalar com o deploy.ps1 (manual, seção 7.6)"
+          fi
+          quando=$(date -u +%FT%TZ)
+          registro="| | |
+          |---|---|
+          | Quem | @$GITHUB_ACTOR |
+          | Quando | $quando |
+          | Branch | \`$GITHUB_REF_NAME\` |
+          | Commit | \`${SHA:0:7}\` |
+          | Registro (Confluence) | $LINK |
+          | Motivo | $MOTIVO |
+          | Deploy em produção | $DEPLOY ([run]($URL_RUN)) |"
+          echo "### Hotfix" >> "$GITHUB_STEP_SUMMARY"
+          echo "$registro" >> "$GITHUB_STEP_SUMMARY"
+
+          # O hotfix volta para a main pelo fluxo normal (PR, review, CI).
+          pr=$(gh pr list --head "$GITHUB_REF_NAME" --base main --state open --json number --jq '.[0].number')
+          if [ -n "$pr" ]; then
+            gh pr comment "$pr" --body "Hotfix aplicado em produção a partir deste PR.
+
+          $registro"
+          else
+            id=$(printf '%s' "$GITHUB_REF_NAME" | grep -oE 'SCRUM-[0-9]+')
+            gh pr create --base main --head "$GITHUB_REF_NAME" \
+              --title "hotfix($id): $MOTIVO" \
+              --body "Volta para a main do hotfix aplicado em produção.
+
+          $registro"
+          fi
+
+          gh label create incidente --color D93F0B --description "Registro de incidente / pós-hotfix" 2>/dev/null || true
+          gh issue create --label incidente --title "Pós-hotfix: $MOTIVO" --body "Registro de incidente do hotfix (Monitoramento e observabilidade, na wiki).
+
+          $registro
+
+          ### A preencher
+          - [ ] Linha do tempo: quando quebrou, quando detectamos, quando alguém soube, quando agimos
+          - [ ] Causa raiz
+          - [ ] Por que o CI e a suíte noturna não pegaram (teste que falta?)
+          - [ ] Ação preventiva (tarefa no Jira)"

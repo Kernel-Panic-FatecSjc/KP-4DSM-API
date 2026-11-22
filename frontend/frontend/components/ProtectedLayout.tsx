@@ -2,7 +2,7 @@
 
 import { usePathname, useRouter } from 'next/navigation';
 import { createContext, useContext, useEffect, useState } from 'react';
-import { api, ErroApi } from '@/lib/api';
+import { api, ErroApi, type Usuario } from '@/lib/api';
 
 /**
  * Rotas dentro da área protegida que não exigem autenticação.
@@ -19,9 +19,14 @@ export function ehRotaPublica(pathname: string): boolean {
 type EstadoSessao = 'verificando' | 'autenticado' | 'visitante';
 
 const SessaoContext = createContext<EstadoSessao>('verificando');
+const UsuarioContext = createContext<Usuario | null>(null);
 
 export function useSessao(): EstadoSessao {
   return useContext(SessaoContext);
+}
+
+export function useUsuario(): Usuario | null {
+  return useContext(UsuarioContext);
 }
 
 export function ProtectedLayout({ children }: { children: React.ReactNode }) {
@@ -29,16 +34,21 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const publica = ehRotaPublica(pathname);
   const [sessao, setSessao] = useState<EstadoSessao>('verificando');
+  const [usuario, setUsuario] = useState<Usuario | null>(null);
 
   useEffect(() => {
     let ativo = true;
 
-    api('/autenticacao/perfil')
-      .then(() => {
-        if (ativo) setSessao('autenticado');
+    api<Usuario>('/autenticacao/perfil')
+      .then((perfil) => {
+        if (ativo) {
+          setUsuario(perfil);
+          setSessao('autenticado');
+        }
       })
       .catch((erro) => {
         if (!ativo) return;
+        setUsuario(null);
         if (publica) {
           setSessao('visitante');
           return;
@@ -60,5 +70,9 @@ export function ProtectedLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <SessaoContext.Provider value={sessao}>{children}</SessaoContext.Provider>;
+  return (
+    <UsuarioContext.Provider value={usuario}>
+      <SessaoContext.Provider value={sessao}>{children}</SessaoContext.Provider>
+    </UsuarioContext.Provider>
+  );
 }

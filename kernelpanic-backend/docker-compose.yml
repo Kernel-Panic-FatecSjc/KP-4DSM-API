@@ -11,5 +11,24 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # Broker MQTT (VPS 1). As senhas abaixo são só de desenvolvimento: em
+  # produção venham do ambiente (.env), as mesmas que o backend e a ingestão usam.
+  broker:
+    image: eclipse-mosquitto:2.0.21
+    restart: unless-stopped
+    entrypoint: ['/bin/sh', '/mosquitto/iniciar.sh']
+    environment:
+      MQTT_ADMIN_USUARIO: ${MQTT_ADMIN_USUARIO:-admin}
+      MQTT_ADMIN_SENHA: ${MQTT_ADMIN_SENHA:-admin-dev}
+      MQTT_INGESTAO_USUARIO: ${MQTT_INGESTAO_USUARIO:-ingestao}
+      MQTT_INGESTAO_SENHA: ${MQTT_INGESTAO_SENHA:-ingestao-dev}
+    ports:
+      - '1883:1883'
+    volumes:
+      - ../broker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../broker/iniciar.sh:/mosquitto/iniciar.sh:ro
+      - broker_data:/mosquitto/data
+
 volumes:
   postgres_data:
+  broker_data:

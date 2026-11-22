@@ -1,11 +1,11 @@
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
-import { ALERTA_COM_RELACOES, NOVO_ALERTA, PARAMETRO_CHUVA } from '../fixtures';
+import { ALERTA_COM_RELACOES, NOVO_ALERTA, PARAMETRO_CHUVA, LICITACAO_FIXTURE } from '../fixtures';
 import { criarAppDeTeste } from '../helpers';
 
-const ADMIN = { id: 'admin-1', email: 'admin@teste.com', tipo: 'ADMINISTRADOR', ativo: true };
-const MONITOR = { id: 'monitor-1', email: 'monitor@teste.com', tipo: 'MONITOR', ativo: true };
+const ADMIN = { id: 'admin-1', email: 'admin@teste.com', tipo: 'ADMIN_TECSUS', licitacaoId: null, licitacao: null, ativo: true };
+const MONITOR = { id: 'monitor-1', email: 'monitor@teste.com', tipo: 'USUARIO_LICITACAO', licitacaoId: LICITACAO_FIXTURE, licitacao: { status: 'VIGENTE' }, ativo: true };
 
 describe('Cadastro de alertas (funcional)', () => {
   let app: INestApplication;
@@ -31,7 +31,7 @@ describe('Cadastro de alertas (funcional)', () => {
     usuario.findUnique.mockImplementation(({ where }) =>
       [ADMIN, MONITOR].find((existente) => existente.id === where.id) ?? null,
     );
-    parametro.findUnique.mockResolvedValue({ id: PARAMETRO_CHUVA });
+    parametro.findUnique.mockResolvedValue({ id: PARAMETRO_CHUVA, estacao: { licitacaoId: LICITACAO_FIXTURE } });
     alerta.create.mockResolvedValue(ALERTA_COM_RELACOES);
   });
 
@@ -54,7 +54,7 @@ describe('Cadastro de alertas (funcional)', () => {
       estacao: { id: ALERTA_COM_RELACOES.parametro.estacao.id },
       parametro: { nome: 'Pluviômetro', unidade: 'mm' },
     });
-    expect(alerta.create).toHaveBeenCalledWith(expect.objectContaining({ data: NOVO_ALERTA }));
+    expect(alerta.create).toHaveBeenCalledWith(expect.objectContaining({ data: { ...NOVO_ALERTA, licitacaoId: LICITACAO_FIXTURE } }));
   });
 
   it('registra a criação na trilha de auditoria', async () => {

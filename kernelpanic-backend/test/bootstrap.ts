@@ -14,10 +14,21 @@ const PADROES_DE_TESTE: Record<string, string> = {
   // o LISTEN do tempo real abriria uma conexão real com o banco em toda spec,
   // inclusive nas que usam o Prisma mockado; alarmes-tempo-real.spec.ts liga.
   ALARMES_TEMPO_REAL: 'false',
+  // sem broker nos testes: o backend pula o cadastro das estações e a ingestão
+  // recebe só pela rota HTTP (o caminho MQTT tem teste próprio, com broker de verdade)
+  MQTT_URL: '',
 };
 
+// Atribui, em vez de só preencher o que falta: o .env de desenvolvimento
+// (copiado do .env.example) já define estes valores, e o limite de login de 5
+// por minuto dele fazia os testes de autenticação levarem 429.
 for (const [chave, valor] of Object.entries(PADROES_DE_TESTE)) {
-  process.env[chave] ??= valor;
+  process.env[chave] = valor;
 }
 
-process.env.DATABASE_URL = obterUrlBancoDeTeste();
+// Só aponta para o banco de teste quando há um banco configurado: os unitários
+// (Prisma mockado) rodam sem banco. Os funcionais continuam exigindo, pelo
+// global-setup, que chama obterUrlBancoDeTeste() e falha sem DATABASE_URL.
+if (process.env.DATABASE_URL || process.env.DATABASE_URL_TESTE) {
+  process.env.DATABASE_URL = obterUrlBancoDeTeste();
+}

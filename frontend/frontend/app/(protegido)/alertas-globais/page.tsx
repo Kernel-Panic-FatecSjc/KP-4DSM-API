@@ -17,7 +17,9 @@ import {
 import { useCallback, useEffect, useState } from 'react';
 import { EVENTO_JANELA_NOVOS_ALARMES } from '@/components/AlertaTempoReal';
 import { PageHeading } from '@/components/PageHeading';
+import { useUsuario } from '@/components/ProtectedLayout';
 import { FaixaRegiao, SeletorRegiao, useRegiao } from '@/components/RegiaoVisitante';
+import { SeletorLicitacao } from '@/components/SeletorLicitacao';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import {
@@ -34,6 +36,7 @@ import {
   type StatusAlarme,
 } from '@/lib/api';
 import { useRouter } from 'next/navigation';
+import { ehTecsus } from '@/lib/perfil';
 import { queryRegiao } from '@/lib/regiao';
 import { cn } from '@/lib/utils';
 
@@ -121,8 +124,13 @@ function FiltroCampo({ label, children }: { label: string; children: React.React
   );
 }
 
+// Página só de leitura, para visitante e para logado: nada aqui muda alarme ou
+// alerta (isso fica em /alarmes e /gerenciamento-de-alertas).
 export default function AlarmesPage() {
   const router = useRouter();
+  const tecsus = ehTecsus(useUsuario());
+  // Só a Tecsus filtra; o usuário de licitação já recebe só a dele.
+  const [licitacaoId, setLicitacaoId] = useState('');
   const [opcoes, setOpcoes] = useState<OpcoesFiltroAlarmes | null>(null);
   const [resultado, setResultado] = useState<ListaAlarmes | null>(null);
   const [filtros, setFiltros] = useState<FiltrosAlarmes>({ pagina: 1 });
@@ -137,9 +145,12 @@ export default function AlarmesPage() {
   // Visitante só consulta com a região informada; logado não manda região.
   const { exigida, pronta, regiao } = useRegiao();
   const filtroRegiao = queryRegiao(regiao);
+  const filtroExtra = [filtroRegiao, licitacaoId && `licitacaoId=${encodeURIComponent(licitacaoId)}`]
+    .filter(Boolean)
+    .join('&');
   const comRegiao = useCallback(
-    (caminho: string) => (filtroRegiao ? `${caminho}${caminho.includes('?') ? '&' : '?'}${filtroRegiao}` : caminho),
-    [filtroRegiao],
+    (caminho: string) => (filtroExtra ? `${caminho}${caminho.includes('?') ? '&' : '?'}${filtroExtra}` : caminho),
+    [filtroExtra],
   );
 
   useEffect(() => {
@@ -244,6 +255,13 @@ export default function AlarmesPage() {
     setFiltrosAlertas((atual) => ({ ...atual, pagina }));
   }
 
+  function alterarLicitacao(novaLicitacaoId: string) {
+    // Estação e parâmetro escolhidos podem não existir na nova licitação.
+    setLicitacaoId(novaLicitacaoId);
+    setFiltros({ pagina: 1 });
+    setFiltrosAlertas({ pagina: 1 });
+  }
+
   const totalPaginas = resultado ? Math.max(1, Math.ceil(resultado.total / resultado.tamanho)) : 1;
   const totalPaginasAlertas = resultadoAlertas
     ? Math.max(1, Math.ceil(resultadoAlertas.total / resultadoAlertas.tamanho))
@@ -261,6 +279,20 @@ export default function AlarmesPage() {
       ) : (
         <>
           <FaixaRegiao />
+
+          {tecsus && (
+            <section className="rise flex max-w-md flex-col gap-1" aria-label="Filtro de licitação">
+              <label htmlFor="licitacao" className="font-mono text-[10px] uppercase text-muted-foreground">
+                Licitação
+              </label>
+              <SeletorLicitacao
+                id="licitacao"
+                valor={licitacaoId}
+                onChange={alterarLicitacao}
+                rotuloTodas="Todas as licitações"
+              />
+            </section>
+          )}
 
           <section
             className="rise delay-1 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
@@ -331,7 +363,7 @@ export default function AlarmesPage() {
                 type="datetime-local"
                 value={filtros.de ?? ''}
                 onChange={(e) => atualizarFiltro('de', e.target.value)}
-                className="h-9 w-full rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="h-9 w-full min-w-0 rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </FiltroCampo>
 
@@ -341,7 +373,7 @@ export default function AlarmesPage() {
                   type="datetime-local"
                   value={filtros.ate ?? ''}
                   onChange={(e) => atualizarFiltro('ate', e.target.value)}
-                  className="h-9 w-full rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="h-9 w-full min-w-0 rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 />
                 <Button type="button" variant="outline" size="sm" onClick={() => setFiltros({ pagina: 1 })}>
                   Limpar
@@ -531,7 +563,7 @@ function AlarmesTabela({
       )}
 
       {resultado && resultado.total > 0 && (
-        <div className="flex items-center justify-between border-t border-border px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
           <span className="font-mono text-[10px] text-muted-foreground">
             Página {resultado.pagina} de {totalPaginas} · {resultado.total} ocorrência(s)
           </span>
@@ -783,7 +815,7 @@ function AlertasTabela({
       )}
 
       {resultado && resultado.total > 0 && (
-        <div className="flex items-center justify-between border-t border-border px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-3">
           <span className="font-mono text-[10px] text-muted-foreground">
             Página {resultado.pagina} de {totalPaginas} · {resultado.total} alerta(s)
           </span>

@@ -1,5 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import type { Prisma } from '../generated/prisma/client';
+import { licitacaoDoEscopo } from '../autenticacao/escopo-licitacao';
+import type { UsuarioLogado } from '../autenticacao/payload-jwt.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { DashboardQueryDto, type PeriodoDashboard } from './dto/dashboard-query.dto';
 
@@ -9,24 +11,31 @@ const UM_DIA_EM_MS = 24 * 60 * 60 * 1000;
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async buscarDados(query: DashboardQueryDto) {
+  /**
+   * Dashboard geral (Tecsus, com filtro opcional de licitação) ou da licitação
+   * do usuário. medidas.licitacaoId é o dono do histórico: uma estação que
+   * mudou de licitação não leva junto as medidas antigas.
+   */
+  async buscarDados(query: DashboardQueryDto, usuario: UsuarioLogado) {
+    const licitacaoId = licitacaoDoEscopo(usuario, query.licitacaoId);
     const { de, ate } = this.resolverPeriodo(query);
     const inicioUnix = BigInt(Math.floor(de.getTime() / 1000));
     const fimUnix = BigInt(Math.floor(ate.getTime() / 1000));
 
     const filtroMedidas: Prisma.MedidaWhereInput = {
+      licitacaoId,
       estacaoId: query.estacaoId,
       unixtime: { gte: inicioUnix, lte: fimUnix },
     };
     const filtroAlarmes: Prisma.AlarmeWhereInput = {
       status: 'ABERTO',
       disparadoEm: { gte: de, lte: ate },
-      alerta: { parametro: { estacaoId: query.estacaoId } },
+      alerta: { licitacaoId, parametro: { estacaoId: query.estacaoId } },
     };
 
     const [estacoes, medidas, alarmesAbertos] = await Promise.all([
       this.prisma.estacao.findMany({
-        where: query.estacaoId ? { id: query.estacaoId } : undefined,
+        where: { id: query.estacaoId, licitacaoId },
         select: { id: true, nome: true, endereco: true },
         orderBy: { nome: 'asc' },
       }),
@@ -76,6 +85,7 @@ export class DashboardService {
       : null;
 
     return {
+      licitacaoId: licitacaoId ?? null,
       periodo: { de: de.toISOString(), ate: ate.toISOString() },
       estacoes,
       indicadores: {

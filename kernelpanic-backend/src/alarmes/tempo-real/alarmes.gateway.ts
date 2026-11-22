@@ -9,6 +9,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import type { Namespace, Socket } from 'socket.io';
+import { TipoUsuario } from '../../generated/prisma/client';
 import type { PayloadJwt } from '../../autenticacao/payload-jwt.interface';
 import { UsuariosService } from '../../usuarios/usuarios.service';
 import { coordenadasValidas, distanciaKm, RAIO_REGIAO_KM, type Coordenadas } from '../../regiao/regiao';
@@ -27,6 +28,8 @@ function lerCookie(cabecalho: string | undefined, nome: string): string | undefi
 
 interface DadosCliente {
   autenticado: boolean;
+  /** Usuário de licitação só recebe os alarmes dela; a Tecsus (null) recebe todos. */
+  licitacaoId?: string | null;
   regiao?: Coordenadas;
 }
 
@@ -57,8 +60,7 @@ export class AlarmesGateway implements OnGatewayConnection {
   ) {}
 
   async handleConnection(cliente: Socket): Promise<void> {
-    const dados: DadosCliente = { autenticado: await this.estaAutenticado(cliente) };
-    cliente.data = dados;
+    cliente.data = (await this.lerSessao(cliente)) satisfies DadosCliente;
   }
 
   @SubscribeMessage(EVENTO_REGIAO)
@@ -76,25 +78,34 @@ export class AlarmesGateway implements OnGatewayConnection {
   }
 
   private filtrarPara(dados: DadosCliente | undefined, alarmes: AlarmeComPosicao[]): AlarmeHistoricoRespostaDto[] {
+    // A licitação vem antes da região: o usuário logado nunca recebe alarme de
+    // outra licitação, nem perto dele.
+    const daLicitacao = dados?.licitacaoId
+      ? alarmes.filter(({ alarme }) => alarme.licitacaoId === dados.licitacaoId)
+      : alarmes;
     if (dados?.regiao) {
       const regiao = dados.regiao;
-      return alarmes.filter(({ posicao }) => distanciaKm(regiao, posicao) <= RAIO_REGIAO_KM).map(({ alarme }) => alarme);
+      return daLicitacao.filter(({ posicao }) => distanciaKm(regiao, posicao) <= RAIO_REGIAO_KM).map(({ alarme }) => alarme);
     }
     // Visitante que ainda não informou a região não recebe nada.
-    return dados?.autenticado ? alarmes.map(({ alarme }) => alarme) : [];
+    return dados?.autenticado ? daLicitacao.map(({ alarme }) => alarme) : [];
   }
 
-  private async estaAutenticado(cliente: Socket): Promise<boolean> {
+  private async lerSessao(cliente: Socket): Promise<DadosCliente> {
     const token = lerCookie(cliente.handshake.headers.cookie, 'access_token');
-    if (!token) return false;
+    if (!token) return { autenticado: false };
 
     try {
       const payload = this.jwtService.verify<PayloadJwt>(token);
       const usuario = await this.usuariosService.buscarPorId(payload.sub);
-      return usuario.ativo;
+      if (!usuario.ativo) return { autenticado: false };
+      return {
+        autenticado: true,
+        licitacaoId: usuario.tipo === TipoUsuario.ADMIN_TECSUS ? null : usuario.licitacaoId,
+      };
     } catch {
       this.logger.debug(`Cookie inválido no websocket de alarmes (${cliente.id}); tratado como visitante`);
-      return false;
+      return { autenticado: false };
     }
   }
 }

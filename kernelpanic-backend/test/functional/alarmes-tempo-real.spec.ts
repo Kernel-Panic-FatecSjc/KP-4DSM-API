@@ -4,7 +4,7 @@ import request from 'supertest';
 import { io, type Socket } from 'socket.io-client';
 import { EVENTO_NOVOS_ALARMES, EVENTO_REGIAO } from '../../src/alarmes/tempo-real/alarmes.gateway';
 import { PrismaService } from '../../src/prisma/prisma.service';
-import { criarAppDeTeste, emailDeTeste, PREFIXO_TESTE } from '../helpers';
+import { criarAppDeTeste, criarLicitacaoDeTeste, emailDeTeste, PREFIXO_TESTE } from '../helpers';
 
 interface AlarmeRecebido {
   id: string;
@@ -29,6 +29,9 @@ describe('Alarmes em tempo real (funcional)', () => {
   let parametroId: string;
   let estacaoId: string;
   let cookieAdmin: string;
+  let cookieDaLicitacao: string;
+  let cookieOutraLicitacao: string;
+  let licitacaoId: string;
   const clientes: Socket[] = [];
   const valorOriginal = process.env.ALARMES_TEMPO_REAL;
 
@@ -63,7 +66,7 @@ describe('Alarmes em tempo real (funcional)', () => {
   }
 
   function dispararMedida(valor: number, unixtime: bigint) {
-    return prisma.medida.create({ data: { valor, unixtime, parametroId, estacaoId } });
+    return prisma.medida.create({ data: { valor, unixtime, parametroId, estacaoId, licitacaoId } });
   }
 
   beforeAll(async () => {
@@ -72,12 +75,20 @@ describe('Alarmes em tempo real (funcional)', () => {
     await app.listen(0);
     prisma = app.get(PrismaService);
 
-    const usuario = await prisma.usuario.create({
-      data: { nome: 'Tempo real', email: emailDeTeste('tempo-real'), senhaHash: 'x' },
-    });
-    cookieAdmin = `access_token=${app.get(JwtService).sign({ sub: usuario.id, email: usuario.email })}`;
+    licitacaoId = (await criarLicitacaoDeTeste(app)).id;
+    const outraLicitacaoId = (await criarLicitacaoDeTeste(app)).id;
+    const cookieDe = async (tipo: 'ADMIN_TECSUS' | 'USUARIO_LICITACAO', licitacao: string | null) => {
+      const criado = await prisma.usuario.create({
+        data: { nome: 'Tempo real', email: emailDeTeste(`tempo-real-${tipo}-${licitacao}`), senhaHash: 'x', tipo, licitacaoId: licitacao },
+      });
+      return `access_token=${app.get(JwtService).sign({ sub: criado.id, email: criado.email })}`;
+    };
+    cookieAdmin = await cookieDe('ADMIN_TECSUS', null);
+    cookieDaLicitacao = await cookieDe('USUARIO_LICITACAO', licitacaoId);
+    cookieOutraLicitacao = await cookieDe('USUARIO_LICITACAO', outraLicitacaoId);
+    const usuario = await prisma.usuario.findFirstOrThrow({ where: { tipo: 'ADMIN_TECSUS' } });
     const tipo = await prisma.tipoParametro.create({
-      data: { nome: `${PREFIXO_TESTE}chuva`, unidade: 'mm', fator: 1, ganho: 0 },
+      data: { nome: `${PREFIXO_TESTE}chuva`, unidade: 'mm', fator: 1, ganho: 0, licitacaoId },
     });
     const estacao = await prisma.estacao.create({
       data: {
@@ -85,6 +96,7 @@ describe('Alarmes em tempo real (funcional)', () => {
         endereco: 'Rua de teste',
         vid: `${PREFIXO_TESTE}${Date.now()}`,
         usuarioId: usuario.id,
+        licitacaoId,
         ...POSICAO_ESTACAO,
       },
     });
@@ -92,7 +104,7 @@ describe('Alarmes em tempo real (funcional)', () => {
       data: { estacaoId: estacao.id, tipoParametroId: tipo.id },
     });
     await prisma.alerta.create({
-      data: { operador: 'MAIOR_QUE', valorLimite: 50, severidade: 'EMERGENCIA', parametroId: parametro.id },
+      data: { operador: 'MAIOR_QUE', valorLimite: 50, severidade: 'EMERGENCIA', parametroId: parametro.id, licitacaoId },
     });
     estacaoId = estacao.id;
     parametroId = parametro.id;
@@ -129,6 +141,21 @@ describe('Alarmes em tempo real (funcional)', () => {
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(espiaoLonge).not.toHaveBeenCalled();
     expect(espiaoSemRegiao).not.toHaveBeenCalled();
+  });
+
+  it('usuário logado só recebe os alarmes da própria licitação', async () => {
+    const daLicitacao = await conectar({ cookie: cookieDaLicitacao });
+    const espiaoOutra = espiar(await conectar({ cookie: cookieOutraLicitacao }));
+    // Nem informando uma região perto da estação o usuário de outra licitação recebe.
+    const espiaoOutraPerto = espiar(await conectar({ cookie: cookieOutraLicitacao, regiao: PERTO }));
+
+    const recebidos = aguardarAlarmes(daLicitacao);
+    await dispararMedida(85, 1_760_000_030n);
+
+    expect(await recebidos).toHaveLength(1);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(espiaoOutra).not.toHaveBeenCalled();
+    expect(espiaoOutraPerto).not.toHaveBeenCalled();
   });
 
   it('não reenvia alarmes já emitidos no próximo disparo', async () => {

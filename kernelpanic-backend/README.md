@@ -25,6 +25,9 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+O procedimento de instalação, configuração e operação da plataforma está no
+[Manual de instalação e operação do DATA PANIC](../docs/manual-instalacao-operacao.md).
+
 ## Project setup
 
 ```bash
@@ -49,9 +52,10 @@ $ npm run start:prod
 Os testes ficam em `test/`, separados por natureza:
 
 - `test/unit/` — serviços, DTOs, validators e guards isolados, com mocks. Não precisa de banco.
-- `test/functional/` — sobem a aplicação e batem via HTTP (supertest). As specs de
-  ingestão e alertas substituem o `PrismaService` por um mock; as de autenticação
-  usam o banco de teste.
+- `test/functional/` — sobem a aplicação (ou o serviço de ingestão) e batem via HTTP
+  (supertest). Algumas substituem o `PrismaService` por um mock; as de licitações,
+  escopo, tratamento e autenticação usam o banco de teste. `broker.spec.ts` só roda
+  com `MQTT_URL_TESTE` apontando para um Mosquitto (o do docker-compose).
 - `test/helpers.ts`, `test/fixtures.ts`, `test/bootstrap.ts` — apoio compartilhado.
 
 Os testes funcionais nunca usam o banco de desenvolvimento: rodam num banco próprio,
@@ -70,6 +74,41 @@ $ npm run test:functional
 # cobertura (unitários)
 $ npm run test:cov
 ```
+
+## Cadeia de dados: broker, ingestão e tratamento
+
+A telemetria não passa pela API. Este pacote tem três processos (formato do tópico, do payload e garantias em [docs/mqtt-topico-payload.md](../docs/mqtt-topico-payload.md)):
+
+| Processo | Código | Como subir | Porta |
+| --- | --- | --- | --- |
+| API (consultas, CRUD, auditoria) | `src/` | `npm run start:dev` | `PORT` (3001) |
+| Ingestão: assina o broker e só grava `leituras_brutas`; aceita `POST /ingestao/telemetria` como alternativa | `servicos/ingestao/` | `npm run build:servicos && npm run start:ingestao` | `INGESTAO_PORTA` (3002) |
+| Tratamento: lê `leituras_brutas` em lotes e grava `medidas` e `leituras_erro` | `servicos/tratamento/` | `npm run build:servicos && npm run start:tratamento` | `TRATAMENTO_PORTA` (3003) |
+
+O broker (Mosquitto) sobe com `docker compose up -d broker`; a configuração fica em [`../broker`](../broker). Para ver a cadeia andando, `npm run simulador` cria estações de teste e publica leituras no broker.
+
+### Chave por estação
+
+Cada estação tem uma chave de ingestão, que é a senha dela no broker (o usuário é o `vid`) e o header `x-chave-estacao` da rota HTTP. A chave de outra estação, uma chave errada ou um `vid` inexistente são recusados.
+
+- A chave é gerada no cadastro (`POST /estacoes`, só os admins) e volta **uma única vez**, no campo `chaveIngestao` da resposta. O banco guarda só o hash (`estacoes.chaveIngestaoHash`), e o broker, o dele.
+- Para trocar a chave, ou gerar a de uma estação cadastrada antes dela existir: `POST /estacoes/:id/chave-ingestao`. A anterior para de valer na hora, na API e no broker. Na tela de estações, o menu da estação tem "Gerar chave" / "Regenerar chave".
+- Mudar o `vid` apaga a chave (ela é do `vid` antigo): a estação precisa de chave nova.
+- `possuiChaveIngestao` na resposta da estação indica se ela já tem chave.
+- Em desenvolvimento, `INGESTAO_ROTA_ABERTA=true` com `NODE_ENV=development` abre a rota HTTP sem chave. Em qualquer outro `NODE_ENV`, essa opção faz a ingestão não subir.
+
+### Estação inativa
+
+Uma estação com `statusOperacional` `INATIVA` (remoção lógica, edição do status ou licitação encerrada) continua podendo enviar telemetria, mas o dado não alimenta dashboard nem alertas:
+
+- O pacote é **guardado em `leituras_brutas`** (procedência), como o de qualquer estação.
+- O tratamento **não gera medida** dele, e por isso nenhum alarme: os alarmes nascem do trigger do banco quando uma medida entra.
+- Na rota HTTP a resposta continua **202**, com `estacaoInativa: true` (nas estações ativas é `false`). Por que 202 e não 409: o 409 faria o datalogger tratar o envio como falha e reenviar para sempre um dado que não vai ser aceito.
+- Reativar a estação volta a gerar medidas a partir dali. O que chegou enquanto ela estava inativa fica só em `leituras_brutas`.
+
+## Escopo por licitação
+
+Todo dado pertence a uma licitação, e o filtro fica no backend: `src/autenticacao/escopo-licitacao.ts` (o que cada perfil enxerga) e `src/autenticacao/guarda-perfil.guard.ts` (perfil exigido por rota e bloqueio de escrita de licitação não vigente). Perfis e regras em [docs/regras-licitacao.md](../docs/regras-licitacao.md). O usuário criado por `npm run db:seed` é `ADMIN_TECSUS`.
 
 ## Deployment
 

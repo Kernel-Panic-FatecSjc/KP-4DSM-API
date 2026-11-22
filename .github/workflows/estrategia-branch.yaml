@@ -1,0 +1,112 @@
+name: Estratégia de branch
+
+# Garante o que docs/estrategiabranch.md define:
+#   - PR de tarefa: destino main, branch tipo/SCRUM-{ID}-descricao-curta,
+#     título e commits no padrão de commit e o mesmo SCRUM-{ID} na branch e no
+#     título (job "Estratégia de branch").
+# Push direto na main e push forçado são barrados pelas rulesets da main, não
+# por este workflow.
+# A regex do padrão de commit também está em .commitlintrc.cjs. Se mudar aqui,
+# mude lá.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  estrategia:
+    name: Estratégia de branch
+    # O PR pre-release → release é de promoção, aberto pelo workflow: o gate
+    # dele é a ruleset da release (aprovação + status pre-release).
+    if: github.event.pull_request.base.ref != 'release'
+    # Roda em toda edição, até só de descrição: com cancel-in-progress, a
+    # edição cancela o run do push, e um run pulado no lugar conta como
+    # aprovado (falso verde). Rodar de novo custa segundos.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Destino, branch, título, commits e ID da tarefa
+        env:
+          DESTINO: ${{ github.base_ref }}
+          BRANCH: ${{ github.head_ref }}
+          TITULO_PR: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          TIPOS='feat|fix|docs|style|refactor|test|chore|ci|hotfix|revert'
+          PADRAO_COMMIT="^($TIPOS)\(SCRUM-[0-9]+\): .+"
+          PADRAO_BRANCH="^($TIPOS)/SCRUM-[0-9]+-[a-z0-9]+(-[a-z0-9]+)*$"
+
+          falhas=0
+          erro() { echo "::error::$1"; falhas=$((falhas + 1)); }
+          ok() { echo "  ok   $1"; }
+
+          # Toda tarefa vai para a main. A staging não recebe PR: o workflow de
+          # validação em staging publica nela o PR aprovado no code review.
+          if [ "$DESTINO" = "main" ]; then
+            ok "Destino: main"
+          else
+            erro "PR de tarefa vai para a main, não para $DESTINO."
+          fi
+
+          if printf '%s' "$BRANCH" | grep -qE "$PADRAO_BRANCH"; then
+            ok "Branch: $BRANCH"
+          else
+            erro "Branch fora do padrão tipo/SCRUM-{ID}-descricao-curta (minúsculas, sem acento): $BRANCH"
+          fi
+
+          if printf '%s' "$TITULO_PR" | grep -qE "$PADRAO_COMMIT"; then
+            ok "Título do PR: $TITULO_PR"
+          else
+            erro "Título do PR fora do padrão tipo(SCRUM-{ID}): descrição: $TITULO_PR"
+          fi
+
+          id_branch=$(printf '%s' "$BRANCH" | grep -oE 'SCRUM-[0-9]+' | head -n 1 || true)
+          id_titulo=$(printf '%s' "$TITULO_PR" | grep -oE 'SCRUM-[0-9]+' | head -n 1 || true)
+          if [ -n "$id_branch" ] && [ "$id_branch" = "$id_titulo" ]; then
+            ok "Mesmo ID na branch e no título: $id_branch"
+          else
+            erro "A branch (${id_branch:-sem ID}) e o título (${id_titulo:-sem ID}) devem ter o mesmo SCRUM-{ID}."
+          fi
+
+          while IFS= read -r assunto; do
+            [ -z "$assunto" ] && continue
+            if ! printf '%s' "$assunto" | grep -qE "$PADRAO_COMMIT"; then
+              erro "Commit fora do padrão: $assunto"
+            elif [ -n "$id_branch" ] && ! printf '%s' "$assunto" | grep -qF "($id_branch)"; then
+              echo "::warning::Commit com ID diferente da tarefa $id_branch: $assunto"
+            else
+              ok "Commit: $assunto"
+            fi
+          done < <(git log --no-merges --format=%s "$BASE_SHA..HEAD")
+
+          if [ "$falhas" -gt 0 ]; then
+          cat <<'AJUDA'
+
+          Estratégia de branch (docs/estrategiabranch.md):
+
+            Branch   tipo/SCRUM-{ID}-descricao-curta    ex.: feat/SCRUM-12-tela-de-login
+            Título   tipo(SCRUM-{ID}): descrição         ex.: feat(SCRUM-12): Criação da tela de login
+            Commits  mesmo formato do título
+            Destino  main
+
+            tipo: feat, fix, docs, style, refactor, test, chore, ci, hotfix, revert
+            O SCRUM-{ID} da branch e do título é o mesmo: o ID da tarefa no Jira.
+
+          Para renomear a branch: git branch -m <novo-nome>, push dela e abra
+          um PR novo (o GitHub não troca a branch de um PR aberto).
+          Para corrigir commits: git commit --amend no último, git rebase -i
+          nos anteriores, e push forçado na sua branch.
+          AJUDA
+            exit 1
+          fi
+
+          echo "PR dentro da estratégia de branch."

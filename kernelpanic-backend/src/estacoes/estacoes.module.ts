@@ -7,5 +7,6 @@ import { EstacoesService } from './estacoes.service';
   imports: [PassportModule.register({ defaultStrategy: 'jwt' })],
   controllers: [EstacoesController],
   providers: [EstacoesService],
+  exports: [EstacoesService],
 })
 export class EstacoesModule {}

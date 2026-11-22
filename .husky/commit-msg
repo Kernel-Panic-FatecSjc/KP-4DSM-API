@@ -1,1 +1,3 @@
-npx --no -- commitlint --edit "$1"
+# Sem npx: o husky já põe node_modules/.bin no PATH, e o npx é um script bash
+# que o git embutido do GitHub Desktop não consegue rodar (só tem sh).
+commitlint --edit "$1"

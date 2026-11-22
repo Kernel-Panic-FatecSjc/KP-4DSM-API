@@ -6,7 +6,7 @@
 generator client {
   provider        = "prisma-client"
   output          = "../src/generated/prisma"
-  previewFeatures = ["postgresqlExtensions"]
+  previewFeatures = ["postgresqlExtensions", "relationJoins"]
 }
 
 datasource db {
@@ -14,9 +14,12 @@ datasource db {
   extensions = [postgis]
 }
 
+/// Perfis de acesso. A Tecsus (ADMIN_TECSUS) não pertence a nenhuma
+/// licitação e vê tudo; os perfis de licitação só enxergam a própria.
 enum TipoUsuario {
-  ADMINISTRADOR
-  MONITOR
+  ADMIN_TECSUS
+  ADMIN_LICITACAO
+  USUARIO_LICITACAO
 }
 
 enum OperadorAlerta {
@@ -45,20 +48,91 @@ enum StatusOperacionalEstacao {
   INATIVA
 }
 
+enum EsferaOrgao {
+  MUNICIPAL
+  ESTADUAL
+  FEDERAL
+}
+
+enum ModalidadeLicitacao {
+  PREGAO
+  CONCORRENCIA
+  CONCURSO
+  LEILAO
+  DIALOGO_COMPETITIVO
+  DISPENSA
+  INEXIGIBILIDADE
+  OUTRA
+}
+
+enum StatusLicitacao {
+  RASCUNHO
+  VIGENTE
+  SUSPENSA
+  ENCERRADA
+}
+
+enum AgregacaoParametro {
+  SOMA
+  MEDIA
+}
+
+/// Usuário do sistema. licitacaoId nulo = usuário da Tecsus (ADMIN_TECSUS);
+/// os outros perfis pertencem a exatamente uma licitação (check no banco).
 model Usuario {
   id           String      @id @default(uuid())
   nome         String
-  tipo         TipoUsuario @default(ADMINISTRADOR)
+  tipo         TipoUsuario
   email        String      @unique
   senhaHash    String
   ativo        Boolean     @default(true)
   criadoEm     DateTime    @default(now())
   atualizadoEm DateTime    @updatedAt
 
-  estacoes      Estacao[]
-  logsAuditoria LogAuditoria[]
+  licitacaoId String?
+  licitacao   Licitacao? @relation(fields: [licitacaoId], references: [id], onDelete: Restrict)
 
+  estacoes            Estacao[]
+  logsAuditoria       LogAuditoria[]
+  alarmesReconhecidos Alarme[]       @relation("AlarmeReconhecidoPor")
+  alarmesResolvidos   Alarme[]       @relation("AlarmeResolvidoPor")
+
+  @@index([licitacaoId])
   @@map("usuarios")
+}
+
+/// Licitação ganha pela Tecsus: o processo, o contrato que saiu dele (um só) e
+/// o órgão contratante (um só) ficam na mesma linha. Toda entidade de negócio
+/// pertence a uma licitação, e é por ela que o acesso é filtrado.
+model Licitacao {
+  id                  String              @id @default(uuid())
+  /// Código curto e legível (ex.: "PMSJC-2026"), único, usado nas telas e filtros.
+  codigoIdentificador String              @unique
+  numeroProcesso      String              @unique
+  modalidade          ModalidadeLicitacao
+  objeto              String
+  numeroContrato      String              @unique
+  inicioVigencia      DateTime
+  fimVigencia         DateTime
+  status              StatusLicitacao     @default(RASCUNHO)
+  encerradaEm         DateTime?
+  orgaoNome           String
+  orgaoCnpj           String?
+  orgaoEsfera         EsferaOrgao
+  orgaoMunicipio      String
+  orgaoUf             String              @db.Char(2)
+  criadoEm            DateTime            @default(now())
+  atualizadoEm        DateTime            @updatedAt
+
+  usuarios       Usuario[]
+  estacoes       Estacao[]
+  tiposParametro TipoParametro[]
+  alertas        Alerta[]
+  medidas        Medida[]
+  logsAuditoria  LogAuditoria[]
+
+  @@index([status])
+  @@map("licitacoes")
 }
 
 /// Estações físicas de coleta.
@@ -70,33 +144,53 @@ model Estacao {
   latitude          Float                    @default(0)
   longitude         Float                    @default(0)
   statusOperacional StatusOperacionalEstacao @default(ATIVA)
+  /// SHA-256 da chave que a estação manda no header da ingestão. A chave em si
+  /// só aparece uma vez, ao cadastrar ou regenerar; nula = estação sem chave.
+  chaveIngestaoHash String?
   criadoEm          DateTime                 @default(now())
   atualizadoEm      DateTime                 @updatedAt
 
   usuarioId String
   usuario   Usuario @relation(fields: [usuarioId], references: [id])
 
+  /// Toda estação pertence a uma licitação. Ao mudar de licitação, o histórico
+  /// (medidas) continua com a licitação de quando foi gravado.
+  licitacaoId String
+  licitacao   Licitacao @relation(fields: [licitacaoId], references: [id], onDelete: Restrict)
+
   parametros Parametro[]
   medidas    Medida[]
 
+  @@index([licitacaoId])
   @@map("estacoes")
 }
 
-/// Definição global dos tipos de sensores/métricas (ex.: pluviômetro, temperatura).
+/// Tipos de sensores/métricas (ex.: pluviômetro, temperatura) de uma licitação:
+/// cada licitação mantém os seus, e o nome é único dentro dela.
 model TipoParametro {
-  id      String @id @default(uuid())
-  nome    String
-  unidade String
-  fator   Float
-  ganho   Float
-  json    Json?
+  id          String             @id @default(uuid())
+  nome        String
+  unidade     String
+  fator       Float
+  ganho       Float
+  json        Json?
+  /// Regra dos relatórios: SOMA para precipitação em mm; MEDIA por padrão.
+  agregacao   AgregacaoParametro @default(MEDIA)
+  /// Faixa física válida da leitura (inclusiva e opcional): fora dela a
+  /// ingestão não grava medida e registra a leitura em leituras_erro.
+  valorMinimo Float?
+  valorMaximo Float?
+
+  licitacaoId String
+  licitacao   Licitacao @relation(fields: [licitacaoId], references: [id], onDelete: Restrict)
 
   parametros Parametro[]
 
+  @@index([licitacaoId])
   @@map("tipos_parametro")
 }
 
-/// Associa uma estação aos tipos de parâmetros que ela suporta (configuração de sensores por estação).
+/// Associa uma estação aos tipos de parâmetros que ela suporta.
 model Parametro {
   id       String   @id @default(uuid())
   criadoEm DateTime @default(now())
@@ -114,7 +208,8 @@ model Parametro {
   @@map("parametros")
 }
 
-/// Leituras coletadas ao longo do tempo (série temporal).
+/// Leituras coletadas ao longo do tempo (série temporal). Imutável: trigger no banco
+/// barra update/delete, inclusive o cascade vindo de Estacao e Parametro.
 model Medida {
   id       String @id @default(uuid())
   unixtime BigInt
@@ -126,14 +221,24 @@ model Medida {
   estacaoId String
   estacao   Estacao @relation(fields: [estacaoId], references: [id], onDelete: Cascade)
 
+  /// Gravado pelo tratamento a partir da estação: o histórico não muda de dono
+  /// se a estação passar para outra licitação.
+  licitacaoId String
+  licitacao   Licitacao @relation(fields: [licitacaoId], references: [id], onDelete: Restrict)
+
   alarmes Alarme[]
 
-  @@index([parametroId, unixtime])
+  @@unique([parametroId, unixtime])
   @@index([estacaoId, unixtime])
+  // Consulta por janela de tempo sem filtrar a estação (dashboard geral): sem
+  // este índice ela lê a tabela inteira e ordena (1,3 s com 10 milhões de linhas).
+  @@index([unixtime])
+  // Mesma consulta no dashboard de uma licitação.
+  @@index([licitacaoId, unixtime])
   @@map("medidas")
 }
 
-/// Regras de limite e condições lógicas atreladas a um parâmetro (ex.: valor > 30).
+/// Regras de limite e condições lógicas vinculadas a um parâmetro.
 model Alerta {
   id          String           @id @default(uuid())
   operador    OperadorAlerta
@@ -145,12 +250,17 @@ model Alerta {
   parametroId String
   parametro   Parametro @relation(fields: [parametroId], references: [id], onDelete: Cascade)
 
+  /// A mesma da estação do parâmetro (trigger de consistência no banco).
+  licitacaoId String
+  licitacao   Licitacao @relation(fields: [licitacaoId], references: [id], onDelete: Restrict)
+
   alarmes Alarme[]
 
+  @@index([licitacaoId])
   @@map("alertas")
 }
 
-/// Histórico de ocorrências: relaciona uma medida que violou uma regra ao alerta correspondente.
+/// Histórico de ocorrências que relaciona uma medida ao alerta correspondente.
 model Alarme {
   id          String       @id @default(uuid())
   disparadoEm DateTime     @default(now())
@@ -162,12 +272,29 @@ model Alarme {
   medidaId String
   medida   Medida @relation(fields: [medidaId], references: [id], onDelete: Cascade)
 
+  /// Ações correlacionadas (relatório de incidentes, US10): quem reconheceu e
+  /// quem resolveu o alarme, e quando. Preenchidas na transição de status.
+  reconhecidoEm    DateTime?
+  reconhecidoPorId String?
+  reconhecidoPor   Usuario?  @relation("AlarmeReconhecidoPor", fields: [reconhecidoPorId], references: [id], onDelete: Restrict)
+  resolvidoEm      DateTime?
+  resolvidoPorId   String?
+  resolvidoPor     Usuario?  @relation("AlarmeResolvidoPor", fields: [resolvidoPorId], references: [id], onDelete: Restrict)
+  /// Observação de quem tratou o alarme (a última informada).
+  observacao       String?
+
+  // Relatório de incidentes: parte das medidas do período e acha os alarmes
+  // delas; sem índice, cada consulta varria a tabela de alarmes inteira.
+  @@index([medidaId])
+  // Alarmes de um alerta (filtros por severidade/estação e cascade do alerta).
+  @@index([alertaId])
   @@map("alarmes")
 }
 
 /// Payload bruto recebido diretamente do datalogger (ESP32), como chegou, antes de
-/// qualquer validação/normalização em Parametro/Medida. Imutável — preserva a
-/// procedência técnica do dado e o momento exato de recebimento (RF03/US04).
+/// qualquer validação/normalização em Parametro/Medida. Imutável (trigger no banco
+/// barra update/delete) — preserva a procedência técnica do dado e o momento exato
+/// de recebimento (RF03/US04).
 model LeituraBruta {
   id                  String                               @id @default(uuid())
   vidEstacao          String
@@ -175,9 +302,52 @@ model LeituraBruta {
   localizacao         Unsupported("geometry(Point, 4326)")
   unixtimeDispositivo BigInt
   recebidoEm          DateTime                             @default(now())
+  /// Transação que gravou a linha (pg_current_xact_id). O tratamento só lê as
+  /// linhas de transações já terminadas e anda com o marcador (xid, id), então
+  /// uma gravação que comita fora de ordem não fica para trás.
+  xidTransacao        BigInt                               @default(dbgenerated("((pg_current_xact_id())::text)::bigint"))
 
   @@index([vidEstacao, recebidoEm])
+  @@index([xidTransacao, id])
+  // Keyset da exportação CSV e da listagem sem filtro de estação.
+  @@index([recebidoEm, id])
   @@map("leituras_brutas")
+}
+
+/// Por que uma leitura recebida não virou medida: o pacote original continua
+/// intacto em leituras_brutas, e cada leitura rejeitada fica registrada aqui.
+enum MotivoLeituraErro {
+  ESTACAO_NAO_CADASTRADA
+  SENSOR_NAO_CONFIGURADO
+  ABAIXO_DO_MINIMO
+  ACIMA_DO_MAXIMO
+}
+
+/// Leitura que o tratamento recebeu mas não gravou como medida. Sem chaves
+/// estrangeiras, como leituras_brutas: é gravada junto com ela, em paralelo, e
+/// precisa sobreviver a uma estação ou sensor removido.
+model LeituraErro {
+  id             String            @id @default(uuid())
+  leituraBrutaId String
+  vidEstacao     String
+  nomeSensor     String
+  /// Nulo quando o sensor não tem parâmetro configurado na estação.
+  parametroId    String?
+  valor          Float
+  unixtime       BigInt
+  motivo         MotivoLeituraErro
+  /// Faixa vigente quando a leitura chegou, para o registro não depender do cadastro atual.
+  valorMinimo    Float?
+  valorMaximo    Float?
+  registradoEm   DateTime          @default(now())
+  /// Licitação da estação quando o tratamento processou a leitura (nulo se a
+  /// estação não existe mais). Sem chave estrangeira, como o resto da tabela.
+  licitacaoId    String?
+
+  @@index([leituraBrutaId])
+  @@index([vidEstacao, registradoEm])
+  @@index([licitacaoId, registradoEm])
+  @@map("leituras_erro")
 }
 
 /// Trilha de auditoria: registro imutável (sem updatedAt e protegida por trigger
@@ -198,7 +368,27 @@ model LogAuditoria {
   usuarioId String?
   usuario   Usuario? @relation(fields: [usuarioId], references: [id])
 
+  /// Licitação de quem fez a ação; nulo = ação da Tecsus (ou de visitante).
+  licitacaoId String?
+  licitacao   Licitacao? @relation(fields: [licitacaoId], references: [id], onDelete: Restrict)
+
   @@index([usuarioId, criadoEm])
   @@index([entidade, entidadeId])
+  @@index([licitacaoId, criadoEm])
+  // Keyset da exportação CSV e da listagem da Tecsus (sem filtro de licitação).
+  @@index([criadoEm, id])
   @@map("logs_auditoria")
+}
+
+/// Marcador do serviço de tratamento: até onde leituras_brutas já virou
+/// medida/leitura com erro. Uma linha por fila (hoje só "leituras_brutas").
+/// O par (ultimoXid, ultimaLeituraId) segue a ordem de xidTransacao, id.
+model ControleTratamento {
+  id              String   @id
+  ultimoXid       BigInt   @default(0)
+  ultimaLeituraId String   @default("")
+  processadas     BigInt   @default(0)
+  atualizadoEm    DateTime @default(now())
+
+  @@map("controle_tratamento")
 }

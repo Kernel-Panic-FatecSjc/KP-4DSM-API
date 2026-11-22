@@ -3,7 +3,7 @@ import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
 import { criarAppDeTeste } from '../helpers';
 
-const ADMIN = { id: 'admin-1', email: 'admin@teste.com', tipo: 'ADMINISTRADOR', ativo: true };
+const ADMIN = { id: 'admin-1', email: 'admin@teste.com', tipo: 'ADMIN_TECSUS', licitacaoId: null, licitacao: null, ativo: true };
 // São José dos Campos/SP
 const REGIAO = 'latitude=-23.1791&longitude=-45.8872';
 

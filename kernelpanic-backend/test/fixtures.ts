@@ -1,4 +1,13 @@
+import { calcularHashChaveIngestao } from '../src/estacoes/chave-ingestao';
+
 export const VID_ESTACAO = 'ESP32-00001';
+
+// Licitação dos dados de exemplo (as specs unitárias usam a LICITACAO_A de test/unit/sessoes.ts).
+export const LICITACAO_FIXTURE = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+// Chave de ingestão da estação VID_ESTACAO, aceita pela GuardaChaveIngestao.
+export const CHAVE_INGESTAO = 'chave-de-ingestao-de-teste';
+export const HASH_CHAVE_INGESTAO = calcularHashChaveIngestao(CHAVE_INGESTAO);
 
 export const LEITURAS = {
   temperatura: 24.3,
@@ -10,6 +19,7 @@ export const ESTACAO_COM_COORDENADAS = {
   id: 'estacao-1',
   latitude: -23.1,
   longitude: -45.8,
+  chaveIngestaoHash: HASH_CHAVE_INGESTAO,
 };
 
 export const TIPO_CHUVA = '11111111-1111-4111-8111-111111111111';
@@ -20,6 +30,7 @@ export const ESTACAO_COM_TIPOS = {
   id: 'estacao-1',
   vid: VID_ESTACAO,
   nome: 'Estação Centro',
+  chaveIngestaoHash: HASH_CHAVE_INGESTAO,
   parametros: [
     {
       tipoParametro: {
@@ -47,6 +58,7 @@ export const ALERTA_COM_RELACOES = {
   ...NOVO_ALERTA,
   ativo: true,
   criadoEm: new Date('2026-09-23T12:00:00.000Z'),
+  licitacaoId: LICITACAO_FIXTURE,
   parametro: {
     id: PARAMETRO_CHUVA,
     estacaoId: ESTACAO_COM_TIPOS.id,
@@ -64,6 +76,8 @@ export const ESTACAO_COM_SENSORES = {
   latitude: -23.1,
   longitude: -45.8,
   statusOperacional: 'ATIVA',
+  licitacaoId: LICITACAO_FIXTURE,
+  licitacao: { id: LICITACAO_FIXTURE, codigoIdentificador: 'LIC-TESTE' },
   criadoEm: new Date('2026-09-20T12:00:00.000Z'),
   atualizadoEm: new Date('2026-09-20T12:00:00.000Z'),
   parametros: [

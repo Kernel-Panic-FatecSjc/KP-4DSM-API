@@ -19,11 +19,6 @@ export interface EstacaoSimulada {
   basePressao: number;
 }
 
-export interface Leitura {
-  estacao: EstacaoSimulada;
-  payload: Record<string, number>;
-}
-
 export function aleatorioEntre(min: number, max: number): number {
   return min + Math.random() * (max - min);
 }
@@ -65,42 +60,4 @@ export function gerarPayload(estacao: EstacaoSimulada): Record<string, number> {
 
 export function dormir(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-const PARAMS_POR_LINHA = 5;
-// Postgres aceita no máximo 65535 parâmetros por query; 10000 linhas fica com
-// folga desse teto e ainda é um INSERT multi-linha só (sem virar N round-trips).
-const MAX_LINHAS_POR_QUERY = 10_000;
-
-async function inserirSubLote(executor: Executor, leituras: Leitura[]): Promise<void> {
-  const valores: unknown[] = [];
-  const linhas = leituras.map((leitura, indice) => {
-    const base = indice * PARAMS_POR_LINHA;
-    valores.push(
-      leitura.estacao.vid,
-      JSON.stringify(leitura.payload),
-      leitura.estacao.lng,
-      leitura.estacao.lat,
-      Math.floor(Date.now() / 1000),
-    );
-    return `(gen_random_uuid(), $${base + 1}, $${base + 2}::jsonb, ST_SetSRID(ST_MakePoint($${base + 3}, $${base + 4}), 4326), $${base + 5})`;
-  });
-
-  await executor.query(
-    `INSERT INTO leituras_brutas (id, "vidEstacao", payload, localizacao, "unixtimeDispositivo")
-     VALUES ${linhas.join(', ')}`,
-    valores,
-  );
-}
-
-/**
- * Insere um lote de leituras brutas. Acima de MAX_LINHAS_POR_QUERY, quebra em
- * vários INSERTs multi-linha sequenciais para não estourar o limite de
- * parâmetros por query do Postgres (65535). Aceita um `Client` (uma conexão)
- * ou um `Pool` (o pg tira uma conexão livre a cada chamada de `.query`).
- */
-export async function inserirLote(executor: Executor, leituras: Leitura[]): Promise<void> {
-  for (let i = 0; i < leituras.length; i += MAX_LINHAS_POR_QUERY) {
-    await inserirSubLote(executor, leituras.slice(i, i + MAX_LINHAS_POR_QUERY));
-  }
 }

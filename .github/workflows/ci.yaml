@@ -1,10 +1,24 @@
 name: CI
 
+# Só a main: pela estratégia de branches (docs/estrategiabranch.md) todo PR de
+# tarefa vai para ela. A staging é atualizada pelo workflow de validação em
+# staging, a partir do PR que já passou por este CI.
 on:
+  # Push só de documentação nem dispara o pipeline. No PR não dá para usar
+  # paths-ignore: um check obrigatório que não roda deixa o PR esperando para
+  # sempre. Lá o workflow sempre dispara e o job "Detectar alterações" pula o
+  # que não foi tocado (job pulado conta como aprovado).
   push:
-    branches: [main, develop, release]
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.github/*.md'
   pull_request:
-    branches: [main, develop, release]
+    branches: [main]
+  # A suíte noturna (suite-noturna.yaml) reaproveita este mesmo pipeline, sem
+  # filtro de caminho: lá github.event_name é schedule ou workflow_dispatch.
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -17,62 +31,43 @@ jobs:
     timeout-minutes: 5
     outputs:
       backend: ${{ steps.filtro.outputs.backend }}
-      frontend: ${{ steps.filtro.outputs.frontend }}
+      backend_testes: ${{ steps.filtro.outputs.backend_testes }}
       banco: ${{ steps.filtro.outputs.banco }}
+      frontend: ${{ steps.filtro.outputs.frontend }}
+      frontend_testes: ${{ steps.filtro.outputs.frontend_testes }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      # As regras de qual arquivo liga qual job ficam no script, que dá para
+      # testar localmente: git diff --name-only main | bash .github/scripts/detectar-alteracoes.sh
       - id: filtro
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
-          # Em push numa branch integradora (main, develop, release) nada é
-          # filtrado: elas são a referência de integração e o status delas
-          # precisa cobrir o projeto inteiro, não só o que o commit tocou.
-          if [ "$GITHUB_EVENT_NAME" != "pull_request" ]; then
-            echo "Push em $GITHUB_REF_NAME: todos os jobs rodam."
-            {
-              echo "backend=true"
-              echo "frontend=true"
-              echo "banco=true"
-            } >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            base="$BASE_SHA"
+          elif [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            base="$BEFORE_SHA"
+          else
+            echo "Chamado pela suíte noturna ($GITHUB_EVENT_NAME): todos os jobs rodam."
+            echo .github/workflows/ci.yaml | bash .github/scripts/detectar-alteracoes.sh >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          arquivos=$(git diff --name-only "$BASE_SHA" HEAD)
-          echo "Arquivos alterados neste PR:"
-          echo "$arquivos"
-
-          casa() {
-            printf '%s\n' "$arquivos" | grep -qE "$1"
-          }
-
-          backend=false
-          frontend=false
-          banco=false
-
-          if casa '^\.github/workflows/'; then
-            # Mudança no próprio pipeline revalida tudo: as regras dos jobs
-            # são o que está sendo alterado.
-            backend=true
-            frontend=true
-            banco=true
-          else
-            if casa '^kernelpanic-backend/'; then backend=true; fi
-            if casa '^frontend/'; then frontend=true; fi
-            if casa '^kernelpanic-backend/(prisma/|prisma7\.config\.ts)'; then banco=true; fi
+          # Push sem commit anterior no histórico (branch nova ou push forçado):
+          # não dá para saber o que mudou, então tudo roda.
+          if ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "Sem commit base para comparar: todos os jobs rodam."
+            echo .github/workflows/ci.yaml | bash .github/scripts/detectar-alteracoes.sh >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-          {
-            echo "backend=$backend"
-            echo "frontend=$frontend"
-            echo "banco=$banco"
-          } >> "$GITHUB_OUTPUT"
-
-          echo "backend=$backend  frontend=$frontend  banco=$banco"
+          echo "Arquivos alterados e jobs que cada um liga:"
+          git diff --name-only "$base" HEAD | bash .github/scripts/detectar-alteracoes.sh | tee -a "$GITHUB_OUTPUT"
 
   backend:
     name: Backend (NestJS)
@@ -89,7 +84,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
           cache: 'npm'
           cache-dependency-path: kernelpanic-backend/package-lock.json
 
@@ -108,21 +103,40 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Serviços da cadeia de dados (servicos/ingestao e servicos/tratamento),
+      # que vão para VPS próprias mas dividem o pacote com a API.
+      - name: Build dos serviços de ingestão e tratamento
+        run: npm run build:servicos
+
+      # Contrato da API (RNF12): gerado do build, sem subir o servidor nem o
+      # banco. PR que quebra a geração ou deixa a especificação inválida (ou
+      # com aviso do Spectral) falha aqui; a válida fica como artefato.
+      - name: Gerar contrato OpenAPI
+        run: npm run openapi:gerar
+
+      - name: Validar contrato OpenAPI (Spectral)
+        run: npm run openapi:validar
+
+      - name: Publicar contrato OpenAPI
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: kernelpanic-backend/openapi.json
+          if-no-files-found: error
+
   testes:
     name: Testes (NestJS)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: alteracoes
-    if: needs.alteracoes.outputs.backend == 'true'
+    if: needs.alteracoes.outputs.backend_testes == 'true'
     defaults:
       run:
         working-directory: ./kernelpanic-backend
 
-    # Job separado dos demais por causa da versão do Node: @nestjs/common@12 é
-    # ESM-only e o require do sandbox do Jest só delega para o require(esm)
-    # nativo a partir do Node 24.9. Em Node 20 toda spec que importe
-    # @nestjs/common falha com "Must use import to load ES Module". Os outros
-    # jobs seguem no 20 porque lint, typecheck e build não executam o código.
+    # Roda no PR (Fowler: o commit build tem os testes): unitários ~10 s e
+    # funcionais ~60 s. Precisa de Node >= 24.9: @nestjs/common@12 é ESM-only e
+    # o Jest só delega para o require(esm) nativo a partir dessa versão.
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -146,7 +160,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
           cache: 'npm'
           cache-dependency-path: kernelpanic-backend/package-lock.json
 
@@ -160,7 +174,8 @@ jobs:
         run: npm run test
 
       # Os testes funcionais recriam e migram o próprio banco (kernelpanic_test)
-      # no globalSetup, então não há passo de migrations aqui.
+      # no globalSetup, então não há passo de migrations aqui. Rodam em série
+      # (--runInBand no package.json): as specs dividem esse banco.
       - name: Testes funcionais
         run: npm run test:functional
 
@@ -179,7 +194,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
           cache: 'npm'
           cache-dependency-path: frontend/frontend/package-lock.json
 
@@ -194,6 +209,54 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  frontend-testes:
+    name: Testes (Next.js)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: alteracoes
+    if: needs.alteracoes.outputs.frontend_testes == 'true'
+    defaults:
+      run:
+        working-directory: ./frontend/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'npm'
+          cache-dependency-path: frontend/frontend/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Testes unitários
+        run: npm run test
+
+      # Baixa o Chromium da versão do @playwright/test do lockfile, com as
+      # bibliotecas de sistema que ele precisa no Ubuntu.
+      - name: Instalar o Chromium do Playwright
+        run: npx playwright install --with-deps chromium
+
+      # O próprio Playwright faz o build de produção e sobe o Next.js (webServer
+      # do playwright.config.ts). A API não sobe: os testes respondem as rotas
+      # interceptando as requisições no navegador.
+      - name: Testes funcionais
+        run: npm run test:functional
+
+      # Na falha, o relatório traz o trace de cada teste: abra com
+      # npx playwright show-report <pasta baixada>/playwright-report.
+      - name: Publicar relatório dos testes funcionais
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: relatorio-playwright
+          path: |
+            frontend/frontend/playwright-report/
+            frontend/frontend/test-results/
+          retention-days: 7
 
   migrations:
     name: Banco e Migrations
@@ -229,22 +292,39 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Exceção: a Big Migration fora da janela da sprint consolida migrations
+      # antigas numa só (política de banco, Processo de Mudança de Schema, 1).
+      # O label incidente-de-planejamento libera só este passo; migrations do
+      # zero, diff do schema e testes continuam obrigatórios. O label é lido na
+      # hora (não do evento), para o Re-run valer depois de pôr o label.
       - name: Migrations existentes não podem ser alteradas
         if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           alteradas=$(git diff --name-only --diff-filter=MDR \
             "${{ github.event.pull_request.base.sha }}" HEAD -- prisma/migrations || true)
+          if [ -n "$alteradas" ] && gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name' \
+              | grep -qx 'incidente-de-planejamento'; then
+            echo "::warning::Migrations existentes alteradas com o label incidente-de-planejamento (Big Migration fora da janela). Confira no PR o registro no Confluence com 2 assinaturas e o Relatório de Incidente de Banco:"
+            echo "$alteradas"
+            exit 0
+          fi
           if [ -n "$alteradas" ]; then
             echo "::error::Migrations já existentes na ${{ github.base_ref }} foram alteradas:"
             echo "$alteradas"
-            echo "Crie uma migration NOVA em vez de editar uma existente."
+            echo "Próximo passo: desfaça a edição (git checkout origin/${{ github.base_ref }} -- <arquivo>)"
+            echo "e crie uma migration NOVA com: npx prisma migrate dev --name <descricao>"
+            echo "Migration mergeada já rodou em algum banco; editá-la deixa os ambientes divergentes."
+            echo "Consolidação planejada (Big Migration fora da janela): ponha o label incidente-de-planejamento e rode de novo."
             exit 1
           fi
           echo "Nenhuma migration existente foi alterada."
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
           cache: 'npm'
           cache-dependency-path: kernelpanic-backend/package-lock.json
 
@@ -271,3 +351,107 @@ jobs:
 
       - name: Seed
         run: npm run db:seed
+
+  # Último estágio: o pacote que a pré-release e a produção instalam (o mesmo
+  # arquivo nos dois, só a configuração muda). Só para commits da main (push e
+  # suíte noturna): no PR seriam minutos a mais por um arquivo que ninguém usa.
+  pacote:
+    name: Empacotar
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [backend, testes, frontend, frontend-testes, migrations]
+    if: >-
+      !cancelled() && github.event_name != 'pull_request' &&
+      !contains(needs.*.result, 'failure')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'npm'
+          cache-dependency-path: |
+            kernelpanic-backend/package-lock.json
+            frontend/frontend/package-lock.json
+
+      - name: Build do backend e dos serviços
+        working-directory: ./kernelpanic-backend
+        run: |
+          npm ci
+          npm run build
+          npm run build:servicos
+
+      # A URL da API entra no bundle do Next.js. O padrão "/api" é relativo: o
+      # navegador chama a API na mesma origem do site e o proxy do servidor
+      # (infra/servidor/Caddyfile) encaminha para a porta da API. Assim o MESMO
+      # pacote serve a pré-release e a produção, cada uma com o seu domínio.
+      - name: Build do front
+        working-directory: ./frontend/frontend
+        env:
+          NEXT_PUBLIC_API_URL: ${{ vars.NEXT_PUBLIC_API_URL || '/api' }}
+        run: |
+          npm ci
+          npm run build
+
+      - name: Gerar pacote-<sha>.tar.gz e o SHA-256
+        run: bash .github/scripts/empacotar.sh "$GITHUB_SHA" pacote
+
+      - name: Publicar o pacote
+        uses: actions/upload-artifact@v4
+        with:
+          name: pacote-${{ github.sha }}
+          path: pacote/
+          if-no-files-found: error
+          retention-days: 30
+
+  # Check único exigido na main: os jobs acima são pulados conforme o que o PR
+  # altera, e um job pulado conta como aprovado. Assim o ruleset não precisa
+  # listar cada job, e um job novo entra no portão só por estar no needs.
+  ci-ok:
+    name: CI ok
+    if: always()
+    needs: [alteracoes, backend, testes, frontend, frontend-testes, migrations, pacote]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+
+    steps:
+      # Meta do commit build: ~10 min (Fowler, "Keep the build fast"). Job que
+      # passar disso é candidato à suíte noturna (critério na wiki, página de CI).
+      - name: Tempo dos jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "### Tempo dos jobs"
+            echo
+            echo "| Job | Resultado | Duração |"
+            echo "|---|---|---|"
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs" --paginate               --jq '.jobs[] | select(.completed_at != null and .started_at != null)
+                | ((.completed_at | fromdate) - (.started_at | fromdate)) as $s
+                | "| \(.name) | \(.conclusion) | \($s / 60 | floor)m\($s % 60)s |"'
+            echo
+            echo "Meta do PR: ~10 min por job. Acima disso, avalie mover para a suíte noturna."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Diz qual job quebrou e onde olhar, em vez de só "falhou".
+      - name: Algum job falhou ou foi cancelado
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        env:
+          RESULTADOS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTADOS" | jq -r 'to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | "::error::Job \(.key): \(.value.result)"'
+          cat <<'AJUDA'
+          Próximo passo:
+            1. Abra o job com erro (aba Checks do PR) e leia o primeiro ::error::.
+            2. Reproduza local: na pasta da aplicação, npm ci e o mesmo comando
+               do passo que falhou (lint, typecheck, build, test, test:functional).
+               Funcionais do backend precisam do Postgres: docker compose up -d.
+            3. Corrija e faça push na mesma branch: o CI roda de novo.
+            "cancelled" quase sempre é push novo na branch: espere o run mais recente.
+          AJUDA
+          exit 1
+
+      - run: echo "Todos os jobs passaram ou foram pulados pelo filtro de alterações."

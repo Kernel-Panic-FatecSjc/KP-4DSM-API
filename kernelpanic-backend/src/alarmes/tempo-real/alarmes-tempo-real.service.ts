@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { Client } from 'pg';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AlertaPublicoService } from '../alerta-publico/alerta-publico.service';
 import { AlarmesService } from '../alarmes.service';
 import type { AlarmeHistoricoRespostaDto } from '../dto/alarme-historico-resposta.dto';
 import { AlarmesGateway, type AlarmeComPosicao } from './alarmes.gateway';
@@ -36,6 +37,7 @@ export class AlarmesTempoRealService implements OnModuleInit, OnModuleDestroy {
     private readonly gateway: AlarmesGateway,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    private readonly alertaPublico: AlertaPublicoService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -76,7 +78,10 @@ export class AlarmesTempoRealService implements OnModuleInit, OnModuleDestroy {
         for (const alarme of novos) this.emitidos.set(alarme.id, new Date(alarme.disparadoEm).getTime());
         this.descartarAntigos(desde.getTime());
 
-        if (novos.length > 0) this.gateway.emitirNovosAlarmes(await this.comPosicao(novos));
+        if (novos.length > 0) {
+          this.gateway.emitirNovosAlarmes(await this.comPosicao(novos));
+          void this.alertaPublico.publicar();
+        }
       } while (this.pendente);
     } catch (erro) {
       this.logger.error('Falha ao buscar alarmes novos para o tempo real', erro);

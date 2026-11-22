@@ -1,48 +1,179 @@
 'use client';
 
-import { Bell, ClipboardList, Database, Gauge, LayoutDashboard, LogIn, LogOut, Menu, MapPin, PanelLeftClose, PanelLeftOpen, Users, X } from 'lucide-react';
+import {
+  Bell,
+  ChevronDown,
+  ChevronRight,
+  ClipboardList,
+  Database,
+  FileText,
+  FileWarning,
+  Gauge,
+  LayoutDashboard,
+  ChartNoAxesCombined,
+  LogIn,
+  LogOut,
+  MapPin,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Users,
+  X,
+  ChartBarIcon,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { api } from '@/lib/api';
+import { api, type TipoUsuario } from '@/lib/api';
+import { ehTecsus, ROTULO_PERFIL, somenteLeitura } from '@/lib/perfil';
 import { cn } from '@/lib/utils';
 import { AlertaTempoReal } from './AlertaTempoReal';
-import { ehRotaPublica, useSessao } from './ProtectedLayout';
+import { ehRotaPublica, useSessao, useUsuario } from './ProtectedLayout';
 import { RegiaoProvider } from './RegiaoVisitante';
 import { Button } from './ui/button';
 
-const NAV_ITEMS = [
-  { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { label: 'Alertas Globais', href: '/alertas-globais', icon: Bell },
-  { label: 'Gerenciamento de Alertas', href: '/gerenciamento-de-alertas', icon: Bell },
-  { label: 'Estações', href: '/estacoes', icon: MapPin },
-  { label: 'Sensores', href: '/sensores', icon: Gauge },
-  { label: 'Leituras brutas', href: '/leituras-brutas', icon: Database },
-  { label: 'Usuários', href: '/usuarios', icon: Users },
-  { label: 'Auditoria', href: '/auditoria', icon: ClipboardList },
+
+interface NavLink {
+  label: string;
+  href: string;
+  icon: LucideIcon;
+  /** Perfis que veem o item; omitido, qualquer usuário logado. */
+  perfis?: TipoUsuario[];
+}
+
+
+interface NavGroup {
+  label: string;
+  icon: LucideIcon;
+  children: NavLink[];
+}
+
+
+type NavItem = NavLink | NavGroup;
+
+
+const NAV_ITEMS: NavItem[] = [
+  {
+    label: 'Dashboard',
+    href: '/dashboard',
+    icon: LayoutDashboard,
+  },
+  {
+    label: 'Alertas',
+    icon: Bell,
+    children: [
+      {
+        label: 'Alertas Globais',
+        href: '/alertas-globais',
+        icon: Bell,
+      },
+      {
+        label: 'Gerenciamento de Alertas',
+        href: '/gerenciamento-de-alertas',
+        icon: ClipboardList,
+      },
+    ],
+  },
+  {
+    label: 'Monitoramento',
+    icon: Gauge,
+    children: [
+      {
+        label: 'Estações',
+        href: '/estacoes',
+        icon: MapPin,
+      },
+      {
+        label: 'Sensores',
+        href: '/sensores',
+        icon: Gauge,
+      },
+      {
+        label: 'Leituras brutas',
+        href: '/leituras-brutas',
+        icon: Database,
+      },
+      {
+        label: 'Leituras com erro',
+        href: '/leituras-erro',
+        icon: FileWarning,
+      },
+    ],
+  },
+  {
+    label: 'Relatórios',
+    icon: ChartNoAxesCombined,
+    children: [
+      { label: 'Análise comparativa', href: '/relatorios/comparativo', icon: ChartNoAxesCombined },
+      { label: 'Incidentes', href: '/relatorios/incidentes', icon: FileWarning },
+      {
+        label: 'Relatório de Histórico Climático',
+        href: '/relatorios/historico',
+        icon: ChartBarIcon,
+      },
+    ],
+  },
+  {
+    label: 'Administração',
+    icon: Users,
+    children: [
+      {
+        label: 'Licitações',
+        href: '/licitacoes',
+        icon: FileText,
+        perfis: ['ADMIN_TECSUS'],
+      },
+      {
+        label: 'Usuários',
+        href: '/usuarios',
+        icon: Users,
+        perfis: ['ADMIN_TECSUS', 'ADMIN_LICITACAO'],
+      },
+      {
+        label: 'Auditoria',
+        href: '/auditoria',
+        icon: ClipboardList,
+        perfis: ['ADMIN_TECSUS', 'ADMIN_LICITACAO'],
+      },
+    ],
+  },
 ];
+
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
+    Alertas: true,
+  });
   const autenticado = useSessao() === 'autenticado';
-  // Visitantes (sem login) só enxergam as abas públicas.
-  const itensVisiveis = autenticado ? NAV_ITEMS : NAV_ITEMS.filter((item) => ehRotaPublica(item.href));
+  const usuario = useUsuario();
 
-  const tituloAtual = NAV_ITEMS.find((item) => pathname.startsWith(item.href))?.label ?? 'Painel';
+
+  const todosOsItens = NAV_ITEMS.flatMap((item) =>
+    'children' in item ? item.children : [item],
+  );
+
+
+  const tituloAtual =
+    todosOsItens.find((item) => pathname.startsWith(item.href))?.label
+    ?? 'Painel';
+
 
   async function handleLogout() {
     await api('/autenticacao/logout', { method: 'POST' });
     router.push('/login');
   }
 
+
   return (
     <div className="flex min-h-screen bg-background font-body text-foreground antialiased">
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 flex flex-col bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 md:translate-x-0',
+          'fixed inset-y-0 left-0 z-50 flex flex-col bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 md:translate-x-0 print:hidden',
           collapsed ? 'md:w-16' : 'md:w-60',
           mobileOpen ? 'w-60 translate-x-0' : 'w-60 -translate-x-full',
         )}
@@ -66,31 +197,155 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Button>
         </div>
 
-        <nav className="flex-1 space-y-0.5 px-2 py-3">
+
+        <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
           {(!collapsed || mobileOpen) && (
-            <p className="px-2 py-1.5 font-mono text-[10px] uppercase text-sidebar-muted">Operação</p>
+            <p className="px-2 py-1.5 font-mono text-[10px] uppercase text-sidebar-muted">
+              Operação
+            </p>
           )}
-          {itensVisiveis.map((item) => {
+
+
+          {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
-            const ativo = pathname.startsWith(item.href);
+            const expandido = !collapsed || mobileOpen;
+
+
+            // Item individual, como Dashboard
+            if (!('children' in item)) {
+              const ativo = pathname.startsWith(item.href);
+
+
+              if (!autenticado && !ehRotaPublica(item.href)) {
+                return null;
+              }
+
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <Button
+                    variant="ghost"
+                    className={cn(
+                      'h-9 w-full justify-start px-3 text-[13px] text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                      ativo &&
+                        'bg-lime text-lime-foreground hover:bg-lime hover:text-lime-foreground',
+                      !expandido && 'justify-center px-0',
+                    )}
+                    title={!expandido ? item.label : undefined}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    {expandido && <span>{item.label}</span>}
+                  </Button>
+                </Link>
+              );
+            }
+
+
+            // Grupo com links internos
+            const filhosVisiveis = item.children.filter(
+              (filho) =>
+                (autenticado && (!filho.perfis || (usuario !== null && filho.perfis.includes(usuario.tipo)))) ||
+                ehRotaPublica(filho.href),
+            );
+
+
+            if (filhosVisiveis.length === 0) {
+              return null;
+            }
+
+
+            const grupoAtivo = filhosVisiveis.some(
+              (filho) => pathname.startsWith(filho.href),
+            );
+
+
+            const aberto = openGroups[item.label] ?? grupoAtivo;
+
+
             return (
-              <Link key={item.href} href={item.href} onClick={() => setMobileOpen(false)}>
+              <div key={item.label} className="space-y-1">
                 <Button
+                  type="button"
                   variant="ghost"
+                  onClick={() => {
+                    if (!expandido) {
+                      setCollapsed(false);
+                      setOpenGroups((prev) => ({
+                        ...prev,
+                        [item.label]: true,
+                      }));
+                      return;
+                    }
+
+
+                    setOpenGroups((prev) => ({
+                      ...prev,
+                      [item.label]: !aberto,
+                    }));
+                  }}
                   className={cn(
                     'h-9 w-full justify-start px-3 text-[13px] text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                    ativo && 'bg-lime text-lime-foreground hover:bg-lime hover:text-lime-foreground',
-                    collapsed && !mobileOpen && 'justify-center px-0',
+                    grupoAtivo && 'bg-sidebar-accent',
+                    !expandido && 'justify-center px-0',
                   )}
-                  title={collapsed && !mobileOpen ? item.label : undefined}
+                  title={!expandido ? item.label : undefined}
                 >
-                  <Icon className="shrink-0" />
-                  {(!collapsed || mobileOpen) && <span>{item.label}</span>}
+                  <Icon className="size-4 shrink-0" />
+
+
+                  {expandido && (
+                    <>
+                      <span className="flex-1 text-left">{item.label}</span>
+                      {aberto ? (
+                        <ChevronDown className="size-4 shrink-0" />
+                      ) : (
+                        <ChevronRight className="size-4 shrink-0" />
+                      )}
+                    </>
+                  )}
                 </Button>
-              </Link>
+
+
+                {expandido && aberto && (
+                  <div className="ml-4 space-y-1 border-l border-sidebar-border pl-2">
+                    {filhosVisiveis.map((filho) => {
+                      const FilhoIcon = filho.icon;
+                      const ativo = pathname.startsWith(filho.href);
+
+
+                      return (
+                        <Link
+                          key={filho.href}
+                          href={filho.href}
+                          onClick={() => setMobileOpen(false)}
+                        >
+                          <Button
+                            variant="ghost"
+                            className={cn(
+                              'h-auto min-h-9 w-full justify-start gap-2 px-2 py-2 text-left text-xs text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                              ativo &&
+                                'bg-lime text-lime-foreground hover:bg-lime hover:text-lime-foreground',
+                            )}
+                          >
+                            <FilhoIcon className="size-3.5 shrink-0" />
+                            <span className="whitespace-normal">
+                              {filho.label}
+                            </span>
+                          </Button>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </nav>
+
 
         <div className="border-t border-sidebar-border p-2">
           {autenticado ? (
@@ -124,22 +379,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
+
       {mobileOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-40 bg-overlay md:hidden"
+          className="fixed inset-0 z-40 bg-overlay md:hidden print:hidden"
           aria-label="Fechar menu"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
+
       <div
         className={cn(
           'flex min-w-0 flex-1 flex-col transition-[padding] duration-200',
-          collapsed ? 'md:pl-16' : 'md:pl-60',
+          collapsed ? 'md:pl-16 print:pl-0' : 'md:pl-60 print:pl-0',
         )}
       >
-        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur md:px-6">
+        <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/90 px-4 backdrop-blur md:px-6 print:hidden">
           <Button
             variant="outline"
             size="icon"
@@ -152,17 +409,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Button
             variant="ghost"
             size="icon"
-            className="hidden md:inline-flex"
+            className="max-md:hidden"
             onClick={() => setCollapsed((value) => !value)}
             aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
           >
             {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
           </Button>
           <p className="truncate font-display text-[15px] font-semibold">{tituloAtual}</p>
+          {usuario && (
+            <p className="ml-auto hidden truncate text-right text-xs text-muted-foreground sm:block" title={usuario.email}>
+              {usuario.nome} · {ROTULO_PERFIL[usuario.tipo]}
+              {!ehTecsus(usuario) && usuario.licitacao && (
+                <>
+                  {' · '}
+                  <Link href={`/licitacoes/${usuario.licitacao.id}`} className="font-mono underline-offset-2 hover:underline">
+                    {usuario.licitacao.codigoIdentificador}
+                  </Link>
+                </>
+              )}
+            </p>
+          )}
         </header>
 
+        {somenteLeitura(usuario) && (
+          <div role="status" className="border-b border-amber-300 bg-amber-50 px-4 py-2 text-xs text-amber-900 md:px-6">
+            A licitação {usuario?.licitacao?.codigoIdentificador} não está vigente: o acesso é somente leitura.
+          </div>
+        )}
+
+
         <RegiaoProvider>
-          <main className="flex-1 p-4 md:p-6">{children}</main>
+          <main className="flex-1 p-4 md:p-6 print:m-0 print:p-0">{children}</main>
           <AlertaTempoReal />
         </RegiaoProvider>
       </div>

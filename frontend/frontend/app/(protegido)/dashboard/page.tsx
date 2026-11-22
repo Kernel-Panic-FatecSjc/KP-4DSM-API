@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ErroApi,
@@ -9,8 +9,11 @@ import {
   type DashboardSerie,
 } from '@/lib/api';
 import { PageHeading } from '@/components/PageHeading';
+import { useUsuario } from '@/components/ProtectedLayout';
+import { SeletorLicitacao } from '@/components/SeletorLicitacao';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
+import { ehTecsus } from '@/lib/perfil';
 
 const UM_DIA_EM_MS = 24 * 60 * 60 * 1000;
 const SETE_DIAS_EM_MS = 7 * UM_DIA_EM_MS;
@@ -32,11 +35,16 @@ function formatoDataLocal(data: Date) {
 }
 
 function montarQuery(
+  licitacaoId: string,
   estacaoId: string,
   de: string,
   ate: string,
 ) {
   const query = new URLSearchParams();
+
+  if (licitacaoId) {
+    query.set('licitacaoId', licitacaoId);
+  }
 
   if (estacaoId) {
     query.set('estacaoId', estacaoId);
@@ -245,13 +253,24 @@ function calcularDesvioPadrao(valores: number[]) {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const usuario = useUsuario();
+  const tecsus = ehTecsus(usuario);
 
   const agora = new Date();
 
   const [periodo, setPeriodo] =
     useState<Periodo>('24h');
 
+  // Vazio = dashboard geral (todas as licitações); só a Tecsus escolhe.
+  const [licitacaoId, setLicitacaoId] = useState('');
+
   const [estacaoId, setEstacaoId] = useState('');
+
+  // A API devolve só a estação filtrada quando há uma escolhida: a lista do
+  // filtro vem da última resposta sem estação, para as outras continuarem lá.
+  const [estacoes, setEstacoes] = useState<
+    DashboardDados['estacoes']
+  >([]);
 
   const [de, setDe] = useState(
     formatoDataLocal(
@@ -269,7 +288,7 @@ export default function DashboardPage() {
   const [tentativa, setTentativa] =
     useState(0);
 
-  const chaveRequisicao = `${estacaoId}|${de}|${ate}|${tentativa}`;
+  const chaveRequisicao = `${licitacaoId}|${estacaoId}|${de}|${ate}|${tentativa}`;
 
   const [chaveCarregada, setChaveCarregada] =
     useState<string | null>(null);
@@ -284,6 +303,7 @@ export default function DashboardPage() {
 
     api<DashboardDados>(
       `/dashboard?${montarQuery(
+        licitacaoId,
         estacaoId,
         de,
         ate,
@@ -295,6 +315,10 @@ export default function DashboardPage() {
       .then((resposta) => {
         setDados(resposta);
         setErro(null);
+
+        if (!estacaoId) {
+          setEstacoes(resposta.estacoes);
+        }
 
         if (
           estacaoId &&
@@ -338,8 +362,19 @@ export default function DashboardPage() {
     chaveRequisicao,
     de,
     estacaoId,
+    licitacaoId,
     router,
   ]);
+
+  function alterarLicitacao(
+    novaLicitacaoId: string,
+  ) {
+    // A estação escolhida pode não ser da nova licitação.
+    setLicitacaoId(novaLicitacaoId);
+    setEstacaoId('');
+    setEstacoes([]);
+    setErro(null);
+  }
 
   function alterarPeriodo(
     novoPeriodo: Periodo,
@@ -373,6 +408,13 @@ export default function DashboardPage() {
         )
     : [];
 
+  const descricaoPainel =
+    !tecsus && usuario?.licitacao
+      ? `Painel da licitação ${usuario.licitacao.codigoIdentificador} · ${usuario.licitacao.orgaoNome}.`
+      : licitacaoId
+        ? 'Painel da licitação selecionada no período escolhido.'
+        : 'Dashboard geral: leituras das estações de todas as licitações no período selecionado.';
+
   const tiposGrafico: TipoGrafico[] = [
     'chuva',
     'vento',
@@ -393,14 +435,32 @@ export default function DashboardPage() {
     <div className="space-y-5">
       <PageHeading
         title="Dashboard"
-        description="Acompanhe as leituras das estações no período selecionado."
+        description={descricaoPainel}
       />
 
       <section
-        className="rise delay-1 grid gap-2.5 sm:grid-cols-3"
+        className="rise delay-1 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4"
         aria-label="Filtros do dashboard"
       >
-        <div className="flex flex-col gap-1">
+        {tecsus && (
+          <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 lg:col-span-4">
+            <label
+              htmlFor="licitacao"
+              className="font-mono text-[10px] uppercase text-muted-foreground"
+            >
+              Licitação
+            </label>
+
+            <SeletorLicitacao
+              id="licitacao"
+              valor={licitacaoId}
+              onChange={alterarLicitacao}
+              rotuloTodas="Todas as licitações"
+            />
+          </div>
+        )}
+
+        <div className="flex min-w-0 flex-col gap-1">
           <label
             htmlFor="periodo"
             className="font-mono text-[10px] uppercase text-muted-foreground"
@@ -435,7 +495,7 @@ export default function DashboardPage() {
           </Select>
         </div>
 
-        <div className="flex flex-col gap-1">
+        <div className="flex min-w-0 flex-col gap-1">
           <label
             htmlFor="estacao"
             className="font-mono text-[10px] uppercase text-muted-foreground"
@@ -455,7 +515,7 @@ export default function DashboardPage() {
               Todas as estações
             </option>
 
-            {dados?.estacoes.map(
+            {estacoes.map(
               (estacao) => (
                 <option
                   key={estacao.id}
@@ -715,21 +775,25 @@ function CampoData({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const id = useId();
+
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
       <label
+        htmlFor={id}
         className="font-mono text-[10px] uppercase text-muted-foreground"
       >
         {label}
       </label>
 
       <input
+        id={id}
         type="datetime-local"
         value={value}
         onChange={(event) =>
           onChange(event.target.value)
         }
-        className="h-9 rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="h-9 w-full min-w-0 rounded-md border border-input bg-card px-3 font-mono text-[11px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
     </div>
   );
@@ -887,14 +951,14 @@ function GraficoMeteorologico({
     pontos.at(-1)?.valor ?? null;
 
   return (
-    <article className="rise delay-3 overflow-hidden rounded-lg border border-border bg-card">
+    <article className="rise delay-3 min-w-0 overflow-hidden rounded-lg border border-border bg-card">
       <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
-        <div>
+        <div className="min-w-0">
           <h2 className="font-display text-sm font-semibold">
             {tituloTipo(tipo)}
           </h2>
 
-          <p className="font-mono text-[10px] text-muted-foreground">
+          <p className="truncate font-mono text-[10px] text-muted-foreground">
             {serie.estacaoNome} ·{' '}
             {pontos.length} pontos
           </p>

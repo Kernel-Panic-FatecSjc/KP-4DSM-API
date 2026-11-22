@@ -57,7 +57,11 @@ export function AlertaTempoReal() {
   const regiaoRef = useRef(regiao);
 
   useEffect(() => {
-    const socket = io(`${API_URL}/alarmes`, { withCredentials: true });
+    // Com API_URL relativa ("/api", atrás do proxy do servidor), o socket.io
+    // leria o caminho inteiro como namespace: o prefixo vai no "path".
+    const socket = API_URL.startsWith('/')
+      ? io('/alarmes', { path: `${API_URL}/socket.io`, withCredentials: true })
+      : io(`${API_URL}/alarmes`, { withCredentials: true });
     socketRef.current = socket;
 
     // A região fica guardada só na conexão: a cada (re)conexão é reenviada.

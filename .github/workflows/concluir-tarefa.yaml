@@ -1,0 +1,99 @@
+name: Concluir tarefa no Jira
+
+# Move para Concluído a tarefa do Jira da branch do PR quando ele é mesclado na
+# main: pelo processo (docs/gestãodeprocesso.md) a tarefa técnica fica
+# concluída após o merge, não na aprovação. No merge entra também o PR docs,
+# que não passa por review.
+#   - Só a tarefa da branch é movida: commit com o ID de outra tarefa é ajuste
+#     pontual e não a conclui.
+#   - PR revert desfaz uma entrega e não conclui nada.
+#   - Tarefa já em status da categoria Concluído (inclusive Cancelado) fica
+#     como está.
+# Secrets: os mesmos de rastreabilidade-requisito.yaml (JIRA_BASE_URL,
+# JIRA_EMAIL, JIRA_API_TOKEN), mas aqui o usuário do token precisa da permissão
+# de transicionar issues no projeto. Se o status final tiver outro nome no
+# Jira, ajuste a env STATUS_CONCLUIDO.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  concluir:
+    name: Concluir tarefa no Jira
+    if: github.event.pull_request.merged
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Mover a tarefa da branch para Concluído
+        env:
+          BRANCH: ${{ github.head_ref }}
+          PR: ${{ github.event.pull_request.number }}
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          STATUS_CONCLUIDO: Concluído
+        run: |
+          tipo=$(printf '%s' "$BRANCH" | grep -oE '^[a-z]+' || true)
+          id=$(printf '%s' "$BRANCH" | grep -oE 'SCRUM-[0-9]+' | head -n 1 || true)
+
+          if [ "$tipo" = "revert" ]; then
+            echo "PR revert desfaz uma entrega: nenhuma tarefa é concluída."
+            exit 0
+          fi
+          if [ -z "$id" ]; then
+            echo "::warning::Branch sem SCRUM-{ID}, nenhuma tarefa movida: $BRANCH"
+            exit 0
+          fi
+          if [ -z "$JIRA_BASE_URL" ] || [ -z "$JIRA_EMAIL" ] || [ -z "$JIRA_API_TOKEN" ]; then
+            echo "::error::Secrets do Jira ausentes (PR de fork não recebe secrets)."
+            exit 1
+          fi
+
+          jira() {
+            curl -sS -u "$JIRA_EMAIL:$JIRA_API_TOKEN" -H 'Accept: application/json' "$@"
+          }
+
+          issue=$(jira -f "$JIRA_BASE_URL/rest/api/3/issue/$id?fields=status") || {
+            echo "::error::$id: não consegui ler no Jira (não existe ou sem acesso)."
+            exit 1
+          }
+          atual=$(jq -r '.fields.status.name' <<<"$issue" | tr -d '\r')
+          if [ "$(jq -r '.fields.status.statusCategory.key' <<<"$issue" | tr -d '\r')" = "done" ]; then
+            echo "$id já está em $atual."
+            exit 0
+          fi
+
+          # O Jira só lista as transições que saem do status atual e que o
+          # usuário do token pode executar.
+          transicoes=$(jira -f "$JIRA_BASE_URL/rest/api/3/issue/$id/transitions") || {
+            echo "::error::$id: não consegui ler as transições no Jira."
+            exit 1
+          }
+          transicao=$(jq -r --arg alvo "$STATUS_CONCLUIDO" '
+            [.transitions[] | select((.to.name | ascii_downcase) == ($alvo | ascii_downcase))][0].id // empty
+          ' <<<"$transicoes" | tr -d '\r')
+          if [ -z "$transicao" ]; then
+            destinos=$(jq -r '[.transitions[].to.name] | unique | join(", ")' <<<"$transicoes" | tr -d '\r')
+            echo "::error::$id está em $atual e o Jira não leva direto para $STATUS_CONCLUIDO. Destinos possíveis: ${destinos:-nenhum}."
+            exit 1
+          fi
+
+          # Sem -f: no erro o corpo traz o motivo (ex.: campo obrigatório na tela
+          # da transição).
+          resposta="$RUNNER_TEMP/transicao.json"
+          codigo=$(jira -o "$resposta" -w '%{http_code}' -X POST \
+            -H 'Content-Type: application/json' \
+            --data "{\"transition\":{\"id\":\"$transicao\"}}" \
+            "$JIRA_BASE_URL/rest/api/3/issue/$id/transitions") || codigo=000
+          if [ "$codigo" != "204" ]; then
+            echo "::error::$id: o Jira recusou a transição para $STATUS_CONCLUIDO (HTTP $codigo): $(cat "$resposta" 2>/dev/null)"
+            exit 1
+          fi
+
+          echo "$id: $atual -> $STATUS_CONCLUIDO"
+          echo "[$id]($JIRA_BASE_URL/browse/$id): $atual → $STATUS_CONCLUIDO, pelo merge do PR #$PR." >> "$GITHUB_STEP_SUMMARY"
