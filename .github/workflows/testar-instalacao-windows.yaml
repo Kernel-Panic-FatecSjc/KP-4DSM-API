@@ -68,10 +68,13 @@ jobs:
         run: |
           .\infra\servidor\preparar-servidor.ps1 -Ambiente pre-release -RunnerConta $env:USERNAME
           if (-not (Test-Path "$env:BASE\shared\.env")) { Write-Host '::error::O .env não foi criado.'; exit 1 }
-          # Preenche os TROQUE como a prefeitura faria. Site em HTTP na 8080: o
+          # Preenche os TROQUE como a prefeitura faria: só os valores, sem mexer
+          # nos comentários (que também citam TROQUE). Site em HTTP na 8080: o
           # ensaio não tem domínio nem certificado.
           $t = Get-Content "$env:BASE\shared\.env" -Raw
-          $t = $t.Replace('DOMINIO="TROQUE.exemplo.gov.br"', 'DOMINIO="http://localhost:8080"').Replace('TROQUE', 'ensaio')
+          $t = $t.Replace('DOMINIO="TROQUE.exemplo.gov.br"', 'DOMINIO="http://localhost:8080"')
+          $t = [regex]::Replace($t, '(?m)^([A-Z_]+=.*)$', { param($m) $m.Value.Replace('TROQUE', 'ensaio') })
+          if ($t -notmatch '(?m)^#.*TROQUE') { Write-Host '::error::O comentário do .env não cita mais TROQUE: o ensaio deixou de cobrir esse caso.'; exit 1 }
           [IO.File]::WriteAllText("$env:BASE\shared\.env", $t)
 
       - name: Preparar o servidor (2ª execução instala os serviços)

@@ -28,7 +28,7 @@ describe('Saúde do backend (funcional)', () => {
   it('responde 200 quando o banco responde', async () => {
     const resposta = await request(app.getHttpServer()).get('/saude').expect(200);
 
-    expect(resposta.body).toEqual({ banco: 'ok' });
+    expect(resposta.body).toEqual({ banco: 'ok', versao: 'desenvolvimento' });
   });
 
   it('responde 503 apontando o banco quando ele está indisponível', async () => {

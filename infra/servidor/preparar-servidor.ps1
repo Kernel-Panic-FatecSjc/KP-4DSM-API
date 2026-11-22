@@ -64,9 +64,10 @@ if (-not (Test-Path $ArquivoEnv)) {
   Write-Host "Criado $ArquivoEnv. Preencha os campos TROQUE e rode este script de novo." -ForegroundColor Yellow
   exit 0
 }
-$pendentes = Select-String -Path $ArquivoEnv -Pattern 'TROQUE'
+# Só linhas de configuração: o comentário do topo do arquivo também cita TROQUE.
+$pendentes = Select-String -Path $ArquivoEnv -Pattern '^\s*[A-Za-z_][A-Za-z0-9_]*\s*=.*TROQUE'
 if ($pendentes) {
-  Write-Host "Ainda há campos TROQUE em ${Env}:"; $pendentes | ForEach-Object { Write-Host "  linha $($_.LineNumber): $($_.Line)" }
+  Write-Host "Ainda há campos TROQUE em ${ArquivoEnv}:"; $pendentes | ForEach-Object { Write-Host "  linha $($_.LineNumber): $($_.Line)" }
   exit 1
 }
 
